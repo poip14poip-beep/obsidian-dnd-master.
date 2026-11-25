@@ -5,6 +5,8 @@ describe("player dossier summary extraction", () => {
     const result = extractDossierBasics("ЛИЯ ВЕЙН\nПолное досье\nРодилась: 121 год. Человек. Fighter 20 / Champion + один эпический уровень кампании.\nD&D: общий 21-й уровень по домашнему эпическому расширению — Fighter 20 / Champion + эпический уровень кампании. 184 HP, PB +6, четыре атаки за Attack, КБ 20.");
     expect(result.name).toBe("ЛИЯ ВЕЙН");
     expect(result.level).toBe(21);
+    expect(result.classLevel).toBe(20);
+    expect(result.epicCampaignLevels).toBe(1);
     expect(result.hitPointMaximum).toBe(184);
     expect(result.armorClass).toBe(20);
     expect(result.speciesAndClass).toContain("Fighter 20");
@@ -13,6 +15,7 @@ describe("player dossier summary extraction", () => {
     const result = extractDossierBasics([
       "ЛИЯ ВЕЙН",
       "Общий уровень | 21 (домашнее эпическое расширение)",
+      "Классовые уровни | Fighter 20",
       "HP | 184",
       "КБ | КБ 20",
       "Сила | Ловкость | Телосложение | Интеллект | Мудрость | Харизма",
