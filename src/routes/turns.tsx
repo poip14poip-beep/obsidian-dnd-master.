@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
+import { formatGameMasterAnswer } from "@/domain/game-master-presentation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -80,6 +81,7 @@ function TurnsPage() {
   const [rollResult, setRollResult] = useState("");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
+  const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
 
   async function handleResolveAction(actionOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
@@ -267,7 +269,7 @@ function TurnsPage() {
         {gmError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger">{gmError}</div>}
         {gmTurn && (
           <div className="space-y-3 rounded-md border border-primary/30 bg-background/60 p-3">
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{gmTurn.narration}</div>
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">{formattedGmAnswer}</pre>
             {gmTurn.needsClarification && (
               <div className="space-y-2 rounded border border-status-approx/40 p-3">
                 <p className="text-xs font-semibold text-status-approx">Нужно уточнение · ход и время не зафиксированы</p>
