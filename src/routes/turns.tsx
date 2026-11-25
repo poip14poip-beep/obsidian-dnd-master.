@@ -71,6 +71,7 @@ function TurnsPage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [gmModel, setGmModel] = useState("gpt-4.1-mini");
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
@@ -123,8 +124,9 @@ function TurnsPage() {
   }
 
   function handleApplyClarification() {
-    if (!gmTurn || !playerAction.trim()) return;
-    setPlayerAction(`${playerAction.trim()}\n\nУточнение игрока: ${gmTurn.clarificationQuestion}`);
+    if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
+    setPlayerAction(`${playerAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`);
+    setClarificationAnswer("");
     setGmTurn(null);
   }
 
@@ -244,7 +246,8 @@ function TurnsPage() {
               <div className="space-y-2 rounded border border-status-approx/40 p-3">
                 <p className="text-xs font-semibold text-status-approx">Нужно уточнение · ход и время не зафиксированы</p>
                 <p className="text-sm">{gmTurn.clarificationQuestion}</p>
-                <Button type="button" variant="outline" className="touch-target" onClick={handleApplyClarification}>Добавить вопрос к действию</Button>
+                <Textarea rows={2} value={clarificationAnswer} onChange={(e) => setClarificationAnswer(e.target.value)} placeholder="Твой ответ мастеру…" />
+                <Button type="button" variant="outline" className="touch-target" disabled={!clarificationAnswer.trim()} onClick={handleApplyClarification}>Ответить и продолжить</Button>
               </div>
             )}
             {gmTurn.rolls.length > 0 && (
