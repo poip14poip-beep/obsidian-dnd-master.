@@ -351,6 +351,8 @@ export interface AuditEntry {
     | "FACT_AMENDED"
     | "ENTITY_AMENDED"
     | "SOURCE_ATTACHED"
+    | "SOURCE_VERIFIED"
+    | "SOURCE_CONTEXT_CHANGED"
     | "BACKUP_EXPORTED"
     | "BACKUP_IMPORTED"
     | "INTEGRITY_CHECK";
