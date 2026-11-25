@@ -47,7 +47,7 @@ describe("character engine foundation", () => {
   });
   it("rejects invalid inventory quantity and unsupported epic level as RAW", () => {
     const candidate = sheet();
-    candidate.inventory[0].quantity = -1;
+    candidate.inventory[0]!.quantity = -1;
     candidate.rules.level = 21;
     const errors = validateCharacterSheet(candidate);
     expect(errors.some((error) => error.includes("Некорректное количество"))).toBe(true);

@@ -7,10 +7,10 @@ describe("Ekdrasil canon ingestion", () => {
       sourceId: "ekdrasil-v2", title: "Летопись", fileName: "chronicle.md", version: "2.0",
       content: "# Мир\nВводный текст.\n\n## История\nВ 851 году произошёл Великий разлом.\n\n### Причины\nЭксперименты с жизненной силой.",
     }], { now: "2026-11-25T00:00:00.000Z" });
-    expect(manifest.sources[0].sha256).toHaveLength(64);
+    expect(manifest.sources[0]!.sha256).toHaveLength(64);
     expect(manifest.sections.map((section) => section.heading)).toEqual(["Мир", "История", "Причины"]);
-    expect(manifest.sections[2].headingPath).toEqual(["Мир", "История", "Причины"]);
-    expect(manifest.sections[1].text).toContain("Великий разлом");
+    expect(manifest.sections[2]!.headingPath).toEqual(["Мир", "История", "Причины"]);
+    expect(manifest.sections[1]!.text).toContain("Великий разлом");
     expect(manifest.dateMentions.some((mention) => mention.rawText.includes("851"))).toBe(true);
   });
   it("rejects duplicate source IDs", async () => {
@@ -28,6 +28,6 @@ describe("Ekdrasil canon ingestion", () => {
     const manifest = await ingestCanonSources([{ sourceId: "chron", title: "Хроника", fileName: "chron.md", version: "1", content: "# Мир\nТри измерения.\n\n## Разлом\nДревние эксперименты." }]);
     const results = findCanonSections(manifest, "древние эксперименты");
     expect(results).toHaveLength(1);
-    expect(results[0].text).toBe("Древние эксперименты.");
+    expect(results[0]!.text).toBe("Древние эксперименты.");
   });
 });

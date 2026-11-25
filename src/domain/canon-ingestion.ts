@@ -33,7 +33,7 @@ function getHeadings(lines: string[]): HeadingMarker[] {
   const result: HeadingMarker[] = [];
   lines.forEach((line, index) => {
     const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (match) result.push({ line: index + 1, level: match[1].length, title: match[2].trim() });
+    if (match) result.push({ line: index + 1, level: match[1]!.length, title: match[2]!.trim() });
   });
   return result;
 }
@@ -86,7 +86,7 @@ export async function ingestCanonSources(
     for (const boundary of boundaries) {
       const stack = headings.filter((h) => h.line <= boundary.line && h.level <= boundary.level)
         .reduce<HeadingMarker[]>((acc, heading) => {
-          while (acc.length && acc[acc.length - 1].level >= heading.level) acc.pop();
+          while (acc.length && acc[acc.length - 1]!.level >= heading.level) acc.pop();
           acc.push(heading); return acc;
         }, []);
       const bodyStartIndex = boundary.line;
@@ -96,7 +96,7 @@ export async function ingestCanonSources(
       const sectionBase = `${source.sourceId}:${boundary.line + 1}:${slug(boundary.title)}`;
       let searchOffset = 0;
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        const chunk = chunks[chunkIndex];
+        const chunk = chunks[chunkIndex]!;
         const sectionId = chunks.length === 1 ? sectionBase : `${sectionBase}:chunk-${chunkIndex + 1}`;
         sections.push({
           id: sectionId, sourceId: source.sourceId, sourceTitle: source.title,
@@ -109,7 +109,7 @@ export async function ingestCanonSources(
         let match: RegExpExecArray | null;
         while ((match = datePattern.exec(chunk)) !== null) {
           const line = bodyStartIndex + 2 + body.slice(0, searchOffset + match.index).split("\n").length - 1;
-          dateMentions.push({ id: `${sectionId}:date:${dateMentions.length + 1}`, sourceId: source.sourceId, sectionId, rawText: match[0], line, reviewStatus: "UNREVIEWED" });
+          dateMentions.push({ id: `${sectionId}:date:${dateMentions.length + 1}`, sourceId: source.sourceId, sectionId, rawText: match[0]!, line, reviewStatus: "UNREVIEWED" });
         }
         sourceChunkCount++;
       }

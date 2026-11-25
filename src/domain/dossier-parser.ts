@@ -28,7 +28,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   const name = lines.find((line) => /^[А-ЯЁ][А-ЯЁ\s-]{2,}$/u.test(line))?.replace(/\s+/g, " ") ?? null;
   const summary = text;
   const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\r\n]{0,120})/i);
-  const speciesAndClass = classMatch ? `${classMatch[1]}. ${classMatch[2].trim()}` : null;
+  const speciesAndClass = classMatch ? `${classMatch[1]!}. ${classMatch[2]!.trim()}` : null;
   const levelMatch = text.match(/(?:общий\s+уровень\s*\|\s*)(\d{1,2})\b/i)
     ?? text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
     ?? text.match(/общий\s+(\d{1,2})-й\s+уровень/i);
@@ -55,14 +55,14 @@ export function extractDossierBasics(text: string): DossierBasics {
     else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
     if (!inventoryLocation || !line.includes("|")) continue;
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]) || /^(?:предмет|оружие)$/i.test(cells[1])) continue;
-    const quantityText = cells[0];
+    if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]!) || /^(?:предмет|оружие)$/i.test(cells[1]!)) continue;
+    const quantityText = cells[0]!;
     const quantityMatch = quantityText.match(/^(\d+)(?!\s*[–—-])/);
     if (!quantityMatch || /[–—-]/.test(quantityText) || /дня|дней|недел/i.test(quantityText)) continue;
     if (!quantityMatch) continue;
-    const quantity = Number(quantityMatch[1]);
+    const quantity = Number(quantityMatch[1]!);
     if (!Number.isInteger(quantity) || quantity < 1) continue;
-    const name = cells[1].replace(/^["«]|["»]$/g, "").trim();
+    const name = cells[1]!.replace(/^["«]|["»]$/g, "").trim();
     if (!name) continue;
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
@@ -87,12 +87,12 @@ export function extractDossierBasics(text: string): DossierBasics {
     const cells = line.split("|").map((cell) => cell.trim());
     if (cells.length < 3 || !cells[0] || !/^[+-]\d+$/.test(cells[1])) return [];
     if (/^навык$/i.test(cells[0])) return [];
-    return [{ name: cells[0], bonus: Number(cells[1]), basis: cells.slice(2).join(" | ") }];
+    return [{ name: cells[0], bonus: Number(cells[1]!), basis: cells.slice(2).join(" | ") }];
   });
   const classFeaturesByLevel = section("9.4.", "9.5.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
     if (cells.length < 2 || !/^\d{1,2}$/.test(cells[0])) return [];
-    const level = Number(cells[0]);
+    const level = Number(cells[0]!);
     return level >= 1 && level <= 20 && cells[1] ? [{ level, features: cells.slice(1).join(" | ") }] : [];
   });
   const weaponAttacks = section("9.5.", "10.").flatMap((line) => {
@@ -110,7 +110,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   for (const resource of resourcePatterns) {
     const match = text.match(resource.pattern);
     if (!match) continue;
-    const count = /^\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
+    const count = /^\d+$/.test(match[1]!) ? Number(match[1]!) : numberWords[match[1]!.toLocaleLowerCase()];
     if (count !== undefined) resources.push({ name: resource.name, current: null, max: count, recovery: resource.recovery, certainty: "KNOWN" });
   }
   const evidence = [
