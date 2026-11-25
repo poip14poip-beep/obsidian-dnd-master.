@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, status: authStatus, signOut } = useAuth();
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">\n      {authStatus === "unconfigured" && <div role="status" className="border-b border-status-approx/40 bg-status-approx/10 px-3 py-2 text-center text-xs text-status-approx">Локальный прототип: вход и облачная синхронизация не настроены. Данные хранятся только в этом браузере — регулярно экспортируйте резервную копию.</div>}
       {/* Desktop persistent left sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="border-b border-sidebar-border px-4 py-4">

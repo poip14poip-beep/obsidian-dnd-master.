@@ -71,7 +71,7 @@ describe("Supabase Auth env handling & auth guard invariants", () => {
     expect(jwtReject.ok).toBe(false);
   });
 
-  it("blocks all 11 campaign routes when unauthenticated, loading, errored, or unconfigured", () => {
+  it("blocks unauthenticated routes but allows an explicit local-only prototype when Supabase is unconfigured", () => {
     for (const pathname of ALL_PROTECTED_ROUTES) {
       expect(isPublicAuthRoute(pathname)).toBe(false);
       expect(evaluateAuthGuard({ pathname, status: "unauthenticated" })).toEqual({
@@ -85,7 +85,7 @@ describe("Supabase Auth env handling & auth guard invariants", () => {
         action: "render_error",
       });
       expect(evaluateAuthGuard({ pathname, status: "unconfigured" })).toEqual({
-        action: "render_unconfigured",
+        action: "allow_protected",
       });
       expect(evaluateAuthGuard({ pathname, status: "authenticated" })).toEqual({
         action: "allow_protected",
@@ -93,7 +93,7 @@ describe("Supabase Auth env handling & auth guard invariants", () => {
     }
   });
 
-  it("keeps /auth and /reset-password public and redirects authenticated users off /auth", () => {
+  it("keeps /auth and /reset-password public, including local-only mode, and redirects authenticated users off /auth", () => {
     expect(isPublicAuthRoute("/auth")).toBe(true);
     expect(isPublicAuthRoute("/reset-password")).toBe(true);
 
