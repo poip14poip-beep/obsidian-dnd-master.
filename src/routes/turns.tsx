@@ -114,6 +114,9 @@ function TurnsPage() {
           hpDelta: result.turn.hpDelta,
           consequenceText: result.turn.consequenceText,
           characterChanges: result.turn.characterChanges,
+          worldChanges: result.turn.worldChanges,
+          newLocationId: result.turn.newLocationId ?? "",
+          newLocationKey: result.turn.newLocationKey ?? null,
           rolls: result.turn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
@@ -304,6 +307,16 @@ function TurnsPage() {
                 {gmTurn.characterChanges.resources.map((change, index) => <p key={`res-${index}`}>Ресурс · {change.name}: {change.current ?? "?"}/{change.max ?? "?"}</p>)}
                 {gmTurn.characterChanges.conditions.map((change, index) => <p key={`cond-${index}`}>Состояние · {change.action}: {change.name}</p>)}
                 {Object.entries(gmTurn.characterChanges.currencyDelta).filter(([, delta]) => delta !== 0).map(([coin, delta]) => <p key={coin}>Валюта · {coin.toUpperCase()}: {delta > 0 ? "+" : ""}{delta}</p>)}
+                {gmTurn.newLocationId && <p>Переход в зарегистрированную локацию: {locations.find((location) => location.id === gmTurn.newLocationId)?.name ?? gmTurn.newLocationId}</p>}
+                {gmTurn.newLocationKey && <p>Новая локация: {gmTurn.worldChanges.newLocations.find((location) => location.tempId === gmTurn.newLocationKey)?.name ?? gmTurn.newLocationKey}</p>}
+                {gmTurn.worldChanges.facts.map((fact, index) => <p key={`fact-${index}`}>Факт · {fact.layer}/{fact.certainty}: {fact.title} — {fact.statement}</p>)}
+                {gmTurn.worldChanges.npcUpdates.map((update, index) => <p key={`npc-update-${index}`}>NPC · изменение {update.npcId}: {update.reason}</p>)}
+                {gmTurn.worldChanges.npcKnowledgeAdditions.map((entry, index) => <p key={`npc-knowledge-${index}`}>Знание NPC · {entry.npcId}: {entry.factSummary} (путь: {entry.acquisitionPath})</p>)}
+                {gmTurn.worldChanges.newNpcs.map((npc) => <p key={npc.tempId}>Новый NPC · {npc.name} — {npc.role}</p>)}
+                {gmTurn.worldChanges.factionUpdates.map((update, index) => <p key={`faction-update-${index}`}>Фракция · изменение {update.factionId}: {update.reason}</p>)}
+                {gmTurn.worldChanges.newFactions.map((faction) => <p key={faction.tempId}>Новая фракция · {faction.name}</p>)}
+                {gmTurn.worldChanges.newLocations.map((location) => <p key={location.tempId}>Новая локация · {location.name} ({location.region}); расстояние: {location.distanceFromCurrent}, время: {location.travelTimeHours ?? "UNKNOWN"} ч.</p>)}
+                {gmTurn.worldChanges.delayedEvents.map((event, index) => <p key={`event-${index}`}>Отложенное событие · {event.title}: {event.triggerInGameDate} — {event.consequence}</p>)}
                 {gmTurn.stateNotes.map((note, index) => <p key={`note-${index}`}>· {note}</p>)}
               </div>
             )}

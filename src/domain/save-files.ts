@@ -66,6 +66,8 @@ export function buildSessionLogMarkdown(collections: ObsidianCollections): strin
       entry.gmNarration ? `GM narration:\n\n${entry.gmNarration}` : "",
       `HP delta: ${entry.hpDelta}`,
       `Character changes: ${JSON.stringify(entry.characterChanges ?? null)}`,
+      `World changes: ${JSON.stringify(entry.worldChanges ?? null)}`,
+      `New location key: ${entry.newLocationKey ?? "NONE"}`,
       `Rolls: ${JSON.stringify(entry.rolls)}`,
       `Checksum: ${entry.entryChecksum}`,
     ].filter(Boolean).join("\n\n");

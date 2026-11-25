@@ -171,9 +171,7 @@ export function applyWorldChangeSet(input: WorldChangeApplicationInput): WorldCh
     counts.delayedEvents += 1;
   }
 
-  const resolvedSelectedLocation = input.selectedLocationKey
-    ? locationIds.get(input.selectedLocationKey)
-    : input.selectedLocationId;
+  const resolvedSelectedLocation = input.selectedLocationId ?? (input.selectedLocationKey ? locationIds.get(input.selectedLocationKey) : null);
   if (input.selectedLocationKey && !resolvedSelectedLocation) {
     throw new Error(`Новая выбранная локация «${input.selectedLocationKey}» не была создана этим ходом.`);
   }
