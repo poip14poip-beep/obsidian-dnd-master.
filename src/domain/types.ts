@@ -201,6 +201,8 @@ export interface PlayerCharacterState {
   nameCertainty: CertaintyStatus;
   speciesAndClass: string;
   level: number | null;
+  classLevel?: number | null;
+  epicCampaignLevels?: number;
   hpCurrent: number | null;
   hpMax: number | null;
   hpTemp: number | null;

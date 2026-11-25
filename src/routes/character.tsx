@@ -125,6 +125,8 @@ function CharacterPage() {
       ...(extracted.name ? { name: extracted.name, nameCertainty: "KNOWN" as const } : {}),
       ...(extracted.speciesAndClass ? { speciesAndClass: extracted.speciesAndClass } : {}),
       ...(extracted.level !== null ? { level: extracted.level } : {}),
+      ...(extracted.classLevel !== null ? { classLevel: extracted.classLevel } : {}),
+      epicCampaignLevels: extracted.epicCampaignLevels,
       ...(extracted.hitPointMaximum !== null ? { hpMax: extracted.hitPointMaximum } : {}),
       ...(extracted.armorClass !== null ? { armorClass: extracted.armorClass } : {}),
       ...(extracted.abilityScores ? { abilityScores: extracted.abilityScores } : {}),
@@ -167,7 +169,7 @@ function CharacterPage() {
       );
       return;
     }
-    if (level !== null && (level < 1 || level > 20) && !(level === 21 && speciesAndClass.toLowerCase().includes("эпический уровень кампании"))) {
+    if (level !== null && (level < 1 || level > 20) && !(level === (character.classLevel ?? 20) + (character.epicCampaignLevels ?? 0) && (character.epicCampaignLevels ?? 0) > 0 && (character.classLevel ?? 21) <= 20 && speciesAndClass.toLowerCase().includes("эпический уровень кампании"))) {
       toast.error("Уровень 21 допустим только при явно указанном эпическом домашнем правиле кампании.");
       return;
     }
@@ -186,6 +188,8 @@ function CharacterPage() {
       nameCertainty: name.trim() === "UNKNOWN" ? "UNKNOWN" : "KNOWN",
       speciesAndClass: speciesAndClass.trim() || "UNKNOWN",
       level,
+      classLevel: character.classLevel ?? level,
+      epicCampaignLevels: character.epicCampaignLevels ?? 0,
       hpCurrent,
       hpMax,
       hpTemp,
@@ -300,7 +304,7 @@ function CharacterPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pc-lvl">Уровень (1–20; 21 только с эпическим домашним правилом)</Label>
+            <Label htmlFor="pc-lvl">Общий уровень (классовые уровни и эпические уровни указаны отдельно)</Label>
             <Input
               id="pc-lvl"
               inputMode="numeric"

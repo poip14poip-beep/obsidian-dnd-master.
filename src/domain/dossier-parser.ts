@@ -6,6 +6,8 @@ export interface DossierBasics {
   name: string | null;
   speciesAndClass: string | null;
   level: number | null;
+  classLevel: number | null;
+  epicCampaignLevels: number;
   hitPointMaximum: number | null;
   armorClass: number | null;
   abilityScores: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number } | null;
@@ -27,6 +29,9 @@ export function extractDossierBasics(text: string): DossierBasics {
     ?? text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
     ?? text.match(/общий\s+(\d{1,2})-й\s+уровень/i);
   const level = levelMatch ? Number(levelMatch[1]) : null;
+  const classLevelMatch = text.match(/Классовые уровни\\s*\\|\\s*[^\\d]*(\\d{1,2})\\b/i);
+  const classLevel = classLevelMatch ? Number(classLevelMatch[1]) : null;
+  const epicCampaignLevels = level !== null && classLevel !== null && level > classLevel ? level - classLevel : 0;
   const hpMatch = text.match(/^\s*HP\s*\|\s*([1-9]\d{1,2})\b/im) ?? text.match(/(?:^|[\s·])([1-9]\d{1,2})\s*HP\b/i);
   const acMatch = text.match(/^\s*КБ\s*\|\s*КБ\s*(\d{1,2})\b/im) ?? text.match(/КБ\s*(\d{1,2})/i);
   const abilityRow = text.match(/Сила\s*\|\s*Ловкость\s*\|\s*Телосложение\s*\|\s*Интеллект\s*\|\s*Мудрость\s*\|\s*Харизма[\s\S]{0,180}?(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)/i);
@@ -83,7 +88,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     inventory.length ? `Предметов импортировано: ${inventory.length}` : "",
     resources.length ? `Классовых ресурсов распознано: ${resources.map((item) => item.name + " " + item.max).join(", ")}` : "",
   ].filter(Boolean);
-  return { name, speciesAndClass, level, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
+  return { name, speciesAndClass, level, classLevel, epicCampaignLevels, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
     armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
     speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null, inventory, resources, evidence };
 }
