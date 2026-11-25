@@ -288,6 +288,23 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
       : "Отсутствует один из обязательных типов источников.",
   });
 
+  // 6. AI context may only contain attached, processed and explicitly reviewed sources.
+  const unsafeContextSources = sources.filter((source) =>
+    source.contextEnabled === true && (
+      source.contentStatus !== "ATTACHED" ||
+      source.processing?.status !== "PROCESSED" ||
+      source.reviewStatus !== "VERIFIED"
+    ),
+  );
+  checks.push({
+    id: "source-context-review",
+    label: "Проверка источников, включённых в контекст ИИ",
+    passed: unsafeContextSources.length === 0,
+    details: unsafeContextSources.length === 0
+      ? "Все источники контекста загружены, обработаны и подтверждены пользователем."
+      : `Непроверенных источников в контексте: ${unsafeContextSources.map((source) => source.title).join(", ")}.`,
+  });
+
   return {
     checkedAt: new Date().toISOString(),
     ok: checks.every((c) => c.passed),
