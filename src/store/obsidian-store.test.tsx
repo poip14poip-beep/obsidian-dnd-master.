@@ -114,7 +114,9 @@ describe("campaign setup confirmation", () => {
     });
 
     expect(confirmation!.ok).toBe(false);
-    expect(confirmation!.error).toContain("проверенные");
+    if (confirmation!.ok === false) {
+      expect(confirmation!.error).toContain("проверенные");
+    }
     expect(result.current.worldState.setup.confirmed).toBe(false);
   });
 });
