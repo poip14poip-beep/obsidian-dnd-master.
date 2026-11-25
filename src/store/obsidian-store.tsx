@@ -65,6 +65,8 @@ export interface CampaignParametersPatch {
   calendarSystem?: string;
   startInGameDate?: string;
   startLocationName?: string;
+  startNarrative?: string;
+  startGeneration?: WorldState["startGeneration"];
   encumbranceMode?: WorldState["encumbranceMode"];
   setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
 }
@@ -898,6 +900,8 @@ export function ObsidianStoreProvider({
             ? patch.startInGameDate
             : ws.currentInGameDate,
         startLocationName: patch.startLocationName ?? ws.startLocationName,
+        startNarrative: patch.startNarrative ?? ws.startNarrative,
+        startGeneration: patch.startGeneration ?? ws.startGeneration,
         encumbranceMode: patch.encumbranceMode ?? ws.encumbranceMode,
         setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
       };
@@ -914,6 +918,8 @@ export function ObsidianStoreProvider({
       calendarSystem: patch.calendarSystem ?? currentWorld.calendarSystem,
       startInGameDate: patch.startInGameDate ?? currentWorld.startInGameDate,
       startLocationName: patch.startLocationName ?? currentWorld.startLocationName,
+      startNarrative: patch.startNarrative ?? currentWorld.startNarrative,
+      startGeneration: patch.startGeneration ?? currentWorld.startGeneration,
       encumbranceMode: patch.encumbranceMode ?? currentWorld.encumbranceMode,
       setup: patch.setupPatch ? { ...currentWorld.setup, ...patch.setupPatch } : currentWorld.setup,
     };
