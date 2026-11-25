@@ -63,7 +63,7 @@ export function buildSessionLogMarkdown(collections: ObsidianCollections): strin
       `Player action: ${entry.playerIntent}`,
       `Summary: ${entry.summary}`,
       `World outcome: ${entry.worldOutcome}`,
-      entry.gmNarration ? `GM narration:\n\n${entry.gmNarration}` : "",
+      entry.gmNarration ? `GM narration:\n\n${entry.gmNarration}` : "",\n      entry.npcChanges?.length ? `NPC changes:\n\n${JSON.stringify(entry.npcChanges, null, 2)}` : "",
       `HP delta: ${entry.hpDelta}`,
       `Character changes: ${JSON.stringify(entry.characterChanges ?? null)}`,
       `Rolls: ${JSON.stringify(entry.rolls)}`,

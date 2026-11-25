@@ -284,6 +284,12 @@ function TurnsPage() {
                 {gmTurn.characterChanges.resources.map((change, index) => <p key={`res-${index}`}>Ресурс · {change.name}: {change.current ?? "?"}/{change.max ?? "?"}</p>)}
                 {gmTurn.characterChanges.conditions.map((change, index) => <p key={`cond-${index}`}>Состояние · {change.action}: {change.name}</p>)}
                 {Object.entries(gmTurn.characterChanges.currencyDelta).filter(([, delta]) => delta !== 0).map(([coin, delta]) => <p key={coin}>Валюта · {coin.toUpperCase()}: {delta > 0 ? "+" : ""}{delta}</p>)}
+                {gmTurn.npcChanges.map((change, index) => <div key={`npc-${index}`} className="rounded border border-border/60 p-2">
+                  <p className="font-semibold">NPC · {change.action === "CREATE" ? "новый" : "обновление"} · {change.name}</p>
+                  <p>{change.role} · Цели: {change.goals}</p>
+                  <p>Отношение к персонажу: {change.attitudeToPlayer}</p>
+                  {change.knowledgeAdditions.map((knowledge, k) => <p key={k} className="text-muted-foreground">Знание NPC: {knowledge.factSummary} · источник получения: {knowledge.acquisitionPath}</p>)}
+                </div>)}
                 {gmTurn.stateNotes.map((note, index) => <p key={`note-${index}`}>· {note}</p>)}
               </div>
             )}
