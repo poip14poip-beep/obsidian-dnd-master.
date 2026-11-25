@@ -266,7 +266,11 @@ function TurnsPage() {
               <div className="space-y-1 rounded border border-status-verified/40 p-3 text-xs">
                 <p className="font-semibold text-status-verified">Черновик следующего хода подготовлен, но ещё не сохранён.</p>
                 <p>Проверь его ниже, выполни проверку и только затем подтверди commit. Мастер не записывает ход без твоего подтверждения.</p>
-                {gmTurn.stateNotes.map((note, index) => <p key={index}>· {note}</p>)}
+                {gmTurn.characterChanges.inventory.map((change, index) => <p key={`inv-${index}`}>Инвентарь · {change.action}: {change.name} ×{change.quantity}</p>)}
+                {gmTurn.characterChanges.resources.map((change, index) => <p key={`res-${index}`}>Ресурс · {change.name}: {change.current ?? "?"}/{change.max ?? "?"}</p>)}
+                {gmTurn.characterChanges.conditions.map((change, index) => <p key={`cond-${index}`}>Состояние · {change.action}: {change.name}</p>)}
+                {Object.entries(gmTurn.characterChanges.currencyDelta).filter(([, delta]) => delta !== 0).map(([coin, delta]) => <p key={coin}>Валюта · {coin.toUpperCase()}: {delta > 0 ? "+" : ""}{delta}</p>)}
+                {gmTurn.stateNotes.map((note, index) => <p key={`note-${index}`}>· {note}</p>)}
               </div>
             )}
           </div>
