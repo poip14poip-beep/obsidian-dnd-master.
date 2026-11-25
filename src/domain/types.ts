@@ -207,8 +207,16 @@ export interface PlayerCharacterState {
   conditions: string[];
   resources: CharacterResource[];
   inventory: InventoryItem[];
+  currency?: { cp: number; sp: number; ep: number; gp: number; pp: number };
   notes: string;
   updatedAt: string;
+}
+
+export interface CharacterChangeSet {
+  inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: CertaintyStatus }>;
+  resources: Array<{ name: string; current: number | null; max: number | null; recovery: string; certainty: CertaintyStatus }>;
+  conditions: Array<{ action: "ADD" | "REMOVE"; name: string }>;
+  currencyDelta: { cp: number; sp: number; ep: number; gp: number; pp: number };
 }
 
 export interface RollRecord {
@@ -226,6 +234,7 @@ export interface TurnDraft {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  characterChanges?: CharacterChangeSet;
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -254,6 +263,7 @@ export interface GameTurnEntry {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  characterChanges?: CharacterChangeSet;
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];

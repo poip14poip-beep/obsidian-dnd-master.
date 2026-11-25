@@ -9,6 +9,12 @@ export interface GameMasterTurn {
   narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; consequenceText: string;
   rolls: Array<{ label: string; formula: string; result: string }>;
+  characterChanges: {
+    inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
+    resources: Array<{ name: string; current: number | null; max: number | null; recovery: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
+    conditions: Array<{ action: "ADD" | "REMOVE"; name: string }>;
+    currencyDelta: { cp: number; sp: number; ep: number; gp: number; pp: number };
+  };
   needsClarification: boolean; clarificationQuestion: string; stateNotes: string[];
 }
 export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
@@ -27,7 +33,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -128,6 +134,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось.",
+      "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };
