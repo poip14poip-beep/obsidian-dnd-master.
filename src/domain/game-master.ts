@@ -30,6 +30,22 @@ const turnSchema = {
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
     }, required: ["label", "formula", "result"] } },
+    characterChanges: { type: "object", additionalProperties: false, properties: {
+      inventory: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        action: { type: "string", enum: ["ADD", "REMOVE", "SET"] }, name: { type: "string" },
+        quantity: { type: "integer" }, notes: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["action", "name", "quantity", "notes", "certainty"] } },
+      resources: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        name: { type: "string" }, current: { type: ["integer", "null"] }, max: { type: ["integer", "null"] },
+        recovery: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["name", "current", "max", "recovery", "certainty"] } },
+      conditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        action: { type: "string", enum: ["ADD", "REMOVE"] }, name: { type: "string" },
+      }, required: ["action", "name"] } },
+      currencyDelta: { type: "object", additionalProperties: false, properties: {
+        cp: { type: "integer" }, sp: { type: "integer" }, ep: { type: "integer" }, gp: { type: "integer" }, pp: { type: "integer" },
+      }, required: ["cp", "sp", "ep", "gp", "pp"] },
+    }, required: ["inventory", "resources", "conditions", "currencyDelta"] },
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
