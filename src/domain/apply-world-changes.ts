@@ -6,6 +6,8 @@ import type {
 export interface WorldChangeApplicationInput {
   changes: WorldChangeSet;
   currentLocationId: string | null;
+  selectedLocationId: string | null;
+  selectedLocationKey: string | null;
   inGameDate: string;
   turnNumber: number;
   locations: LocationRecord[];
@@ -169,7 +171,16 @@ export function applyWorldChangeSet(input: WorldChangeApplicationInput): WorldCh
     counts.delayedEvents += 1;
   }
 
-  const selectedLocationId = changes.newLocations.find((location) => false) ? input.currentLocationId : input.currentLocationId;
+  const resolvedSelectedLocation = input.selectedLocationKey
+    ? locationIds.get(input.selectedLocationKey)
+    : input.selectedLocationId;
+  if (input.selectedLocationKey && !resolvedSelectedLocation) {
+    throw new Error(`Новая выбранная локация «${input.selectedLocationKey}» не была создана этим ходом.`);
+  }
+  if (resolvedSelectedLocation && !locations.some((location) => location.id === resolvedSelectedLocation)) {
+    throw new Error(`Выбранная локация ${resolvedSelectedLocation} отсутствует в реестре.`);
+  }
+  const selectedLocationId = resolvedSelectedLocation ?? input.currentLocationId;
   return {
     locations, routes, npcs, factions, canonFacts, timelineEvents,
     currentLocationId: selectedLocationId, counts,

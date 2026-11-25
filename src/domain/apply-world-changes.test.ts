@@ -17,13 +17,13 @@ describe("world change application", () => {
         newNpcs: [{ tempId: "npc-new", name: "Страж", role: "Сторож моста", locationId: "loc-new", factionId: null, goals: "Охраняет проход", attitudeToPlayer: "Настороженное", certainty: "KNOWN" }],
         facts: [{ title: "Страж заметил персонажа", statement: "Страж видел приближение персонажа", rationale: "Непосредственное наблюдение", layer: "OBJECTIVE_TRUTH", subjectNpcId: "npc-new", certainty: "KNOWN", scope: "LOCATION" }],
       },
-      currentLocationId: "origin", inGameDate: "День 1", turnNumber: 1,
+      currentLocationId: "origin", selectedLocationId: null, selectedLocationKey: "loc-new", inGameDate: "День 1", turnNumber: 1,
       locations: c.locations, npcs: c.npcs, factions: c.factions, now: "2026-11-25T00:00:00Z",
       makeId: (prefix) => prefix + "-test",
     });
     expect(result.locations.some((l) => l.name === "Старый мост")).toBe(true);
     expect(result.routes[0]).toMatchObject({ fromLocationId: "origin", distanceLabel: "2 мили" });
-    expect(result.currentLocationId).toBe("origin");
+    expect(result.currentLocationId).toBe("loc-test");
     expect(result.npcs.find((n) => n.name === "Страж")?.locationId).toBe("loc-test");
     expect(result.canonFacts[0]?.subjectNpcId).toBe("npc-test");
   });
@@ -34,7 +34,7 @@ describe("world change application", () => {
     const result = applyWorldChangeSet({
       changes: { ...empty, factionUpdates: [{ factionId: "f1", goals: "Найти пропавшего", resources: null, standing: null, certainty: null, reason: "Потеряли караван" }],
         npcKnowledgeAdditions: [{ npcId: "n1", factSummary: "Караван пропал", sourceId: "MANUAL_GM_ENTRY", acquisitionPath: "Услышал приказ глашатая", certainty: "KNOWN" }] },
-      currentLocationId: null, inGameDate: "День 2", turnNumber: 2,
+      currentLocationId: null, selectedLocationId: null, selectedLocationKey: null, inGameDate: "День 2", turnNumber: 2,
       locations: [], npcs: [npc], factions: [faction], now: "2026-11-25T01:00:00Z", makeId: (prefix) => prefix + "-test",
     });
     expect(result.factions[0]?.goals).toBe("Найти пропавшего");
