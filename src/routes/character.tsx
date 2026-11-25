@@ -88,6 +88,11 @@ function CharacterPage() {
     setHpMaxStr(character.hpMax !== null ? String(character.hpMax) : "");
     setHpTempStr(character.hpTemp !== null ? String(character.hpTemp) : "");
     setAcStr(character.armorClass !== null ? String(character.armorClass) : "");
+    setCoinCp(character.currency ? String(character.currency.cp) : "");
+    setCoinSp(character.currency ? String(character.currency.sp) : "");
+    setCoinEp(character.currency ? String(character.currency.ep) : "");
+    setCoinGp(character.currency ? String(character.currency.gp) : "");
+    setCoinPp(character.currency ? String(character.currency.pp) : "");
     setStatsCertainty(character.statsCertainty);
     setNotes(character.notes);
   }, [character]);
@@ -160,9 +165,19 @@ function CharacterPage() {
       );
       return;
     }
-    if (level !== null && (level < 1 || level > 20)) {
-      toast.error("Уровень персонажа в D&D 5e должен быть от 1 до 20.");
+    if (level !== null && (level < 1 || level > 20) && !(level === 21 && speciesAndClass.toLowerCase().includes("эпический уровень кампании"))) {
+      toast.error("Уровень 21 допустим только при явно указанном эпическом домашнем правиле кампании.");
       return;
+    }
+    const coinStrings = [coinCp, coinSp, coinEp, coinGp, coinPp];
+    let currency: PlayerCharacterState["currency"] = undefined;
+    if (coinStrings.some((value) => value.trim())) {
+      const parsed = coinStrings.map((value) => value.trim() ? Number(value) : Number.NaN);
+      if (parsed.some((value) => !Number.isInteger(value) || value < 0)) {
+        toast.error("Укажите все пять номиналов монет целыми неотрицательными числами; пустые поля означают UNKNOWN.");
+        return;
+      }
+      currency = { cp: parsed[0], sp: parsed[1], ep: parsed[2], gp: parsed[3], pp: parsed[4] };
     }
     const res = updatePlayerCharacter({
       name: name.trim(),
@@ -173,6 +188,7 @@ function CharacterPage() {
       hpMax,
       hpTemp,
       armorClass,
+      currency,
       statsCertainty,
       notes,
     });
@@ -351,6 +367,13 @@ function CharacterPage() {
               placeholder="UNKNOWN"
               className="touch-target mono-code"
             />
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Монеты (пусто = UNKNOWN; для фиксации денег заполни все номиналы)</Label>
+          <div className="grid grid-cols-5 gap-2">
+            {([["CP", coinCp, setCoinCp], ["SP", coinSp, setCoinSp], ["EP", coinEp, setCoinEp], ["GP", coinGp, setCoinGp], ["PP", coinPp, setCoinPp]] as const).map(([label, value, setter]) => <div key={label} className="space-y-1"><Label htmlFor={`coin-${label}`} className="text-[10px]">{label}</Label><Input id={`coin-${label}`} inputMode="numeric" value={value} onChange={(e) => setter(e.target.value)} placeholder="?" className="touch-target mono-code" /></div>)}
           </div>
         </div>
 
