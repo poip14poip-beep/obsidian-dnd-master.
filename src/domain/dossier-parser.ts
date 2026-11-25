@@ -70,7 +70,7 @@ export function extractDossierBasics(text: string): DossierBasics {
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
   const section = (startPrefix: string, endPrefix: string): string[] => {
-    const clean = (line: string) => line.replace(/^#{1,6}\\s*/, "").trim();
+    const clean = (line: string) => line.replace(/^#{1,6}\s*/, "").trim();
     const start = lines.findIndex((line) => clean(line).startsWith(startPrefix));
     if (start < 0) return [];
     const end = lines.findIndex((line, index) => index > start && clean(line).startsWith(endPrefix));
