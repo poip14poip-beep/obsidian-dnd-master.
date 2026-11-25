@@ -32,15 +32,39 @@ const turnSchema = {
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
   const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED");
-  const ranked = canon.flatMap((source) => source.content.split(/\n(?=#{1,6}\s)|\n\s*\n/)
-    .filter((part) => part.trim()).map((text, index) => ({ source: source.title, index, text,
-      score: terms.reduce((score, term) => score + (text.toLocaleLowerCase().includes(term) ? 1 : 0), 0) })))
-    .filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+  const ranked = canon.flatMap((source) => {
+    const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
+    const paragraphs: Array<{ text: string; startLine: number; endLine: number }> = [];
+    let current: string[] = [];
+    let startLine = 1;
+    const flush = (endLine: number) => {
+      const text = current.join("\n").trim();
+      if (text) paragraphs.push({ text, startLine, endLine });
+      current = [];
+    };
+    lines.forEach((line, index) => {
+      if (!line.trim()) {
+        flush(index);
+        startLine = index + 2;
+      } else {
+        if (current.length === 0) startLine = index + 1;
+        current.push(line);
+      }
+    });
+    flush(lines.length);
+    return paragraphs.map((paragraph) => ({
+      source, ...paragraph,
+      score: terms.reduce((score, term) => score + (paragraph.text.toLocaleLowerCase().includes(term) ? 1 : 0), 0),
+    }));
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
   const factText = facts.filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
     .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\n");
-  return [ranked.length ? ranked.map((item) => `[ИСТОЧНИК: ${item.source}; фрагмент ${item.index + 1}]\n${item.text}`).join("\n\n")
-    : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
-    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : ""].filter(Boolean).join("\n\n");
+  return [
+    ranked.length ? ranked.map((item) =>
+      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; строки ${item.startLine}–${item.endLine}]\n${item.text}`,
+    ).join("\n\n") : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
+    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : "",
+  ].filter(Boolean).join("\n\n");
 }
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
