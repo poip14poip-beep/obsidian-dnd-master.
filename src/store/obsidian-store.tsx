@@ -27,6 +27,7 @@ import {
 import type {
   AuditEntry,
   AuditLogState,
+  CharacterChangeSet,
   BackupEnvelope,
   CampaignSetupState,
   CanonFact,
@@ -1050,11 +1051,60 @@ export function ObsidianStoreProvider({
       };
 
       const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;
+      const characterChanges: CharacterChangeSet = activeDraft.characterChanges ?? {
+        inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+      };
+      let nextInventory = [...pc.inventory];
+      for (const change of characterChanges.inventory) {
+        const existingIndex = nextInventory.findIndex((item) => item.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+        if (change.action === "ADD") {
+          if (existingIndex >= 0) {
+            const existing = nextInventory[existingIndex]!;
+            nextInventory[existingIndex] = { ...existing, quantity: existing.quantity + change.quantity, notes: change.notes || existing.notes, certainty: change.certainty };
+          } else {
+            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty });
+          }
+        } else if (change.action === "REMOVE" && existingIndex >= 0) {
+          const existing = nextInventory[existingIndex]!;
+          const remaining = existing.quantity - change.quantity;
+          nextInventory = remaining > 0
+            ? nextInventory.map((item, index) => index === existingIndex ? { ...item, quantity: remaining } : item)
+            : nextInventory.filter((_, index) => index !== existingIndex);
+        } else if (change.action === "SET") {
+          if (change.quantity === 0) nextInventory = nextInventory.filter((_, index) => index !== existingIndex);
+          else if (existingIndex >= 0) nextInventory[existingIndex] = { ...nextInventory[existingIndex]!, quantity: change.quantity, notes: change.notes, certainty: change.certainty };
+          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty });
+        }
+      }
+      const nextResources = [...pc.resources];
+      for (const change of characterChanges.resources) {
+        const existingIndex = nextResources.findIndex((resource) => resource.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+        const updated = { name: change.name, current: change.current, max: change.max, recovery: change.recovery, certainty: change.certainty };
+        if (existingIndex >= 0) nextResources[existingIndex] = { ...nextResources[existingIndex]!, ...updated };
+        else nextResources.push({ id: makeId("res"), ...updated });
+      }
+      let nextConditions = [...pc.conditions];
+      for (const change of characterChanges.conditions) {
+        if (change.action === "ADD" && !nextConditions.includes(change.name)) nextConditions.push(change.name);
+        if (change.action === "REMOVE") nextConditions = nextConditions.filter((condition) => condition !== change.name);
+      }
+      const baseCurrency = pc.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+      const nextCurrency = {
+        cp: baseCurrency.cp + characterChanges.currencyDelta.cp,
+        sp: baseCurrency.sp + characterChanges.currencyDelta.sp,
+        ep: baseCurrency.ep + characterChanges.currencyDelta.ep,
+        gp: baseCurrency.gp + characterChanges.currencyDelta.gp,
+        pp: baseCurrency.pp + characterChanges.currencyDelta.pp,
+      };
       const nextCharacter: PlayerCharacterState = {
         ...pc,
         stateVersion: nextCharacterVersion,
         updatedAt: now,
         hpCurrent: nextHp,
+        inventory: nextInventory,
+        resources: nextResources,
+        conditions: nextConditions,
+        currency: nextCurrency,
         currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,
       };
 
@@ -1070,6 +1120,7 @@ export function ObsidianStoreProvider({
         playerIntent: activeDraft.playerIntent.trim(),
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
+        characterChanges,
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,

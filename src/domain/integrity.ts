@@ -131,6 +131,39 @@ export function validateTurnDraft(
     character.hpCurrent + draft.hpDelta > character.hpMax) {
     errors.push("Итоговые HP не могут превышать максимум персонажа.");
   }
+  const changes = draft.characterChanges;
+  if (changes) {
+    for (const change of changes.inventory) {
+      if (!change.name.trim() || !Number.isInteger(change.quantity) ||
+          (change.action === "SET" ? change.quantity < 0 : change.quantity < 1)) {
+        errors.push("Некорректное изменение инвентаря: проверьте название и количество.");
+        break;
+      }
+      if (change.action === "REMOVE") {
+        const existing = character.inventory.find((item) => item.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+        if (!existing || existing.quantity < change.quantity) {
+          errors.push(`Нельзя списать ${change.quantity} ед. «${change.name}»: в инвентаре недостаточное количество.`);
+          break;
+        }
+      }
+    }
+    for (const resource of changes.resources) {
+      if (!resource.name.trim() || (resource.current !== null && (!Number.isInteger(resource.current) || resource.current < 0)) ||
+          (resource.max !== null && (!Number.isInteger(resource.max) || resource.max < 0)) ||
+          (resource.current !== null && resource.max !== null && resource.current > resource.max)) {
+        errors.push(`Некорректное значение ресурса «${resource.name}».`);
+        break;
+      }
+    }
+    const currency = character.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    for (const coin of ["cp", "sp", "ep", "gp", "pp"] as const) {
+      const delta = changes.currencyDelta[coin];
+      if (!Number.isInteger(delta) || currency[coin] + delta < 0) {
+        errors.push(`Изменение валюты ${coin.toUpperCase()} приводит к отрицательному остатку.`);
+        break;
+      }
+    }
+  }
   if (draft.newFactTitle.trim() && !draft.newFactStatement.trim()) {
     errors.push("Для нового факта заполните формулировку утверждения.");
   }
