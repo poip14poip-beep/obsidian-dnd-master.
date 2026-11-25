@@ -298,6 +298,7 @@ function SettingsPage() {
                 disabled={s.confirmed}
                 className="touch-target"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Конкретная точка старта UNKNOWN; выбери её сам.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
