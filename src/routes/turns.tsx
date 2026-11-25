@@ -14,6 +14,7 @@ import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
+import { buildDiceContinuationAction } from "@/domain/dice-continuation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -135,8 +136,13 @@ function TurnsPage() {
     if (!gmTurn) return;
     const pending = gmTurn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (pending.length === 0 || pending.some((_, index) => !rollAnswers[index]?.trim())) return;
-    const outcomes = pending.map((roll, index) => `${roll.label} (${roll.formula}): ${rollAnswers[index].trim()}`).join("\\n");
-    const continuedAction = `${playerAction.trim()}\\n\\nРезультаты бросков, которые игрок выполнил самостоятельно:\\n${outcomes}\\nИспользуй результаты точно как предоставлены. Не перебрасывай и не заменяй их.`;
+    let continuedAction: string;
+    try {
+      continuedAction = buildDiceContinuationAction(playerAction, pending, rollAnswers);
+    } catch (error) {
+      setGmError(error instanceof Error ? error.message : "Не удалось передать результаты бросков.");
+      return;
+    }
     setPlayerAction(continuedAction);
     setRollAnswers({});
     void handleResolveAction(continuedAction);
