@@ -102,7 +102,7 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
   const record = payload as Record<string, unknown>;
-  if (typeof record.output_text === "string") return record.output_text;
+  if (typeof record["output_text"] === "string") return record["output"]_text;
   for (const item of Array.isArray(record.output) ? record.output : []) {
     if (!item || typeof item !== "object") continue;
     const content = (item as Record<string, unknown>).content;
@@ -117,11 +117,11 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
-  if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn.timeDeltaMinutes) ||
-    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || (turn.newLocationId !== null && typeof turn.newLocationId !== "string") || typeof turn.needsClarification !== "boolean" ||
-    !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
+  if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn["timeDeltaMinutes"]) ||
+    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn["hpDelta"]) || (turn["newLocationId"] !== null && typeof turn.newLocationId !== "string") || typeof turn["needsClarification"] !== "boolean" ||
+    !Array.isArray(turn["rolls"]) || !Array.isArray(turn["stateNotes"]))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
-  if (!Array.isArray(turn.npcChanges)) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
+  if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
   for (const npc of turn.npcChanges as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc.action)) || typeof npc.name !== "string" || !npc.name.trim() ||
         typeof npc.role !== "string" || typeof npc.goals !== "string" || typeof npc.attitudeToPlayer !== "string" ||
@@ -142,7 +142,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
   if (typeof turn.newLocationId === "string" && !knownLocations.some((location) => location.id === turn.newLocationId)) {
     throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");
   }
-  const changes = turn.characterChanges as Record<string, unknown> | undefined;
+  const changes = turn["characterChanges"] as Record<string, unknown> | undefined;
   if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
       !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
     throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
@@ -243,6 +243,6 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   try { parsed = JSON.parse(extractOutputText(payload)); }
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
-  const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
-  return { turn: validateTurn(parsed, context.locations), model, usage };
+  const usage = record["usage"] && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
+  return { turn: validateTurn(parsed, context.locations), model, ...(usage ? { usage } : {}) };
 }

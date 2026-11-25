@@ -67,6 +67,11 @@ function CharacterPage() {
   const [acStr, setAcStr] = useState(
     character.armorClass !== null ? String(character.armorClass) : "",
   );
+  const [coinCp, setCoinCp] = useState(character.currency ? String(character.currency.cp) : "");
+  const [coinSp, setCoinSp] = useState(character.currency ? String(character.currency.sp) : "");
+  const [coinEp, setCoinEp] = useState(character.currency ? String(character.currency.ep) : "");
+  const [coinGp, setCoinGp] = useState(character.currency ? String(character.currency.gp) : "");
+  const [coinPp, setCoinPp] = useState(character.currency ? String(character.currency.pp) : "");
   const [statsCertainty, setStatsCertainty] = useState<CertaintyStatus>(character.statsCertainty);
   const [notes, setNotes] = useState(character.notes);
   const [dossierImportSummary, setDossierImportSummary] = useState<string[]>([]);
@@ -188,7 +193,7 @@ function CharacterPage() {
         toast.error("Укажите все пять номиналов монет целыми неотрицательными числами; пустые поля означают UNKNOWN.");
         return;
       }
-      currency = { cp: parsed[0], sp: parsed[1], ep: parsed[2], gp: parsed[3], pp: parsed[4] };
+      currency = { cp: parsed[0]!, sp: parsed[1]!, ep: parsed[2]!, gp: parsed[3]!, pp: parsed[4]! };
     }
     const res = updatePlayerCharacter({
       name: name.trim(),
@@ -201,7 +206,7 @@ function CharacterPage() {
       hpMax,
       hpTemp,
       armorClass,
-      currency,
+      ...(currency ? { currency } : {}),
       statsCertainty,
       notes,
     });

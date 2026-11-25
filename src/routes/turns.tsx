@@ -260,7 +260,7 @@ function TurnsPage() {
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
           <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
-        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={handleResolveAction}>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={() => void handleResolveAction()}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
         {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}

@@ -1154,7 +1154,7 @@ export function ObsidianStoreProvider({
         inventory: nextInventory,
         resources: nextResources,
         conditions: nextConditions,
-        currency: pc.currency || Object.values(characterChanges.currencyDelta).some((delta) => delta !== 0) ? nextCurrency : undefined,
+        ...(pc.currency || Object.values(characterChanges.currencyDelta).some((delta) => delta !== 0) ? { currency: nextCurrency } : {}),
         currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,
       };
 
