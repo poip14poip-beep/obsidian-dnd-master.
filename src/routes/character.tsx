@@ -490,6 +490,10 @@ function CharacterPage() {
             placeholder="Кол-во"
             className="touch-target mono-code"
           />
+          <Input inputMode="decimal" value={invWeight} onChange={(e) => setInvWeight(e.target.value)} placeholder="Вес / ед. lb" className="touch-target mono-code" />
+          <select value={invLocation} onChange={(e) => setInvLocation(e.target.value as typeof invLocation)} className="touch-target rounded-md border border-input bg-background px-3 text-sm text-foreground">
+            <option value="CARRIED">При себе</option><option value="WORN">Надето</option><option value="STORED">Хранится отдельно</option><option value="DROPPED">Оставлено</option>
+          </select>
           <Button type="submit" variant="secondary" className="touch-target">
             <Plus className="mr-1 h-4 w-4" />
             Добавить
