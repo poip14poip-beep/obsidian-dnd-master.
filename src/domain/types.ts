@@ -161,6 +161,7 @@ export interface WorldState {
   startInGameDate: string;
   currentInGameDate: string;
   elapsedMinutes: number;
+  encumbranceMode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT";
   startLocationName: string;
   currentLocationId: string | null;
   setup: CampaignSetupState;

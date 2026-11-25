@@ -74,6 +74,7 @@ export function createInitialWorldState(): WorldState {
     startInGameDate: "UNKNOWN",
     currentInGameDate: "UNKNOWN",
     elapsedMinutes: 0,
+    encumbranceMode: "UNSET",
     startLocationName: "UNKNOWN",
     currentLocationId: null,
     setup: {

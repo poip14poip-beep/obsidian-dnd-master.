@@ -163,6 +163,7 @@ export interface ObsidianStoreValue {
     calendarSystem?: string;
     startInGameDate?: string;
     startLocationName?: string;
+    encumbranceMode?: WorldState["encumbranceMode"];
     setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
   }) => PersistVerifyResult;
   confirmCampaignSetup: () => PersistVerifyResult;
@@ -792,6 +793,7 @@ export function ObsidianStoreProvider({
             ? patch.startInGameDate
             : ws.currentInGameDate,
         startLocationName: patch.startLocationName ?? ws.startLocationName,
+        encumbranceMode: patch.encumbranceMode ?? ws.encumbranceMode,
         setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
       };
       return commitCollections({ ...collections, world_state: nextWorld });
@@ -827,6 +829,7 @@ export function ObsidianStoreProvider({
       };
     }
     if (
+      ws.encumbranceMode === "UNSET" ||
       !ws.campaignName.trim() ||
       ws.startInGameDate.trim() === "" ||
       ws.startInGameDate === "UNKNOWN" ||
@@ -836,7 +839,7 @@ export function ObsidianStoreProvider({
       return {
         ok: false,
         error:
-          "Укажите название кампании, явную стартовую дату и стартовую точку (не UNKNOWN) перед подтверждением старта.",
+          "Укажите название кампании, дату, стартовую точку и режим учёта нагрузки перед подтверждением старта.",
         report: lastIntegrityReport,
       };
     }
