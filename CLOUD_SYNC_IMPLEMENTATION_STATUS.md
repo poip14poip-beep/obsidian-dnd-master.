@@ -102,3 +102,11 @@ Updated: 2026-11-25 12:16 UTC
 - The current GM still requires a user-supplied OpenAI API key in the browser. No server-side OpenAI proxy/secret has been configured; this is a runtime prerequisite and potential cost to the user.
 - The app remains NOT READY for play until the full source import, character review, setup gate, actual AI action/roll/commit cycle, durable save/restore, Android acceptance, and a working access URL have all been verified.
 - First CI attempt exposed one stale regression expectation in `src/test/auth-guard.test.tsx`; it was corrected to require explicit guest consent. The corrective code commit `549ceee9bb07023d1c57851cbbd5783e7253b786` passed run `45613859962` with tests, typecheck, and build green.
+
+## Progress update — source gate hardening
+
+- Campaign setup now requires all three distinct source partitions to be attached, processed, manually verified, and explicitly enabled for AI context: ОБСИДИАН 4.1, WORLD_CANON (Хроника Экдрасиля), and PLAYER_DOSSIER (Лия). This matches the GM runtime gate; setup can no longer be marked ready with a merely uploaded or unreviewed file.
+- Added a positive setup test for the fully verified three-source path and a negative test proving an unreviewed player dossier blocks campaign start.
+- Verified code commit `e2092385f43b330a92ac209a60f86a6941bf048a` passed GitHub Actions run `45614238643`: 18 test files / 73 tests passed, TypeScript passed, production build passed.
+- The prior CI failure on commit `0cc3933acba187bf5d266246aafb36a93c7b2679` was caused by the old store test fixture not satisfying the newly tightened source gate; the fixture was updated to model reviewed/processed/enabled sources. The corrected test suite is green.
+- The current reference only establishes the campaign year as 2000 (from Liya's dossier); the exact day/time and Liya's starting location are not established. The Chronicle does not name Liya or place her at a specific location. These must remain APPROXIMATE/UNKNOWN until the player selects a start point; do not silently invent one.
