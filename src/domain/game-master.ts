@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldChangeSet, WorldState } from "./types";
 
 export interface GameMasterContext {
   action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -15,6 +15,7 @@ export interface GameMasterTurn {
     conditions: Array<{ action: "ADD" | "REMOVE"; name: string }>;
     currencyDelta: { cp: number; sp: number; ep: number; gp: number; pp: number };
   };
+  worldChanges: WorldChangeSet;
   needsClarification: boolean; clarificationQuestion: string; stateNotes: string[];
 }
 export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
@@ -46,10 +47,46 @@ const turnSchema = {
         cp: { type: "integer" }, sp: { type: "integer" }, ep: { type: "integer" }, gp: { type: "integer" }, pp: { type: "integer" },
       }, required: ["cp", "sp", "ep", "gp", "pp"] },
     }, required: ["inventory", "resources", "conditions", "currencyDelta"] },
+    worldChanges: { type: "object", additionalProperties: false, properties: {
+      facts: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        title: { type: "string" }, statement: { type: "string" }, rationale: { type: "string" },
+        layer: { type: "string", enum: ["OBJECTIVE_TRUTH", "PLAYER_KNOWLEDGE", "OUT_OF_GAME"] },
+        subjectNpcId: { type: ["string", "null"] }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+        scope: { type: "string", enum: ["GLOBAL", "REGION", "LOCATION", "FACTION", "PERSONAL"] },
+      }, required: ["title", "statement", "rationale", "layer", "subjectNpcId", "certainty", "scope"] } },
+      npcUpdates: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        npcId: { type: "string" }, role: { type: ["string", "null"] }, locationId: { type: ["string", "null"] },
+        factionId: { type: ["string", "null"] }, goals: { type: ["string", "null"] }, attitudeToPlayer: { type: ["string", "null"] },
+        certainty: { type: ["string", "null"], enum: ["KNOWN", "APPROXIMATE", "UNKNOWN", null] }, reason: { type: "string" },
+      }, required: ["npcId", "role", "locationId", "factionId", "goals", "attitudeToPlayer", "certainty", "reason"] } },
+      npcKnowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        npcId: { type: "string" }, factSummary: { type: "string" }, sourceId: { type: "string" },
+        acquisitionPath: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["npcId", "factSummary", "sourceId", "acquisitionPath", "certainty"] } },
+      newNpcs: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        tempId: { type: "string" }, name: { type: "string" }, role: { type: "string" },
+        locationId: { type: ["string", "null"] }, factionId: { type: ["string", "null"] },
+        goals: { type: "string" }, attitudeToPlayer: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["tempId", "name", "role", "locationId", "factionId", "goals", "attitudeToPlayer", "certainty"] } },
+      factionUpdates: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        factionId: { type: "string" }, goals: { type: ["string", "null"] }, resources: { type: ["string", "null"] },
+        standing: { type: ["string", "null"] }, certainty: { type: ["string", "null"], enum: ["KNOWN", "APPROXIMATE", "UNKNOWN", null] },
+        reason: { type: "string" },
+      }, required: ["factionId", "goals", "resources", "standing", "certainty", "reason"] } },
+      newFactions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        tempId: { type: "string" }, name: { type: "string" }, goals: { type: "string" },
+        resources: { type: "string" }, standing: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["tempId", "name", "goals", "resources", "standing", "certainty"] } },
+      delayedEvents: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        title: { type: "string" }, triggerInGameDate: { type: "string" }, consequence: { type: "string" },
+        status: { type: "string", enum: ["SCHEDULED", "TRIGGERED", "RESOLVED"] },
+        certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["title", "triggerInGameDate", "consequence", "status", "certainty"] } },
+    }, required: ["facts", "npcUpdates", "npcKnowledgeAdditions", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"] },
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "worldChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -148,6 +185,64 @@ function validateTurn(value: unknown): GameMasterTurn {
       throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
     }
   }
+  const world = turn.worldChanges as Record<string, unknown> | undefined;
+  const worldKeys = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
+  if (!world || worldKeys.some((key) => !Array.isArray(world[key]))) {
+    throw new GameMasterError("Модель не вернула полный блок изменений мира.", "INVALID_WORLD_CHANGES");
+  }
+  const changesById = (key: string) => world[key] as Array<Record<string, unknown>>;
+  for (const fact of changesById("facts")) {
+    if (typeof fact.title !== "string" || !fact.title.trim() || typeof fact.statement !== "string" || !fact.statement.trim() ||
+        typeof fact.rationale !== "string" || !["OBJECTIVE_TRUTH", "PLAYER_KNOWLEDGE", "OUT_OF_GAME"].includes(String(fact.layer)) ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(fact.certainty)) ||
+        !["GLOBAL", "REGION", "LOCATION", "FACTION", "PERSONAL"].includes(String(fact.scope))) {
+      throw new GameMasterError("Некорректный факт в изменениях мира.", "INVALID_WORLD_FACT");
+    }
+  }
+  for (const update of changesById("npcUpdates")) {
+    if (typeof update.npcId !== "string" || !update.npcId.trim() || typeof update.reason !== "string" || !update.reason.trim()) {
+      throw new GameMasterError("Обновление NPC должно указывать ID и причину.", "INVALID_NPC_UPDATE");
+    }
+  }
+  for (const knowledge of changesById("npcKnowledgeAdditions")) {
+    if (typeof knowledge.npcId !== "string" || typeof knowledge.factSummary !== "string" || !knowledge.factSummary.trim() ||
+        typeof knowledge.sourceId !== "string" || typeof knowledge.acquisitionPath !== "string" || !knowledge.acquisitionPath.trim() ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge.certainty))) {
+      throw new GameMasterError("Запись знаний NPC должна иметь источник и путь получения.", "INVALID_NPC_KNOWLEDGE");
+    }
+  }
+  const newNpcIds = new Set<string>();
+  for (const npc of changesById("newNpcs")) {
+    if (typeof npc.tempId !== "string" || !npc.tempId.trim() || newNpcIds.has(npc.tempId) ||
+        typeof npc.name !== "string" || !npc.name.trim() || typeof npc.role !== "string" ||
+        typeof npc.goals !== "string" || typeof npc.attitudeToPlayer !== "string" ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc.certainty))) {
+      throw new GameMasterError("Некорректная новая запись NPC.", "INVALID_NEW_NPC");
+    }
+    newNpcIds.add(npc.tempId);
+  }
+  for (const update of changesById("factionUpdates")) {
+    if (typeof update.factionId !== "string" || !update.factionId.trim() || typeof update.reason !== "string" || !update.reason.trim()) {
+      throw new GameMasterError("Обновление фракции должно указывать ID и причину.", "INVALID_FACTION_UPDATE");
+    }
+  }
+  const newFactionIds = new Set<string>();
+  for (const faction of changesById("newFactions")) {
+    if (typeof faction.tempId !== "string" || !faction.tempId.trim() || newFactionIds.has(faction.tempId) ||
+        typeof faction.name !== "string" || !faction.name.trim() || typeof faction.goals !== "string" ||
+        typeof faction.resources !== "string" || typeof faction.standing !== "string" ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(faction.certainty))) {
+      throw new GameMasterError("Некорректная новая запись фракции.", "INVALID_NEW_FACTION");
+    }
+    newFactionIds.add(faction.tempId);
+  }
+  for (const event of changesById("delayedEvents")) {
+    if (typeof event.title !== "string" || !event.title.trim() || typeof event.triggerInGameDate !== "string" ||
+        typeof event.consequence !== "string" || !["SCHEDULED", "TRIGGERED", "RESOLVED"].includes(String(event.status)) ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(event.certainty))) {
+      throw new GameMasterError("Некорректное отложенное событие.", "INVALID_DELAYED_EVENT");
+    }
+  }
   const hasPendingRoll = (turn.rolls as Array<Record<string, unknown>>).length > 0;
   if ((turn.needsClarification || hasPendingRoll) && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0 ||
       (changes.inventory as unknown[]).length > 0 || (changes.resources as unknown[]).length > 0 ||
@@ -186,6 +281,10 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
+      "worldChanges хранит только доказуемые последствия текущего действия: обновляй NPC и их знания только при конкретном канале получения информации; добавляй факты с корректным эпистемическим слоем и не выдавай гипотезы за объективную истину; ресурсы/цели фракций меняй только при установленной причине; delayedEvents создавай только при реальном отложенном обязательстве/триггере. Пустые коллекции обязательны, когда изменений нет.",
+      "Не обновляй NPC, фракции или их знания только потому, что игрок о них подумал или спросил. NPCKnowledgeAddition требует конкретного пути: свидетель, услышанная речь, документ, приказ, отчёт или иной достоверный канал.",
+      "Новый NPC/фракция создаются только если персонаж действительно установил контакт/идентичность; неизвестное имя остаётся UNKNOWN, не придумывай имена для безымянных людей.");
+
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };
