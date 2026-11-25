@@ -103,7 +103,32 @@ function SettingsPage() {
     }
   }
 
-  function downloadMarkdownFile(fileName: string, content: string) {\n    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement("a");\n    a.href = url;\n    a.download = fileName;\n    a.click();\n    URL.revokeObjectURL(url);\n  }\n\n  function handleExportCampaignState() {\n    downloadMarkdownFile("CAMPAIGN_STATE.md", buildCampaignStateMarkdown(collections));\n    toast.success("CAMPAIGN_STATE.md сформирован; лист персонажа в него не включён.");\n  }\n\n  function handleExportCharacterState() {\n    downloadMarkdownFile("PLAYER_CHARACTER_STATE.md", buildPlayerCharacterStateMarkdown(collections));\n    toast.success("PLAYER_CHARACTER_STATE.md сформирован отдельно.");\n  }\n\n  function handleExportSessionLog() {\n    downloadMarkdownFile("SESSION_LOG.md", buildSessionLogMarkdown(collections));\n    toast.success("SESSION_LOG.md сформирован.");\n  }\n\n  function handleExportBackup() {
+  function downloadMarkdownFile(fileName: string, content: string) {
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleExportCampaignState() {
+    downloadMarkdownFile("CAMPAIGN_STATE.md", buildCampaignStateMarkdown(collections));
+    toast.success("CAMPAIGN_STATE.md сформирован; лист персонажа в него не включён.");
+  }
+
+  function handleExportCharacterState() {
+    downloadMarkdownFile("PLAYER_CHARACTER_STATE.md", buildPlayerCharacterStateMarkdown(collections));
+    toast.success("PLAYER_CHARACTER_STATE.md сформирован отдельно.");
+  }
+
+  function handleExportSessionLog() {
+    downloadMarkdownFile("SESSION_LOG.md", buildSessionLogMarkdown(collections));
+    toast.success("SESSION_LOG.md сформирован.");
+  }
+
+  function handleExportBackup() {
     const envelope = exportBackupJson();
     const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
