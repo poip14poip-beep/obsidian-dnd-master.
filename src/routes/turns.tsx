@@ -51,6 +51,7 @@ function TurnsPage() {
     npcs,
     factions,
     locations,
+    timelineEvents,
     sessionLog,
     turnDraft,
     lastStorageError,
@@ -98,6 +99,7 @@ function TurnsPage() {
         npcs,
         factions,
         locations,
+        timelineEvents,
         journal: sessionLog.entries,
       }, { model: gmModel });
       setGmTurn(result.turn);
