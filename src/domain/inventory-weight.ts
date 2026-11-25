@@ -33,7 +33,7 @@ export function calculatePlayerInventoryWeight(character: PlayerCharacterState):
   const totalKnownLoadLb = knownCarriedWeightLb + (currencyWeightLb ?? 0);
   const strength = character.abilityScores?.strength;
   const carryingCapacityLb = typeof strength === "number" ? strength * 15 : null;
-  const overCapacity = carryingCapacityLb === null || unknownCarriedItems.length > 0
+  const overCapacity = carryingCapacityLb === null || currencyWeightLb === null || unknownCarriedItems.length > 0
     ? null : totalKnownLoadLb > carryingCapacityLb;
   return { knownCarriedWeightLb, unknownCarriedItems, storedWeightLb, droppedWeightLb,
     currencyWeightLb, totalKnownLoadLb, carryingCapacityLb, overCapacity };

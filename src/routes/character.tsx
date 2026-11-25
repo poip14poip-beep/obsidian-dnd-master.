@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import type { CertaintyStatus } from "@/domain/types";
+import type { CertaintyStatus, PlayerCharacterState } from "@/domain/types";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { calculatePlayerInventoryWeight } from "@/domain/inventory-weight";
 import { useObsidianStore } from "@/store/obsidian-store";
