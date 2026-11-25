@@ -1342,6 +1342,8 @@ export function ObsidianStoreProvider({
       updateCharacterResource,
       addInventoryItem,
       removeInventoryItem,
+      updateInventoryItem,
+      updateInventoryItem,
       updateCampaignParameters,
       confirmCampaignSetup,
       updateTurnDraft,
