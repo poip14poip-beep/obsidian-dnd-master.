@@ -14,10 +14,13 @@ describe("obsidian-api client input guards", () => {
     if (!result.ok) expect(result.error.code).toBe("INVALID_TITLE");
   });
 
-  it("rejects an empty campaign id before bootstrap", async () => {
-    const result = await loadCloudCampaign(" ");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.code).toBe("INVALID_CAMPAIGN_ID");
+  it("rejects empty or malformed campaign IDs before bootstrap", async () => {
+    const empty = await loadCloudCampaign(" ");
+    const malformed = await loadCloudCampaign("campaign-id");
+    expect(empty.ok).toBe(false);
+    expect(malformed.ok).toBe(false);
+    if (!empty.ok) expect(empty.error.code).toBe("INVALID_CAMPAIGN_ID");
+    if (!malformed.ok) expect(malformed.error.code).toBe("INVALID_CAMPAIGN_ID");
   });
 
   it("rejects drafts without a campaign id or required text", async () => {
@@ -28,7 +31,7 @@ describe("obsidian-api client input guards", () => {
     expect(noCampaign.ok).toBe(false);
     if (!noCampaign.ok) expect(noCampaign.error.code).toBe("INVALID_CAMPAIGN_ID");
 
-    const incomplete = await saveCloudTurnDraft("campaign-id", {
+    const incomplete = await saveCloudTurnDraft("123e4567-e89b-42d3-a456-426614174000", {
       player_action: " ",
       gm_resolution: "Разрешение",
     });
