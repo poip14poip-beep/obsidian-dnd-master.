@@ -53,7 +53,7 @@ jobs:
           git add -A
           git commit -m "Static app build from ${SOURCE_SHA}"
           git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:static-site
-      - name: Smoke test public app endpoint
+      - name: Smoke test public app endpoint and MIME types
         env:
           APP_URL: "https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app"
         run: |
@@ -70,6 +70,9 @@ jobs:
             sleep 5
           done
           grep -q "Obsidian Control" /tmp/obsidian-smoke/index.html
+          CONTENT_TYPE="$(curl --silent --show-error --head "$APP_URL/" | tr -d '\r' | grep -i '^content-type:' | head -n 1)"
+          echo "Root response: $CONTENT_TYPE"
+          echo "$CONTENT_TYPE" | grep -qi 'text/html'
           CSS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.css' /tmp/obsidian-smoke/index.html | head -n 1)"
           JS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.js' /tmp/obsidian-smoke/index.html | head -n 1)"
           test -n "$CSS_PATH"
@@ -80,4 +83,4 @@ jobs:
           test -s /tmp/obsidian-smoke/app.js
           curl --fail --silent --show-error "$APP_URL/auth" -o /tmp/obsidian-smoke/auth.html
           grep -q "Obsidian Control" /tmp/obsidian-smoke/auth.html
-          echo "Static app, CSS, JS, and SPA auth route are reachable."
+          echo "Static app, CSS, JS, SPA auth route, and HTML MIME type are reachable."
