@@ -68,7 +68,6 @@ export function extractDossierBasics(text: string): DossierBasics {
   for (const resource of resourcePatterns) {
     const match = text.match(resource.pattern);
     const count = /^\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
-    const count = /^\\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
     if (count !== undefined) resources.push({ name: resource.name, current: null, max: count, recovery: resource.recovery, certainty: "KNOWN" });
   }
   const evidence = [
