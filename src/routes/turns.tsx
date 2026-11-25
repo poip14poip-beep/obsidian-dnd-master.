@@ -174,6 +174,9 @@ function TurnsPage() {
     const res = commitTurnDraft(explicitConfirm);
     if (res.ok) {
       setExplicitConfirm(false);
+      setPlayerAction("");
+      setGmTurn(null);
+      setClarificationAnswer("");
       const msg = `Ход №${nextTurnNumber} зафиксирован в session_log; read-back сравнение payload и контрольных сумм пройдено.`;
       setCommitSuccessMsg(msg);
       toast.success(msg);
