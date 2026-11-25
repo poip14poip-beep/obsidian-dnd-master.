@@ -1,9 +1,17 @@
+export interface DossierInventoryItem {
+  name: string; quantity: number; notes: string; location: "WORN" | "CARRIED"; certainty: "KNOWN" | "APPROXIMATE";
+}
 export interface DossierBasics {
   name: string | null;
   speciesAndClass: string | null;
   level: number | null;
   hitPointMaximum: number | null;
   armorClass: number | null;
+  abilityScores: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number } | null;
+  proficiencyBonus: number | null;
+  speedFeet: number | null;
+  hitDice: string | null;
+  inventory: DossierInventoryItem[];
   evidence: string[];
 }
 /** Extracts only explicit summary values; current HP, inventory and origin are never inferred. */
@@ -18,13 +26,46 @@ export function extractDossierBasics(text: string): DossierBasics {
   const level = levelMatch ? Number(levelMatch[1]) : null;
   const hpMatch = text.match(/(?:^|[\s·])([1-9]\d{1,2})\s*HP\b/i);
   const acMatch = text.match(/КБ\s*(\d{1,2})/i);
+  const abilityRow = text.match(/Сила\s*\|\s*Ловкость\s*\|\s*Телосложение\s*\|\s*Интеллект\s*\|\s*Мудрость\s*\|\s*Харизма[\s\S]{0,180}?(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)/i);
+  const abilityScores = abilityRow ? {
+    strength: Number(abilityRow[1]), dexterity: Number(abilityRow[2]), constitution: Number(abilityRow[3]),
+    intelligence: Number(abilityRow[4]), wisdom: Number(abilityRow[5]), charisma: Number(abilityRow[6]),
+  } : null;
+  const proficiencyMatch = text.match(/Бонус мастерства\s*\|\s*\+?(\d+)/i);
+  const speedMatch = text.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
+  const hitDiceMatch = text.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
+  const inventory: DossierInventoryItem[] = [];
+  let inventoryLocation: "WORN" | "CARRIED" | null = null;
+  for (const line of lines) {
+    const heading = line.replace(/^#{1,6}\s*/, "");
+    if (/^11\.1\./.test(heading)) inventoryLocation = "WORN";
+    else if (/^11\.[2-5]\./.test(heading)) inventoryLocation = "CARRIED";
+    else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
+    if (!inventoryLocation || !line.includes("|")) continue;
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]) || /^(?:предмет|оружие)$/i.test(cells[1])) continue;
+    const quantityText = cells[0];
+    const quantityMatch = quantityText.match(/^(\d+)/);
+    if (!quantityMatch) continue;
+    const quantity = Number(quantityMatch[1]);
+    if (!Number.isInteger(quantity) || quantity < 1) continue;
+    const name = cells[1].replace(/^["«]|["»]$/g, "").trim();
+    if (!name) continue;
+    const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
+    const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
+    inventory.push({ name, quantity, notes, location: inventoryLocation,
+      certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
+  }
   const evidence = [
     name ? `Имя: ${name}` : "",
     speciesAndClass ? `Вид/класс: ${speciesAndClass}` : "",
     level !== null ? `Уровень: ${level}` : "",
     hpMatch ? `HP: ${hpMatch[0].trim()}` : "",
     acMatch ? `КБ: ${acMatch[0]}` : "",
+    abilityScores ? "Характеристики: STR " + abilityScores.strength + ", DEX " + abilityScores.dexterity + ", CON " + abilityScores.constitution + ", INT " + abilityScores.intelligence + ", WIS " + abilityScores.wisdom + ", CHA " + abilityScores.charisma : "",
+    inventory.length ? `Предметов импортировано: ${inventory.length}` : "",
   ].filter(Boolean);
   return { name, speciesAndClass, level, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
-    armorClass: acMatch ? Number(acMatch[1]) : null, evidence };
+    armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
+    speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null, inventory, evidence };
 }

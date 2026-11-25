@@ -202,6 +202,10 @@ export interface PlayerCharacterState {
   hpMax: number | null;
   hpTemp: number | null;
   armorClass: number | null;
+  abilityScores?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
+  proficiencyBonus?: number | null;
+  speedFeet?: number | null;
+  hitDice?: string;
   statsCertainty: CertaintyStatus;
   currentLocationLabel: string;
   conditions: string[];
