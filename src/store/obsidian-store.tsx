@@ -877,6 +877,21 @@ export function ObsidianStoreProvider({
           "Заполните имя персонажа в отдельном листе игрока (раздел «Персонаж», не UNKNOWN) перед стартом кампании.",
         report: lastIntegrityReport,
       };
+    }    const missingCombatFields = [
+      pc.hpCurrent === null ? "текущие HP" : "",
+      pc.hpMax === null ? "максимальные HP" : "",
+      pc.armorClass === null ? "КД" : "",
+      pc.level === null ? "уровень" : "",
+      pc.proficiencyBonus === null || pc.proficiencyBonus === undefined ? "бонус мастерства" : "",
+      !pc.abilityScores ? "шесть характеристик" : "",
+    ].filter(Boolean);
+    if (missingCombatFields.length) {
+      return { ok: false, error: "Лист персонажа не готов к механическому разрешению действий: не заполнено — " +
+        missingCombatFields.join(", ") + ". Досье не содержит текущие HP; введи фактическое значение вручную, не подставляй максимум автоматически.",
+        report: lastIntegrityReport };
+    }
+    if (pc.hpCurrent! > pc.hpMax!) {
+      return { ok: false, error: "Текущие HP не могут превышать максимум HP.", report: lastIntegrityReport };
     }
     const now = new Date().toISOString();
     const startLocId = collections.locations.find(

@@ -331,9 +331,10 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             Персонаж: <strong className="text-foreground">{character.name}</strong> · Класс/вид:{" "}
             {character.speciesAndClass} · Статус параметров: {character.statsCertainty}. Контур
-            player_character_state изолирован от world_state. Перед стартом имя должно быть
-            заполнено (не UNKNOWN).
+            player_character_state изолирован от world_state. Перед стартом имя и базовые боевые параметры должны быть заполнены. Текущие HP досье не задаёт: их нужно указать вручную.
           </p>
+          {character.hpCurrent === null && <p className="rounded border border-status-approx/40 bg-background/60 p-2 text-xs text-status-approx">Текущие HP: UNKNOWN. В досье указано только 184 максимальных HP. Введи текущее значение на странице персонажа перед стартом.</p>}
+          <p className="text-[11px] text-muted-foreground">Готовность: HP {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"} · КД {character.armorClass ?? "UNKNOWN"} · PB {character.proficiencyBonus ?? "UNKNOWN"} · характеристики {character.abilityScores ? "есть" : "UNKNOWN"}.</p>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
             <Checkbox
               checked={s.characterConfirmed}

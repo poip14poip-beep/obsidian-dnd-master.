@@ -30,6 +30,12 @@ describe("campaign setup confirmation", () => {
     };
     initial.player_character_state.name = "Лия Вейн";
     initial.player_character_state.nameCertainty = "KNOWN";
+    initial.player_character_state.hpCurrent = 184;
+    initial.player_character_state.hpMax = 184;
+    initial.player_character_state.armorClass = 20;
+    initial.player_character_state.level = 21;
+    initial.player_character_state.proficiencyBonus = 6;
+    initial.player_character_state.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
     expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
 
     const wrapper = ({ children }: { children: React.ReactNode }) => (
