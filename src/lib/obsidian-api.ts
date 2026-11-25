@@ -45,6 +45,12 @@ export interface ObsidianCommitResult {
   [key: string]: unknown;
 }
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string): boolean {
+  return UUID_PATTERN.test(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -156,23 +162,23 @@ export async function createCloudCampaign(
 export async function loadCloudCampaign(
   campaignId: string,
 ): Promise<ObsidianApiResult<{ snapshot: Record<string, unknown> }>> {
-  if (!campaignId.trim()) {
+  if (!isUuid(campaignId.trim())) {
     return {
       ok: false,
-      error: { code: "INVALID_CAMPAIGN_ID", message: "Не указан идентификатор кампании." },
+      error: { code: "INVALID_CAMPAIGN_ID", message: "Укажи корректный UUID облачной кампании." },
     };
   }
-  return callObsidianApi({ action: "bootstrap", campaign_id: campaignId });
+  return callObsidianApi({ action: "bootstrap", campaign_id: campaignId.trim() });
 }
 
 export async function saveCloudTurnDraft(
   campaignId: string,
   draft: ObsidianTurnDraftPayload,
 ): Promise<ObsidianApiResult<{ draft: ObsidianSavedDraft }>> {
-  if (!campaignId.trim()) {
+  if (!isUuid(campaignId.trim())) {
     return {
       ok: false,
-      error: { code: "INVALID_CAMPAIGN_ID", message: "Не указан идентификатор кампании." },
+      error: { code: "INVALID_CAMPAIGN_ID", message: "Укажи корректный UUID облачной кампании." },
     };
   }
   if (!draft.player_action.trim() || !draft.gm_resolution.trim()) {
@@ -190,11 +196,11 @@ export async function saveCloudTurnDraft(
 export async function commitCloudTurn(
   draftId: string,
 ): Promise<ObsidianApiResult<{ result: ObsidianCommitResult }>> {
-  if (!draftId.trim()) {
+  if (!isUuid(draftId.trim())) {
     return {
       ok: false,
-      error: { code: "INVALID_DRAFT_ID", message: "Не указан идентификатор черновика." },
+      error: { code: "INVALID_DRAFT_ID", message: "Укажи корректный UUID черновика." },
     };
   }
-  return callObsidianApi({ action: "commit_turn", draft_id: draftId });
+  return callObsidianApi({ action: "commit_turn", draft_id: draftId.trim() });
 }
