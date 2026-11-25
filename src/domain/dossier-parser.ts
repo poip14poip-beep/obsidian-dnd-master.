@@ -1,6 +1,6 @@
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
-  name: string; quantity: number; notes: string; location: "WORN" | "CARRIED"; certainty: "KNOWN" | "APPROXIMATE";
+  name: string; quantity: number; notes: string; location: "WORN" | "OTHER"; certainty: "KNOWN" | "APPROXIMATE";
 }
 export interface DossierBasics {
   name: string | null;
@@ -47,11 +47,11 @@ export function extractDossierBasics(text: string): DossierBasics {
   const speedMatch = text.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
   const hitDiceMatch = text.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
-  let inventoryLocation: "WORN" | "CARRIED" | null = null;
+  let inventoryLocation: "WORN" | "OTHER" | null = null;
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
     if (/^11\.1\./.test(heading)) inventoryLocation = "WORN";
-    else if (/^11\.[2-5]\./.test(heading)) inventoryLocation = "CARRIED";
+    else if (/^11\.[2-5]\./.test(heading)) inventoryLocation = "OTHER";
     else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
     if (!inventoryLocation || !line.includes("|")) continue;
     const cells = line.split("|").map((cell) => cell.trim());

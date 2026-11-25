@@ -57,7 +57,7 @@ describe("player dossier summary extraction", () => {
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
     expect(result.inventory).toHaveLength(3);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN" });
-    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED" });
+    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "OTHER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
       { name: "Action Surge", current: null, max: 2, recovery: "Long Rest", certainty: "KNOWN" },
