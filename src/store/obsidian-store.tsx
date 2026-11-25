@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { createEmptyTurnDraft, createInitialCollections } from "@/domain/defaults";
+import { applyWorldChangeSet } from "@/domain/apply-world-changes";
 import {
   buildBackupEnvelope,
   computeChecksum,
@@ -48,6 +49,7 @@ import type {
   TravelRoute,
   TurnDraft,
   WorldConsequence,
+  WorldChangeSet,
   WorldState,
 } from "@/domain/types";
 
@@ -983,78 +985,82 @@ export function ObsidianStoreProvider({
       const ws = collections.world_state;
       const pc = collections.player_character_state;
       if (!ws.setup.confirmed) {
-        return {
-          ok: false,
-          error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.",
-          report: lastIntegrityReport,
-        };
+        return { ok: false, error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.", report: lastIntegrityReport };
       }
       if (!activeDraft.checkedAt) {
-        return {
-          ok: false,
-          error: "Сначала выполните этап проверки черновика хода.",
-          report: lastIntegrityReport,
-        };
+        return { ok: false, error: "Сначала выполните этап проверки черновика хода.", report: lastIntegrityReport };
       }
       if (!explicitConfirmation) {
-        return {
-          ok: false,
-          error: "Требуется явное подтверждение игрока для фиксации хода (commit).",
-          report: lastIntegrityReport,
-        };
+        return { ok: false, error: "Требуется явное подтверждение игрока для фиксации хода (commit).", report: lastIntegrityReport };
       }
       const errors = validateTurnDraft(activeDraft, ws, pc);
-      if (errors.length > 0) {
-        return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
-      }
+      if (errors.length > 0) return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
 
       const now = new Date().toISOString();
       const nextTurnNumber = collections.session_log.lastTurnNumber + 1;
       const nextWorldVersion = ws.stateVersion + 1;
       const nextCharacterVersion = pc.stateVersion + 1;
       const nextDate = activeDraft.newInGameDate.trim() || ws.currentInGameDate;
-      const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;
-      const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);
+      const worldChanges: WorldChangeSet = activeDraft.worldChanges ?? {
+        facts: [], npcUpdates: [], npcKnowledgeAdditions: [], newLocations: [], newNpcs: [],
+        factionUpdates: [], newFactions: [], delayedEvents: [],
+      };
+      let appliedWorld: ReturnType<typeof applyWorldChangeSet>;
+      try {
+        appliedWorld = applyWorldChangeSet({
+          changes: worldChanges,
+          currentLocationId: ws.currentLocationId,
+          selectedLocationId: activeDraft.newLocationId.trim() || null,
+          selectedLocationKey: activeDraft.newLocationKey ?? null,
+          inGameDate: nextDate,
+          turnNumber: nextTurnNumber,
+          locations: collections.locations,
+          npcs: collections.npcs,
+          factions: collections.factions,
+          now,
+          makeId,
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          error: error instanceof Error ? error.message : "Не удалось применить изменения мира.",
+          report: lastIntegrityReport,
+        };
+      }
+      const nextLocationId = appliedWorld.currentLocationId;
+      const nextLocationObj = appliedWorld.locations.find((location) => location.id === nextLocationId);
 
-      const nextFacts =
+      const manualFact: CanonFact | null =
         activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()
-          ? [
-              {
-                id: makeId("fact"),
-                title: activeDraft.newFactTitle.trim(),
-                statement: activeDraft.newFactStatement.trim(),
-                rationale:
-                  activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,
-                layer: activeDraft.newFactLayer,
-                subjectNpcId: null,
-                certainty: activeDraft.newFactCertainty,
-                sourceId: activeDraft.newFactSourceId,
-                acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,
-                inGameDate: nextDate,
-                scope: "LOCATION" as const,
-                locked: true,
-                createdAt: now,
-                version: 1,
-                history: [],
-              },
-              ...collections.canon_facts,
-            ]
-          : collections.canon_facts;
-
-      const nextConsequences = activeDraft.consequenceText.trim()
-        ? [
-            {
-              id: makeId("csq"),
-              summary: activeDraft.consequenceText.trim(),
+          ? {
+              id: makeId("fact"),
+              title: activeDraft.newFactTitle.trim(),
+              statement: activeDraft.newFactStatement.trim(),
+              rationale: activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,
+              layer: activeDraft.newFactLayer,
+              subjectNpcId: null,
+              certainty: activeDraft.newFactCertainty,
+              sourceId: activeDraft.newFactSourceId,
+              acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,
               inGameDate: nextDate,
-              turnNumber: nextTurnNumber,
-              certainty: "KNOWN" as const,
-              sourceId: "MANUAL_GM_ENTRY",
-            },
-            ...ws.consequences,
-          ]
+              scope: "LOCATION",
+              locked: true,
+              createdAt: now,
+              version: 1,
+              history: [],
+            }
+          : null;
+      const nextFacts = [
+        ...appliedWorld.canonFacts,
+        ...(manualFact ? [manualFact] : []),
+        ...collections.canon_facts,
+      ];
+      const nextConsequences = activeDraft.consequenceText.trim()
+        ? [{
+            id: makeId("csq"), summary: activeDraft.consequenceText.trim(), inGameDate: nextDate,
+            turnNumber: nextTurnNumber, certainty: "KNOWN" as const, sourceId: "MANUAL_GM_ENTRY",
+          }, ...ws.consequences]
         : ws.consequences;
-
       const nextWorld: WorldState = {
         ...ws,
         stateVersion: nextWorldVersion,
@@ -1062,6 +1068,7 @@ export function ObsidianStoreProvider({
         currentInGameDate: nextDate,
         elapsedMinutes: ws.elapsedMinutes + activeDraft.timeDeltaMinutes,
         currentLocationId: nextLocationId,
+        routes: [...ws.routes, ...appliedWorld.routes],
         consequences: nextConsequences,
       };
 
@@ -1077,7 +1084,7 @@ export function ObsidianStoreProvider({
             const existing = nextInventory[existingIndex]!;
             nextInventory[existingIndex] = { ...existing, quantity: existing.quantity + change.quantity, notes: change.notes || existing.notes, certainty: change.certainty };
           } else {
-            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
+            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "OTHER", unitWeightLb: null });
           }
         } else if (change.action === "REMOVE" && existingIndex >= 0) {
           const existing = nextInventory[existingIndex]!;
@@ -1088,7 +1095,7 @@ export function ObsidianStoreProvider({
         } else if (change.action === "SET") {
           if (change.quantity === 0) nextInventory = nextInventory.filter((_, index) => index !== existingIndex);
           else if (existingIndex >= 0) nextInventory[existingIndex] = { ...nextInventory[existingIndex]!, quantity: change.quantity, notes: change.notes, certainty: change.certainty };
-          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
+          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "OTHER", unitWeightLb: null });
         }
       }
       const nextResources = [...pc.resources];
@@ -1122,7 +1129,6 @@ export function ObsidianStoreProvider({
         currency: pc.currency || Object.values(characterChanges.currencyDelta).some((delta) => delta !== 0) ? nextCurrency : undefined,
         currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,
       };
-
       const baseTurnPayload = {
         id: makeId("turn"),
         entryType: "GAME_TURN" as const,
@@ -1136,46 +1142,41 @@ export function ObsidianStoreProvider({
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
         characterChanges,
+        worldChanges,
+        newLocationKey: activeDraft.newLocationKey ?? null,
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,
         affectedCampaignVersion: nextWorldVersion,
         affectedCharacterVersion: nextCharacterVersion,
       };
-
-      const turnEntry: GameTurnEntry = {
-        ...baseTurnPayload,
-        entryChecksum: computeChecksum(baseTurnPayload),
-      };
-
+      const turnEntry: GameTurnEntry = { ...baseTurnPayload, entryChecksum: computeChecksum(baseTurnPayload) };
       const nextSessionLog: SessionLogState = {
         ...collections.session_log,
         lastTurnNumber: nextTurnNumber,
         entries: [...collections.session_log.entries, turnEntry],
       };
-
-      const nextAudit = appendAudit(
-        collections.audit_log,
-        "TURN_COMMITTED",
-        "OK",
+      const auditDetails = [
         `Зафиксирован ход №${nextTurnNumber}: ${turnEntry.summary} (+${turnEntry.timeDeltaMinutes} мин).`,
-        nextWorld,
-        nextCharacter,
-        nextTurnNumber,
+        `Изменения мира: факты ${appliedWorld.counts.facts}, NPC ${appliedWorld.counts.npcUpdates + appliedWorld.counts.newNpcs}, знания NPC ${appliedWorld.counts.npcKnowledge}, фракции ${appliedWorld.counts.factionUpdates + appliedWorld.counts.newFactions}, локации ${appliedWorld.counts.newLocations}, отложенные события ${appliedWorld.counts.delayedEvents}.`,
+      ].join(" ");
+      const nextAudit = appendAudit(
+        collections.audit_log, "TURN_COMMITTED", "OK", auditDetails,
+        nextWorld, nextCharacter, nextTurnNumber,
       );
-
-      return commitCollections(
-        {
-          ...collections,
-          canon_facts: nextFacts,
-          world_state: nextWorld,
-          player_character_state: nextCharacter,
-          turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
-          session_log: nextSessionLog,
-          audit_log: nextAudit,
-        },
-        nextTurnNumber,
-      );
+      return commitCollections({
+        ...collections,
+        canon_facts: nextFacts,
+        world_state: nextWorld,
+        player_character_state: nextCharacter,
+        npcs: appliedWorld.npcs,
+        factions: appliedWorld.factions,
+        locations: appliedWorld.locations,
+        timeline_events: [...collections.timeline_events, ...appliedWorld.timelineEvents],
+        turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
+        session_log: nextSessionLog,
+        audit_log: nextAudit,
+      }, nextTurnNumber);
     },
     [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport],
   );

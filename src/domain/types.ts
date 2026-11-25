@@ -282,6 +282,7 @@ export interface TurnDraft {
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
   worldChanges?: WorldChangeSet;
+  newLocationKey?: string | null;
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -312,6 +313,7 @@ export interface GameTurnEntry {
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
   worldChanges?: WorldChangeSet;
+  newLocationKey?: string | null;
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];

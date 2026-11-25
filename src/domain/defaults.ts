@@ -153,6 +153,7 @@ export function createEmptyTurnDraft(id = "draft-active"): TurnDraft {
     rolls: [],
     characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } },
     worldChanges: { facts: [], npcUpdates: [], npcKnowledgeAdditions: [], newLocations: [], newNpcs: [], factionUpdates: [], newFactions: [], delayedEvents: [] },
+    newLocationKey: null,
     checkedAt: null,
     validationErrors: [],
   };
