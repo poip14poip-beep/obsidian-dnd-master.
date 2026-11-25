@@ -51,6 +51,7 @@ function CharacterPage() {
     updateCharacterResource,
     addInventoryItem,
     removeInventoryItem,
+    updateInventoryItem,
   } = useObsidianStore();
 
   const [name, setName] = useState(character.name);
@@ -609,7 +610,49 @@ function CharacterPage() {
                 <div>
                   <span className="font-medium text-foreground">{item.name}</span>
                   <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>
-                  <p className="text-[11px] text-muted-foreground">{item.location ?? "CARRIED"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : item.unitWeightLb + " lb/ед."}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={`Местоположение: ${item.name}`}
+                      value={item.location ?? "CARRIED"}
+                      onChange={(e) => {
+                        const result = updateInventoryItem(item.id, { location: e.target.value as NonNullable<typeof item.location> });
+                        if (!result.ok) toast.error(result.error);
+                      }}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-[11px] text-foreground"
+                    >
+                      <option value="WORN">Надето</option>
+                      <option value="CARRIED">При себе</option>
+                      <option value="STORED">Хранится отдельно</option>
+                      <option value="DROPPED">Оставлено</option>
+                      <option value="OTHER">Местоположение не установлено</option>
+                    </select>
+                    <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                      Вес/ед. (lb)
+                      <Input
+                        aria-label={`Вес единицы: ${item.name}`}
+                        inputMode="decimal"
+                        defaultValue={item.unitWeightLb ?? ""}
+                        placeholder="?"
+                        className="h-8 w-20 mono-code"
+                        onBlur={(e) => {
+                          const raw = e.target.value.trim();
+                          if (!raw) {
+                            const result = updateInventoryItem(item.id, { unitWeightLb: null });
+                            if (!result.ok) toast.error(result.error);
+                            return;
+                          }
+                          const weight = Number(raw.replace(",", "."));
+                          if (!Number.isFinite(weight) || weight < 0) {
+                            toast.error("Вес должен быть неотрицательным числом.");
+                            e.target.value = item.unitWeightLb == null ? "" : String(item.unitWeightLb);
+                            return;
+                          }
+                          const result = updateInventoryItem(item.id, { unitWeightLb: weight });
+                          if (!result.ok) toast.error(result.error);
+                        }}
+                      />
+                    </label>
+                  </div>
                 </div>
                 <Button
                   type="button"

@@ -156,6 +156,7 @@ export interface ObsidianStoreValue {
   updateCharacterResource: (id: string, current: number | null) => PersistVerifyResult;
   addInventoryItem: (item: Omit<InventoryItem, "id">) => PersistVerifyResult;
   removeInventoryItem: (id: string) => PersistVerifyResult;
+  updateInventoryItem: (id: string, patch: Partial<Omit<InventoryItem, "id">>) => PersistVerifyResult;
 
   // Setup Wizard & Campaign Parameters
   updateCampaignParameters: (patch: {
@@ -772,6 +773,17 @@ export function ObsidianStoreProvider({
     (id) => {
       return updatePlayerCharacter({
         inventory: collections.player_character_state.inventory.filter((i) => i.id !== id),
+      });
+    },
+    [collections.player_character_state.inventory, updatePlayerCharacter],
+  );
+
+  const updateInventoryItem: ObsidianStoreValue["updateInventoryItem"] = useCallback(
+    (id, patch) => {
+      return updatePlayerCharacter({
+        inventory: collections.player_character_state.inventory.map((item) =>
+          item.id === id ? { ...item, ...patch } : item,
+        ),
       });
     },
     [collections.player_character_state.inventory, updatePlayerCharacter],
