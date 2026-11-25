@@ -92,7 +92,8 @@ function CharacterPage() {
     setNotes(character.notes);
   }, [character]);
 
-  const dossier = sources.find((s) => s.id === character.sourceDossierId);\n  const inventoryWeight = calculatePlayerInventoryWeight(character);
+  const dossier = sources.find((s) => s.id === character.sourceDossierId);
+  const inventoryWeight = calculatePlayerInventoryWeight(character);
 
   function handleImportDossier() {
     if (!dossier || dossier.contentStatus !== "ATTACHED") {
@@ -260,7 +261,8 @@ function CharacterPage() {
           <h2 className="text-sm font-semibold text-foreground">Основные параметры</h2>
           <CertaintyBadge status={character.statsCertainty} />
         </div>
-        {dossier?.contentStatus === "ATTACHED" && <div className="space-y-2 rounded border border-primary/30 bg-primary/5 p-3"><p className="text-xs text-muted-foreground">В досье обнаружены исходные данные. Импорт не меняет канон мира и не запускает кампанию.</p><Button type="button" variant="secondary" className="touch-target" onClick={handleImportDossier}>Извлечь данные из досье</Button>{dossierImportSummary.length > 0 && <ul className="space-y-1 text-xs text-muted-foreground">{dossierImportSummary.map((item) => <li key={item}>· {item}</li>)}</ul>}</div>}\n        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {dossier?.contentStatus === "ATTACHED" && <div className="space-y-2 rounded border border-primary/30 bg-primary/5 p-3"><p className="text-xs text-muted-foreground">В досье обнаружены исходные данные. Импорт не меняет канон мира и не запускает кампанию.</p><Button type="button" variant="secondary" className="touch-target" onClick={handleImportDossier}>Извлечь данные из досье</Button>{dossierImportSummary.length > 0 && <ul className="space-y-1 text-xs text-muted-foreground">{dossierImportSummary.map((item) => <li key={item}>· {item}</li>)}</ul>}</div>}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="pc-name">Имя персонажа</Label>
             <Input
@@ -512,7 +514,8 @@ function CharacterPage() {
               >
                 <div>
                   <span className="font-medium text-foreground">{item.name}</span>
-                  <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>\n                  <p className="text-[11px] text-muted-foreground">{item.location ?? "CARRIED"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : item.unitWeightLb + " lb/ед."}</p>
+                  <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>
+                  <p className="text-[11px] text-muted-foreground">{item.location ?? "CARRIED"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : item.unitWeightLb + " lb/ед."}</p>
                 </div>
                 <Button
                   type="button"
