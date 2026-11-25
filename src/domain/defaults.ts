@@ -110,7 +110,6 @@ export function createInitialPlayerCharacterState(): PlayerCharacterState {
     resources: [],
     inventory: [],
     abilityScores: undefined,
-    currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     notes: "",
     updatedAt: "1970-01-01T00:00:00.000Z",
   };

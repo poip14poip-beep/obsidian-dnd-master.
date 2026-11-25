@@ -155,6 +155,8 @@ export function validateTurnDraft(
         break;
       }
     }
+    const hasCurrencyDelta = Object.values(changes.currencyDelta).some((delta) => delta !== 0);
+    if (hasCurrencyDelta && !character.currency) errors.push("Баланс монет UNKNOWN. Внесите все номиналы в лист персонажа перед изменением денег.");
     const currency = character.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
     for (const coin of ["cp", "sp", "ep", "gp", "pp"] as const) {
       const delta = changes.currencyDelta[coin];
