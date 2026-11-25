@@ -232,6 +232,35 @@ export interface CharacterChangeSet {
   currencyDelta: { cp: number; sp: number; ep: number; gp: number; pp: number };
 }
 
+export interface WorldChangeSet {
+  facts: Array<{
+    title: string; statement: string; rationale: string; layer: Exclude<EpistemicLayer, "NPC_KNOWLEDGE">;
+    subjectNpcId: string | null; certainty: CertaintyStatus; scope: FactScope;
+  }>;
+  npcUpdates: Array<{
+    npcId: string; role: string | null; locationId: string | null; factionId: string | null;
+    goals: string | null; attitudeToPlayer: string | null; certainty: CertaintyStatus | null; reason: string;
+  }>;
+  npcKnowledgeAdditions: Array<{
+    npcId: string; factSummary: string; sourceId: string; acquisitionPath: string; certainty: CertaintyStatus;
+  }>;
+  newNpcs: Array<{
+    tempId: string; name: string; role: string; locationId: string | null; factionId: string | null;
+    goals: string; attitudeToPlayer: string; certainty: CertaintyStatus;
+  }>;
+  factionUpdates: Array<{
+    factionId: string; goals: string | null; resources: string | null; standing: string | null;
+    certainty: CertaintyStatus | null; reason: string;
+  }>;
+  newFactions: Array<{
+    tempId: string; name: string; goals: string; resources: string; standing: string; certainty: CertaintyStatus;
+  }>;
+  delayedEvents: Array<{
+    title: string; triggerInGameDate: string; consequence: string;
+    status: "SCHEDULED" | "TRIGGERED" | "RESOLVED"; certainty: CertaintyStatus;
+  }>;
+}
+
 export interface RollRecord {
   id: string;
   label: string;
@@ -248,6 +277,7 @@ export interface TurnDraft {
   worldOutcome: string;
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
+  worldChanges?: WorldChangeSet;
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -277,6 +307,7 @@ export interface GameTurnEntry {
   worldOutcome: string;
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
+  worldChanges?: WorldChangeSet;
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];
