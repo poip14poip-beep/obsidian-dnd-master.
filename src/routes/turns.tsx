@@ -13,6 +13,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
+import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -45,6 +46,10 @@ function TurnsPage() {
   const {
     sources,
     worldState,
+    character,
+    canonFacts,
+    npcs,
+    factions,
     locations,
     sessionLog,
     turnDraft,
@@ -60,12 +65,68 @@ function TurnsPage() {
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccessMsg, setCommitSuccessMsg] = useState<string | null>(null);
   const [techText, setTechText] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [playerAction, setPlayerAction] = useState("");
+  const [gmBusy, setGmBusy] = useState(false);
+  const [gmError, setGmError] = useState<string | null>(null);
+  const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
+  const [gmModel, setGmModel] = useState("gpt-4.1-mini");
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
   const [rollResult, setRollResult] = useState("");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
+
+  async function handleResolveAction() {
+    setGmError(null);
+    setGmTurn(null);
+    if (!worldState.setup.confirmed) {
+      setGmError("Сначала завершите обязательную подготовку кампании.");
+      return;
+    }
+    setGmBusy(true);
+    try {
+      const result = await resolvePlayerAction(apiKey, {
+        action: playerAction,
+        sources,
+        world: worldState,
+        character,
+        canonFacts,
+        npcs,
+        factions,
+        locations,
+        journal: sessionLog.entries,
+      }, { model: gmModel });
+      setGmTurn(result.turn);
+      if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
+        updateTurnDraft({
+          summary: result.turn.summary,
+          playerIntent: playerAction.trim(),
+          worldOutcome: result.turn.worldOutcome,
+          timeDeltaMinutes: result.turn.timeDeltaMinutes,
+          newInGameDate: result.turn.newInGameDate,
+          hpDelta: result.turn.hpDelta,
+          consequenceText: result.turn.consequenceText,
+          rolls: result.turn.rolls.map((roll, index) => ({
+            id: `gm-roll-${Date.now().toString(36)}-${index}`,
+            label: roll.label, formula: roll.formula, result: roll.result,
+          })),
+        });
+        setExplicitConfirm(false);
+      }
+    } catch (error) {
+      setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
+    } finally {
+      setGmBusy(false);
+    }
+  }
+
+  function handleApplyClarification() {
+    if (!gmTurn || !playerAction.trim()) return;
+    setPlayerAction(`${playerAction.trim()}\n\nУточнение игрока: ${gmTurn.clarificationQuestion}`);
+    setGmTurn(null);
+  }
 
   function handleAddRoll() {
     if (!rollLabel.trim() || !rollResult.trim()) {
@@ -145,7 +206,64 @@ function TurnsPage() {
         </p>
       </header>
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed} />
+      <SetupGateBanner confirmed={worldState.setup.confirmed} />\n\n      <section className="panel-surface space-y-3 p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
+            <p className="text-xs text-muted-foreground">Модель получает полный ОБСИДИАН 4.1, актуальное состояние и релевантные фрагменты Экдрасиля.</p>
+          </div>
+          <span className="mono-code rounded border border-primary/30 px-2 py-1 text-[10px] text-primary">AI GM</span>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="gm-api-key">OpenAI API-ключ</Label>
+          <Input id="gm-api-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" className="touch-target" />
+          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию или localStorage. Запрос отправляется напрямую в OpenAI API; использование API может тарифицироваться отдельно от ChatGPT.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
+          <div className="space-y-1.5">
+            <Label htmlFor="gm-model">Модель</Label>
+            <Input id="gm-model" value={gmModel} onChange={(e) => setGmModel(e.target.value)} className="touch-target" />
+          </div>
+          <div className="flex items-end">
+            <span className="text-[11px] text-muted-foreground">По умолчанию: gpt-4.1-mini</span>
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="gm-action">Что делает персонаж?</Label>
+          <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
+        </div>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={handleResolveAction}>
+          {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
+        </Button>
+        {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
+        {gmError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger">{gmError}</div>}
+        {gmTurn && (
+          <div className="space-y-3 rounded-md border border-primary/30 bg-background/60 p-3">
+            <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{gmTurn.narration}</div>
+            {gmTurn.needsClarification && (
+              <div className="space-y-2 rounded border border-status-approx/40 p-3">
+                <p className="text-xs font-semibold text-status-approx">Нужно уточнение · ход и время не зафиксированы</p>
+                <p className="text-sm">{gmTurn.clarificationQuestion}</p>
+                <Button type="button" variant="outline" className="touch-target" onClick={handleApplyClarification}>Добавить вопрос к действию</Button>
+              </div>
+            )}
+            {gmTurn.rolls.length > 0 && (
+              <div className="space-y-1 rounded border border-border p-3">
+                <p className="text-xs font-semibold">Проверки и броски</p>
+                {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
+                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <p className="text-xs text-status-approx">Бросок не выполнен автоматически. Внеси результат вручную в блок «Броски костей» ниже, затем продолжи действие с его результатом.</p>}
+              </div>
+            )}
+            {!gmTurn.needsClarification && !gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
+              <div className="space-y-1 rounded border border-status-verified/40 p-3 text-xs">
+                <p className="font-semibold text-status-verified">Черновик следующего хода подготовлен, но ещё не сохранён.</p>
+                <p>Проверь его ниже, выполни проверку и только затем подтверди commit. Мастер не записывает ход без твоего подтверждения.</p>
+                {gmTurn.stateNotes.map((note, index) => <p key={index}>· {note}</p>)}
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {(commitError || lastStorageError) && (
         <div
