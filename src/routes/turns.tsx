@@ -72,6 +72,7 @@ function TurnsPage() {
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [gmModel, setGmModel] = useState("gpt-4.1-mini");
   const [clarificationAnswer, setClarificationAnswer] = useState("");
+  const [pendingRollResult, setPendingRollResult] = useState("");
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
@@ -89,7 +90,7 @@ function TurnsPage() {
     setGmBusy(true);
     try {
       const result = await resolvePlayerAction(apiKey, {
-        action: playerAction,
+        action: actionToResolve,
         sources,
         world: worldState,
         character,
@@ -103,7 +104,7 @@ function TurnsPage() {
       if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         updateTurnDraft({
           summary: result.turn.summary,
-          playerIntent: playerAction.trim(),
+          playerIntent: actionToResolve.trim(),
           worldOutcome: result.turn.worldOutcome,
           gmNarration: result.turn.narration,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
@@ -125,7 +126,7 @@ function TurnsPage() {
     }
   }
 
-  function handleApplyClarification() {
+  function handleSubmitPendingRoll() {\n    if (!gmTurn || !pendingRollResult.trim()) return;\n    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");\n    if (!pending) return;\n    const action = `${playerAction.trim()}\\n\\nФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;\n    setPlayerAction(action);\n    setPendingRollResult("");\n    void handleResolveAction(action);\n  }\n\n  function handleApplyClarification() {
     if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
     setPlayerAction(`${playerAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`);
     setClarificationAnswer("");
@@ -259,7 +260,11 @@ function TurnsPage() {
               <div className="space-y-1 rounded border border-border p-3">
                 <p className="text-xs font-semibold">Проверки и броски</p>
                 {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
-                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <p className="text-xs text-status-approx">Бросок не выполнен автоматически. Внеси результат вручную в блок «Броски костей» ниже, затем продолжи действие с его результатом.</p>}
+                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
+                  <p className="text-xs text-status-approx">Бросок выполняешь ты физически или любым своим кубиком. Введи итоговое значение с модификатором, если он применим. Мастер не бросает за тебя.</p>
+                  <Input value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
+                  <Button type="button" className="touch-target w-full" disabled={!pendingRollResult.trim() || gmBusy} onClick={handleSubmitPendingRoll}>Передать результат и продолжить разрешение</Button>
+                </div>}
               </div>
             )}
             {!gmTurn.needsClarification && !gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
