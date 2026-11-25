@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { user, status: authStatus, signOut } = useAuth();
+  const { user, guestMode, signOut } = useAuth();
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">\n      {authStatus === "unconfigured" && <div role="status" className="border-b border-status-approx/40 bg-status-approx/10 px-3 py-2 text-center text-xs text-status-approx">Локальный прототип: вход и облачная синхронизация не настроены. Данные хранятся только в этом браузере — регулярно экспортируйте резервную копию.</div>}
+    <div className="min-h-screen bg-background text-foreground">
       {/* Desktop persistent left sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="border-b border-sidebar-border px-4 py-4">
@@ -92,6 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </div>
           <p className="mono-code mt-1 text-[11px] text-muted-foreground">
+            {guestMode ? "ЛОКАЛЬНЫЙ РЕЖИМ · ДАННЫЕ ЭТОГО БРАУЗЕРА" : null}
             {worldState.setup.confirmed
               ? `АКТИВНА · ХОД #${sessionLog.lastTurnNumber}`
               : "ПОДГОТОВКА · БЛОК"}
@@ -252,14 +253,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {/* Main content area */}
-      <main className="min-h-dvh px-3 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-5 lg:ml-64 lg:px-8 lg:py-6">
+      <main className="min-h-screen px-3 pt-4 pb-24 sm:px-5 lg:ml-64 lg:px-8 lg:py-6">
         <div className="mx-auto max-w-4xl">{children}</div>
       </main>
 
       {/* Android-first fixed bottom navigation */}
       <nav
         aria-label="Нижняя навигация"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 backdrop-blur lg:hidden"
       >
         {MOBILE_BOTTOM_PATHS.map((path) => {
           const item = NAV_ITEMS.find((n) => n.to === path)!;
