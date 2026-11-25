@@ -919,12 +919,20 @@ export function ObsidianStoreProvider({
     };
     const pc = collections.player_character_state;
     const s = ws.setup;
-    const governingReady = collections.sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
-    const canonReady = collections.sources.some((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
-    if (!governingReady || !canonReady) {
+    const isVerifiedContextSource = (source: SourceDocument, type: SourceDocument["type"]) =>
+      source.type === type &&
+      source.contentStatus === "ATTACHED" &&
+      source.content.trim().length > 0 &&
+      source.processing?.status === "PROCESSED" &&
+      source.reviewStatus === "VERIFIED" &&
+      source.contextEnabled === true;
+    const governingReady = collections.sources.some((source) => isVerifiedContextSource(source, "GOVERNING_DOC"));
+    const canonReady = collections.sources.some((source) => isVerifiedContextSource(source, "WORLD_CANON"));
+    const dossierReady = collections.sources.some((source) => isVerifiedContextSource(source, "PLAYER_DOSSIER"));
+    if (!governingReady || !canonReady || !dossierReady) {
       return {
         ok: false,
-        error: "Для запуска обязательны загруженные оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля. Досье персонажа может быть загружено отдельно или создано вручную.",
+        error: "Для запуска нужны три отдельные проверенные и включённые в контекст ИИ версии: ОБСИДИАН 4.1, Хроника Экдрасиля и досье персонажа. Каждый файл должен быть обработан, вручную подтверждён и явно включён в контекст.",
         report: lastIntegrityReport,
       };
     }
