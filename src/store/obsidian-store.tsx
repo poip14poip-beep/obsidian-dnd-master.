@@ -45,6 +45,7 @@ import type {
   SessionLogState,
   SourceDocument,
   SourceProcessingSummary,
+  SourceReviewStatus,
   TechnicalMessageEntry,
   TravelRoute,
   TurnDraft,
@@ -98,6 +99,8 @@ export interface ObsidianStoreValue {
     fileName: string | null;
     notes: string;
   }) => PersistVerifyResult;
+  verifySource: (sourceId: string) => PersistVerifyResult;
+  setSourceContextEnabled: (sourceId: string, enabled: boolean) => PersistVerifyResult;
 
   // Canon / Facts
   addFact: (
