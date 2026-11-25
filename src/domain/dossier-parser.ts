@@ -11,8 +11,8 @@ export function extractDossierBasics(text: string): DossierBasics {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const name = lines.find((line) => /^[А-ЯЁ][А-ЯЁ\s-]{2,}$/u.test(line))?.replace(/\s+/g, " ") ?? null;
   const summary = lines.slice(0, 12).join(" ");
-  const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[^.]{0,120}?(?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^.]{0,100}/i);
-  const speciesAndClass = classMatch?.[0]?.trim() ?? null;
+  const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\\n]{0,120})/i);
+  const speciesAndClass = classMatch ? `${classMatch[1]}. ${classMatch[2].trim()}` : null;
   const levelMatch = text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
     ?? text.match(/общий\s+(\d{1,2})-й\s+уровень/i);
   const level = levelMatch ? Number(levelMatch[1]) : null;
