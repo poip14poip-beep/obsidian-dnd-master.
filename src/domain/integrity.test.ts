@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyTurnDraft, createInitialCollections } from "./defaults";
-import { validateTurnDraft } from "./integrity";
+import { runIntegrityAudit, validateTurnDraft } from "./integrity";
 describe("turn HP validation", () => {
   it("does not silently discard an HP change when current HP is unknown", () => {
     const state = createInitialCollections();
@@ -48,5 +48,43 @@ describe("turn HP validation", () => {
     const draft = { ...createEmptyTurnDraft(), summary: "Лечение", worldOutcome: "Восстановлено здоровье", hpDelta: 5 };
     expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
       .toContain("Итоговые HP не могут превышать максимум персонажа.");
+  });
+});
+
+describe("source context review audit", () => {
+  it("rejects a source enabled for AI context before explicit review", () => {
+    const state = createInitialCollections();
+    state.sources[0] = {
+      ...state.sources[0]!,
+      contentStatus: "ATTACHED",
+      contextEnabled: true,
+      reviewStatus: "UNREVIEWED",
+      processing: {
+        status: "PROCESSED", sha256: "a".repeat(64), characterCount: 10,
+        lineCount: 2, sectionCount: 1, chunkCount: 1, dateCandidateCount: 0,
+        processedAt: "2026-11-25T12:00:00.000Z", warnings: [],
+      },
+    };
+    const report = runIntegrityAudit(state);
+    const check = report.checks.find((item) => item.id === "source-context-review");
+    expect(check?.passed).toBe(false);
+    expect(check?.details).toContain("ОБСИДИАН 4.1");
+  });
+
+  it("accepts a verified source explicitly enabled for AI context", () => {
+    const state = createInitialCollections();
+    state.sources[0] = {
+      ...state.sources[0]!,
+      contentStatus: "ATTACHED",
+      contextEnabled: true,
+      reviewStatus: "VERIFIED",
+      processing: {
+        status: "PROCESSED", sha256: "a".repeat(64), characterCount: 10,
+        lineCount: 2, sectionCount: 1, chunkCount: 1, dateCandidateCount: 0,
+        processedAt: "2026-11-25T12:00:00.000Z", warnings: [],
+      },
+    };
+    const report = runIntegrityAudit(state);
+    expect(report.checks.find((item) => item.id === "source-context-review")?.passed).toBe(true);
   });
 });
