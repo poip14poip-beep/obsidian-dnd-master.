@@ -33,10 +33,12 @@ describe("DOCX text extraction", () => {
       <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
         <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Досье Лии</w:t></w:r></w:p>
         <w:p><w:r><w:t>Человек. Fighter 20 / Champion.</w:t></w:r></w:p>
+        <w:tbl><w:tr><w:tc><w:p><w:r><w:t>1</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Катана</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Основное оружие</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
       </w:body></w:document>`;
     const file = { arrayBuffer: async () => storedZip("word/document.xml", xml) } as File;
     const result = await extractDocxText(file);
     expect(result).toContain("# Досье Лии");
     expect(result).toContain("Человек. Fighter 20 / Champion.");
+    expect(result).toContain("1 | Катана | Основное оружие");
   });
 });
