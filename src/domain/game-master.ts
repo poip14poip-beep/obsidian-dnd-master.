@@ -88,6 +88,15 @@ function validateTurn(value: unknown): GameMasterTurn {
     (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || typeof turn.needsClarification !== "boolean" ||
     !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
+  for (const roll of turn.rolls as Array<Record<string, unknown>>) {
+    if (typeof roll.label !== "string" || typeof roll.formula !== "string" ||
+        roll.result !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
+    }
+  }
+  if (turn.needsClarification && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0)) {
+    throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
+  }
   return turn as unknown as GameMasterTurn;
 }
 export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,

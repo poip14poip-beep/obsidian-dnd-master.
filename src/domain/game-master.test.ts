@@ -31,6 +31,12 @@ describe("game master resolver", () => {
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
       .rejects.toMatchObject({ code: "INVALID_TURN" });
   });
+  it("rejects model-invented dice results", async () => {
+    const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
+    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
+  });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
