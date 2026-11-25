@@ -1,8 +1,8 @@
 import type { ObsidianCollections } from "./types";
 
 function jsonBlock(value: unknown): string {
-  return ["\`\`\`json", JSON.stringify(value, null, 2), "\`\`\`"].join("\n");
-export function buildCampaignStateMarkdown(collections: ObsidianCollections, generatedAt = new Date().toISOString()): string {
+  return [String.fromCharCode(96).repeat(3) + "json", JSON.stringify(value, null, 2), String.fromCharCode(96).repeat(3)].join("\n");
+}
   const { world_state, sources, canon_facts, npcs, factions, locations, timeline_events, audit_log } = collections;
   return [
     "# CAMPAIGN_STATE",
