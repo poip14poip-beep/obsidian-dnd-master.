@@ -382,6 +382,33 @@ function CharacterPage() {
           </div>
         </div>
 
+        {character.abilityScores && (
+          <div className="space-y-2 rounded-md border border-border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold">Характеристики и базовые параметры</h3>
+              <span className="text-xs text-muted-foreground">Извлечено из досье</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {([
+                ["СИЛ", character.abilityScores.strength], ["ЛОВ", character.abilityScores.dexterity],
+                ["ТЕЛ", character.abilityScores.constitution], ["ИНТ", character.abilityScores.intelligence],
+                ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="rounded bg-muted/40 p-2 text-center">
+                  <p className="text-[10px] text-muted-foreground">{label}</p>
+                  <p className="mono-code text-lg font-semibold">{value}</p>
+                  <p className="mono-code text-xs text-muted-foreground">{value >= 10 ? "+" : ""}{Math.floor((value - 10) / 2)}</p>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs sm:grid-cols-3">
+              <p>Бонус мастерства: <strong>{character.proficiencyBonus ?? "UNKNOWN"}</strong></p>
+              <p>Скорость: <strong>{character.speedFeet !== null && character.speedFeet !== undefined ? `${character.speedFeet} футов` : "UNKNOWN"}</strong></p>
+              <p>Кость хитов: <strong>{character.hitDice ?? "UNKNOWN"}</strong></p>
+            </div>
+          </div>
+        )}
+
         <div className="space-y-2">
           <Label>Монеты (пусто = UNKNOWN; для фиксации денег заполни все номиналы)</Label>
           <div className="grid grid-cols-5 gap-2">
