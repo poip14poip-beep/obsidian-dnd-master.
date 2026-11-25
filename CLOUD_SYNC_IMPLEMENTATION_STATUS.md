@@ -110,3 +110,13 @@ Updated: 2026-11-25 12:16 UTC
 - Verified code commit `e2092385f43b330a92ac209a60f86a6941bf048a` passed GitHub Actions run `45614238643`: 18 test files / 73 tests passed, TypeScript passed, production build passed.
 - The prior CI failure on commit `0cc3933acba187bf5d266246aafb36a93c7b2679` was caused by the old store test fixture not satisfying the newly tightened source gate; the fixture was updated to model reviewed/processed/enabled sources. The corrected test suite is green.
 - The current reference only establishes the campaign year as 2000 (from Liya's dossier); the exact day/time and Liya's starting location are not established. The Chronicle does not name Liya or place her at a specific location. These must remain APPROXIMATE/UNKNOWN until the player selects a start point; do not silently invent one.
+
+## Progress update — public entry endpoint
+
+- Deployed the existing project's `obsidian-app` Supabase Edge Function, version 1, ACTIVE, with JWT verification disabled only for serving public static HTML/CSS/JS. It proxies a fixed public repository branch; it is not an open proxy and does not expose the private `obsidian` schema.
+- Versioned the exact function source at `supabase/functions/obsidian-app/index.ts`.
+- Added `.github/workflows/build-static-site.yml`: builds the `cloud-api-client` branch in SPA mode, publishes generated files to `static-site`, then performs an external smoke test against the Supabase endpoint for HTML, CSS, JS, and the `/auth` SPA route.
+- Static build + public endpoint smoke test passed in run `45615224113`; CI passed tests, TypeScript, and build in run `45615224278` on commit `011360d7d5af5c6cc7551a4861d53d4d818ad6cb`.
+- Entry URL: `https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app/`.
+- This makes the application accessible, but does not by itself make the Ekdrasil campaign ready to start. The player still needs to upload and manually verify the three supplied source files in the app, import/review Liya's dossier, enter her actual current HP (the dossier only gives HP maximum 184), select a starting location (UNKNOWN in the dossier), and provide an OpenAI API key inside the app. The exact date is only 2000 (APPROXIMATE); exact day/time remain UNKNOWN.
+- Cloud authentication and complete transactional cloud persistence, automatic Library-file continuity, and physical Android acceptance are still incomplete. Guest mode stores campaign data in that browser only; export a backup before clearing browser data or changing devices.
