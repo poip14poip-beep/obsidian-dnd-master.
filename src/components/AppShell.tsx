@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { user, signOut } = useAuth();
+  const { user, guestMode, signOut } = useAuth();
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
@@ -92,6 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </span>
           </div>
           <p className="mono-code mt-1 text-[11px] text-muted-foreground">
+            {guestMode ? "ЛОКАЛЬНЫЙ РЕЖИМ · ДАННЫЕ ЭТОГО БРАУЗЕРА" : null}
             {worldState.setup.confirmed
               ? `АКТИВНА · ХОД #${sessionLog.lastTurnNumber}`
               : "ПОДГОТОВКА · БЛОК"}

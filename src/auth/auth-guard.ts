@@ -35,6 +35,13 @@ export function evaluateAuthGuard(params: {
 }): GuardDecision {
   const { pathname, status, redirectParam } = params;
 
+  if (isPublicAuthRoute(pathname)) {
+    if (pathname === "/auth" && status === "authenticated") {
+      return { action: "redirect_to_app", target: sanitizeRedirectPath(redirectParam) };
+    }
+    return { action: "allow_public" };
+  }
+
   if (status === "unconfigured") {
     return { action: "render_unconfigured" };
   }
@@ -43,13 +50,6 @@ export function evaluateAuthGuard(params: {
   }
   if (status === "error") {
     return { action: "render_error" };
-  }
-
-  if (isPublicAuthRoute(pathname)) {
-    if (pathname === "/auth" && status === "authenticated") {
-      return { action: "redirect_to_app", target: sanitizeRedirectPath(redirectParam) };
-    }
-    return { action: "allow_public" };
   }
 
   if (status !== "authenticated") {

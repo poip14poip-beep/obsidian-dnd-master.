@@ -9,10 +9,15 @@
 // You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
+const isGitHubPagesBuild = process.env.GITHUB_PAGES === "true";
+const githubPagesBase = "/obsidian-dnd-master./";
+
 export default defineConfig({
+  ...(isGitHubPagesBuild ? { vite: { base: githubPagesBase } } : {}),
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this
     server: { entry: "server" },
+    ...(isGitHubPagesBuild ? { spa: { enabled: true }, router: { basepath: githubPagesBase.slice(0, -1) } } : {}),
   },
 });
