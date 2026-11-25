@@ -117,7 +117,6 @@ export async function ingestCanonSources(
         searchOffset = safeChunkOffset + chunk.length;
         sourceChunkCount++;
       }
-      }
     }
     if (!headings.length) warnings.push(`Source ${source.sourceId} has no Markdown headings; treated as one section.`);
     manifestSources.push({
