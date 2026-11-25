@@ -127,7 +127,7 @@ function extractOutputText(payload: unknown): string {
 function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
-  const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
+  const strings = ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
   if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn["timeDeltaMinutes"]) ||
     (turn["timeDeltaMinutes"] as number) < 0 || !Number.isInteger(turn["hpDelta"]) || (turn["newLocationId"] !== null && typeof turn["newLocationId"] !== "string") || typeof turn["needsClarification"] !== "boolean" ||
     !Array.isArray(turn["rolls"]) || !Array.isArray(turn["stateNotes"]))
@@ -191,11 +191,22 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
       throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
     }
   }
-  const hasPendingRoll = (turn["rolls"] as Array<Record<string, unknown>>).length > 0;
-  if ((turn["needsClarification"] || hasPendingRoll) && ((turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
-      (changes["inventory"] as unknown[]).length > 0 || (changes["resources"] as unknown[]).length > 0 ||
-      (changes["conditions"] as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
-    throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
+  const rolls = turn["rolls"] as Array<Record<string, unknown>>;
+  const hasPendingRoll = rolls.length > 0;
+  if (rolls.length > 1) throw new GameMasterError("Для надёжного разрешения мастер запрашивает только один бросок за раз.", "MULTIPLE_PENDING_ROLLS");
+  if (turn["needsClarification"] && !(turn["clarificationQuestion"] as string).trim()) {
+    throw new GameMasterError("Мастер отметил необходимость уточнения, но не задал вопрос.", "MISSING_CLARIFICATION_QUESTION");
+  }
+  const hasCharacterDelta = (changes["inventory"] as unknown[]).length > 0 ||
+    (changes["resources"] as unknown[]).length > 0 || (changes["conditions"] as unknown[]).length > 0 ||
+    Object.values(currency).some((amount) => amount !== 0);
+  const hasWorldDelta = (turn["npcChanges"] as unknown[]).length > 0 || turn["newLocationId"] !== null ||
+    (turn["consequenceText"] as string).trim().length > 0;
+  if ((turn["needsClarification"] || hasPendingRoll) && (
+    (turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
+    hasCharacterDelta || hasWorldDelta
+  )) {
+    throw new GameMasterError("При ожидаемом броске или уточнении мастер не может фиксировать время, HP, предметы, ресурсы, NPC, локацию или последствия.", "INVALID_CLARIFICATION_DELTA");
   }
   return turn as unknown as GameMasterTurn;
 }

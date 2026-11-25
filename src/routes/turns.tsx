@@ -139,6 +139,10 @@ function TurnsPage() {
 
   function handleSubmitPendingRoll() {
     if (!gmTurn || !pendingRollResult.trim()) return;
+    if (!Number.isInteger(Number(pendingRollResult.trim()))) {
+      setGmError("Результат броска должен быть целым числом. Введи итог с модификатором, если он применим.");
+      return;
+    }
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
     const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
@@ -284,7 +288,7 @@ function TurnsPage() {
                 {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
                 {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
                   <p className="text-xs text-status-approx">Бросок выполняешь ты физически или любым своим кубиком. Введи итоговое значение с модификатором, если он применим. Мастер не бросает за тебя.</p>
-                  <Input value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
+                  <Input type="number" step="1" value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
                   <Button type="button" className="touch-target w-full" disabled={!pendingRollResult.trim() || gmBusy} onClick={handleSubmitPendingRoll}>Передать результат и продолжить разрешение</Button>
                 </div>}
               </div>

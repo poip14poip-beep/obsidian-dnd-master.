@@ -43,6 +43,14 @@ describe("game master resolver", () => {
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
+  it("rejects NPC or location changes while a player roll is pending", async () => {
+    const invalidPending = { ...validTurn, rolls: [{ label: "Атлетика", formula: "1d20+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+      npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", attitudeToPlayer: "UNKNOWN",
+        locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", knowledgeAdditions: [] }] };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidPending) }), { status: 200 }));
+    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "INVALID_CLARIFICATION_DELTA" });
+  });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
