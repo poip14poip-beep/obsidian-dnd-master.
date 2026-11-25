@@ -111,7 +111,8 @@ function TurnsPage() {
           newInGameDate: result.turn.newInGameDate,
           hpDelta: result.turn.hpDelta,
           consequenceText: result.turn.consequenceText,
-          characterChanges: result.turn.characterChanges,\n          npcChanges: result.turn.npcChanges,
+          characterChanges: result.turn.characterChanges,
+          npcChanges: result.turn.npcChanges,
           rolls: result.turn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
@@ -223,7 +224,9 @@ function TurnsPage() {
         </p>
       </header>
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed} />\n\n      <section className="panel-surface space-y-3 p-4">
+      <SetupGateBanner confirmed={worldState.setup.confirmed} />
+
+      <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
