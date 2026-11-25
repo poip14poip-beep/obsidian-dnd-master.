@@ -35,10 +35,12 @@ export function evaluateAuthGuard(params: {
 }): GuardDecision {
   const { pathname, status, redirectParam } = params;
 
-  // A missing Supabase configuration enables an explicit local-only prototype mode.
-  // No account or cloud sync is implied; the browser store remains the only persistence layer.
+  // A missing Supabase configuration must not silently unlock a campaign.
+  // Route the user to /auth, where local-only guest mode requires an explicit opt-in.
   if (status === "unconfigured") {
-    return isPublicAuthRoute(pathname) ? { action: "allow_public" } : { action: "allow_protected" };
+    return isPublicAuthRoute(pathname)
+      ? { action: "allow_public" }
+      : { action: "redirect_to_auth", redirectTo: sanitizeRedirectPath(pathname) };
   }
   if (status === "loading") {
     return { action: "render_loading" };
