@@ -30,6 +30,16 @@ const turnSchema = {
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
     }, required: ["label", "formula", "result"] } },
+    npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+      action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
+      role: { type: "string" }, goals: { type: "string" }, attitudeToPlayer: { type: "string" },
+      locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
+      certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
+      knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        factSummary: { type: "string" }, acquisitionPath: { type: "string" },
+        certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["factSummary", "acquisitionPath", "certainty"] } },
+    }, required: ["action", "name", "role", "goals", "attitudeToPlayer", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions"] } },
     characterChanges: { type: "object", additionalProperties: false, properties: {
       inventory: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         action: { type: "string", enum: ["ADD", "REMOVE", "SET"] }, name: { type: "string" },
@@ -49,7 +59,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -110,6 +120,24 @@ function validateTurn(value: unknown): GameMasterTurn {
     (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || typeof turn.needsClarification !== "boolean" ||
     !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
+  if (!Array.isArray(turn.npcChanges)) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
+  for (const npc of turn.npcChanges as Array<Record<string, unknown>>) {
+    if (!["CREATE", "UPDATE"].includes(String(npc.action)) || typeof npc.name !== "string" || !npc.name.trim() ||
+        typeof npc.role !== "string" || typeof npc.goals !== "string" || typeof npc.attitudeToPlayer !== "string" ||
+        (npc.locationName !== null && typeof npc.locationName !== "string") ||
+        (npc.factionName !== null && typeof npc.factionName !== "string") ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc.certainty)) ||
+        typeof npc.reason !== "string" || !Array.isArray(npc.knowledgeAdditions)) {
+      throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
+    }
+    for (const knowledge of npc.knowledgeAdditions as Array<Record<string, unknown>>) {
+      if (typeof knowledge.factSummary !== "string" || !knowledge.factSummary.trim() ||
+          typeof knowledge.acquisitionPath !== "string" || !knowledge.acquisitionPath.trim() ||
+          !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge.certainty))) {
+        throw new GameMasterError("Некорректная запись знания NPC.", "INVALID_NPC_KNOWLEDGE");
+      }
+    }
+  }
   const changes = turn.characterChanges as Record<string, unknown> | undefined;
   if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
       !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
@@ -185,7 +213,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось.",
-      "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
+      "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",\n      "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };

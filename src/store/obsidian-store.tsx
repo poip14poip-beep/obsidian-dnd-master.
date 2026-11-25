@@ -723,7 +723,7 @@ export function ObsidianStoreProvider({
   const updatePlayerCharacter: ObsidianStoreValue["updatePlayerCharacter"] = useCallback(
     (patch) => {
       const now = new Date().toISOString();
-      const nextCharacter: PlayerCharacterState = {
+      const nextNpcs = [...collections.npcs];\n      for (const change of activeDraft.npcChanges ?? []) {\n        const existingIndex = nextNpcs.findIndex((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());\n        const locationId = change.locationName ? collections.locations.find((location) => location.name.toLocaleLowerCase() === change.locationName!.toLocaleLowerCase())?.id ?? null : null;\n        const factionId = change.factionName ? collections.factions.find((faction) => faction.name.toLocaleLowerCase() === change.factionName!.toLocaleLowerCase())?.id ?? null : null;\n        const knowledge = change.knowledgeAdditions.map((entry) => ({ id: makeId("know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY", acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now }));\n        if (change.action === "CREATE") {\n          nextNpcs.unshift({ id: makeId("npc"), name: change.name, role: change.role, locationId, factionId, goals: change.goals, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty, sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [] });\n        } else if (existingIndex >= 0) {\n          const existing = nextNpcs[existingIndex]!;\n          nextNpcs[existingIndex] = { ...existing, role: change.role, locationId: locationId ?? existing.locationId, factionId: factionId ?? existing.factionId, goals: change.goals, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty, knowledge: [...existing.knowledge, ...knowledge], version: existing.version + 1, history: [...existing.history, { version: existing.version, changedAt: now, inGameDate: nextDate, summary: `Цели: ${existing.goals}; отношение: ${existing.attitudeToPlayer}`, reason: change.reason }] };\n        }\n      }\n      const nextCharacter: PlayerCharacterState = {
         ...collections.player_character_state,
         ...patch,
         stateVersion: collections.player_character_state.stateVersion + 1,
@@ -1135,7 +1135,7 @@ export function ObsidianStoreProvider({
         playerIntent: activeDraft.playerIntent.trim(),
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
-        characterChanges,
+        characterChanges,\n        npcChanges: activeDraft.npcChanges ?? [],
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,

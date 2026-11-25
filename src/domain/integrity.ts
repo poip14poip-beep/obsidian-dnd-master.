@@ -131,6 +131,16 @@ export function validateTurnDraft(
     character.hpCurrent + draft.hpDelta > character.hpMax) {
     errors.push("Итоговые HP не могут превышать максимум персонажа.");
   }
+  for (const change of draft.npcChanges ?? []) {
+    const existing = collectionsNpcs.find((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+    if (change.action === "CREATE" && existing) errors.push(`NPC «${change.name}» уже существует; нельзя создать дубликат.`);
+    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить NPC «${change.name}»: он отсутствует в реестре.`);
+    if (change.action === "UPDATE" && existing?.locked) errors.push(`NPC «${change.name}» заблокирован; сначала разблокируйте карточку вручную.`);
+    if (!change.name.trim() || !change.role.trim() || !change.goals.trim() || !change.reason.trim()) errors.push("Изменение NPC требует имени, роли, целей и причины.");
+    for (const knowledge of change.knowledgeAdditions) {
+      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
+    }
+  }
   const changes = draft.characterChanges;
   if (changes) {
     for (const change of changes.inventory) {

@@ -151,7 +151,7 @@ export function createEmptyTurnDraft(id = "draft-active"): TurnDraft {
     newFactCertainty: "KNOWN",
     newFactSourceId: DEFAULT_SOURCE_IDS.CANON,
     rolls: [],
-    characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } },
+    characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } },\n    npcChanges: [],
     checkedAt: null,
     validationErrors: [],
   };

@@ -239,6 +239,19 @@ export interface RollRecord {
   result: string;
 }
 
+export interface NpcTurnChange {
+  action: "CREATE" | "UPDATE";
+  name: string;
+  role: string;
+  goals: string;
+  attitudeToPlayer: string;
+  locationName: string | null;
+  factionName: string | null;
+  certainty: CertaintyStatus;
+  reason: string;
+  knowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
+}
+
 export interface TurnDraft {
   id: string;
   createdAt: string;
@@ -248,6 +261,7 @@ export interface TurnDraft {
   worldOutcome: string;
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
+  npcChanges?: NpcTurnChange[];
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -277,6 +291,7 @@ export interface GameTurnEntry {
   worldOutcome: string;
   gmNarration?: string;
   characterChanges?: CharacterChangeSet;
+  npcChanges?: NpcTurnChange[];
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];
