@@ -38,7 +38,8 @@ describe("player inventory weight", () => {
     const result = calculatePlayerInventoryWeight(character, "STANDARD");
     expect(result.knownCarriedWeightLb).toBe(0);
     expect(result.unknownCarriedItems).toEqual([]);
-    expect(result.encumbranceStatus).toBe("UNENCUMBERED");
+    expect(result.unknownLocationItems).toEqual(["Комплект инструментов"]);
+    expect(result.encumbranceStatus).toBe("UNKNOWN");
   });
   it("does not claim a definitive load while carried item weights are unknown", () => {
     const character = createInitialPlayerCharacterState();

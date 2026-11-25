@@ -572,6 +572,7 @@ function CharacterPage() {
           <div><p className="text-muted-foreground">Вместимость</p><p className="mono-code font-semibold">{inventoryWeight.carryingCapacityLb === null ? "UNKNOWN" : inventoryWeight.carryingCapacityLb + " lb"}</p></div>
           <div><p className="text-muted-foreground">Проверка нагрузки</p><p className="mono-code font-semibold">{inventoryWeight.encumbranceStatus}</p></div>
           {inventoryWeight.unknownCarriedItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Вес неизвестен: {inventoryWeight.unknownCarriedItems.join(", ")}</p>}
+          {inventoryWeight.unknownLocationItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Не распределено по местам: {inventoryWeight.unknownLocationItems.join(", ")}. Нагрузка UNKNOWN до уточнения местоположения.</p>}
         </div>
         <form onSubmit={handleAddInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-6">
           <Input
