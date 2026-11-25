@@ -58,6 +58,15 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+export interface CampaignParametersPatch {
+  campaignName?: string;
+  calendarSystem?: string;
+  startInGameDate?: string;
+  startLocationName?: string;
+  encumbranceMode?: WorldState["encumbranceMode"];
+  setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
+}
+
 export interface ObsidianStoreValue {
   hydrated: boolean;
   collections: ObsidianCollections;
@@ -159,15 +168,8 @@ export interface ObsidianStoreValue {
   updateInventoryItem: (id: string, patch: Partial<Omit<InventoryItem, "id">>) => PersistVerifyResult;
 
   // Setup Wizard & Campaign Parameters
-  updateCampaignParameters: (patch: {
-    campaignName?: string;
-    calendarSystem?: string;
-    startInGameDate?: string;
-    startLocationName?: string;
-    encumbranceMode?: WorldState["encumbranceMode"];
-    setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
-  }) => PersistVerifyResult;
-  confirmCampaignSetup: () => PersistVerifyResult;
+  updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
+  confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
 
   // Turns & Append-only Journal
   updateTurnDraft: (patch: Partial<TurnDraft>) => void;
@@ -813,8 +815,17 @@ export function ObsidianStoreProvider({
     [collections, commitCollections],
   );
 
-  const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback(() => {
-    const ws = collections.world_state;
+  const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback((patch = {}) => {
+    const currentWorld = collections.world_state;
+    const ws: WorldState = {
+      ...currentWorld,
+      campaignName: patch.campaignName ?? currentWorld.campaignName,
+      calendarSystem: patch.calendarSystem ?? currentWorld.calendarSystem,
+      startInGameDate: patch.startInGameDate ?? currentWorld.startInGameDate,
+      startLocationName: patch.startLocationName ?? currentWorld.startLocationName,
+      encumbranceMode: patch.encumbranceMode ?? currentWorld.encumbranceMode,
+      setup: patch.setupPatch ? { ...currentWorld.setup, ...patch.setupPatch } : currentWorld.setup,
+    };
     const pc = collections.player_character_state;
     const s = ws.setup;
     const governingReady = collections.sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
@@ -884,7 +895,7 @@ export function ObsidianStoreProvider({
 
     const nextWorld: WorldState = {
       ...ws,
-      stateVersion: ws.stateVersion + 1,
+      stateVersion: currentWorld.stateVersion + 1,
       updatedAt: now,
       currentInGameDate: ws.startInGameDate.trim(),
       currentLocationId: activeLocId,

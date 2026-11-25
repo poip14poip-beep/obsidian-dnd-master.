@@ -92,15 +92,13 @@ function SettingsPage() {
   }
 
   function handleConfirmSetup() {
-    // Save current input values first, then confirm
-    updateCampaignParameters({
-      campaignName: campaignName.trim() || worldState.campaignName,
-      calendarSystem: calendarSystem.trim() || worldState.calendarSystem,
-      startInGameDate: startInGameDate.trim() || worldState.startInGameDate,
-      startLocationName: startLocationName.trim() || worldState.startLocationName,
+    const res = confirmCampaignSetup({
+      campaignName: campaignName.trim(),
+      calendarSystem: calendarSystem.trim() || "UNKNOWN",
+      startInGameDate: startInGameDate.trim() || "UNKNOWN",
+      startLocationName: startLocationName.trim() || "UNKNOWN",
       encumbranceMode,
     });
-    const res = confirmCampaignSetup();
     if (res.ok) {
       toast.success("Подготовка кампании подтверждена! Раздел «Ходы и журнал» разблокирован.");
     } else {

@@ -252,14 +252,14 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {/* Main content area */}
-      <main className="min-h-screen px-3 pt-4 pb-24 sm:px-5 lg:ml-64 lg:px-8 lg:py-6">
+      <main className="min-h-dvh px-3 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-5 lg:ml-64 lg:px-8 lg:py-6">
         <div className="mx-auto max-w-4xl">{children}</div>
       </main>
 
       {/* Android-first fixed bottom navigation */}
       <nav
         aria-label="Нижняя навигация"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 backdrop-blur lg:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         {MOBILE_BOTTOM_PATHS.map((path) => {
           const item = NAV_ITEMS.find((n) => n.to === path)!;
