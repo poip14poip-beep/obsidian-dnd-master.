@@ -61,13 +61,13 @@ export function extractDossierBasics(text: string): DossierBasics {
   const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
   const resources: DossierResource[] = [];
   const resourcePatterns: Array<{ name: string; pattern: RegExp; recovery: string }> = [
-    { name: "Second Wind", pattern: /Second Wind:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован/iu, recovery: "UNKNOWN" },
-    { name: "Action Surge", pattern: /Action Surge:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "Long Rest" },
-    { name: "Indomitable", pattern: /Indomitable:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован/iu, recovery: "UNKNOWN" },
+    { name: "Second Wind", pattern: /Second Wind:\s*(один|одна|два|две|три|четыре|\d+)\s+использован/iu, recovery: "UNKNOWN" },
+    { name: "Action Surge", pattern: /Action Surge:\s*(один|одна|два|две|три|четыре|\d+)\s+использован[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "Long Rest" },
+    { name: "Indomitable", pattern: /Indomitable:\s*(один|одна|два|две|три|четыре|\d+)\s+использован/iu, recovery: "UNKNOWN" },
   ];
   for (const resource of resourcePatterns) {
     const match = text.match(resource.pattern);
-    if (!match) continue;
+    const count = /^\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
     const count = /^\\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
     if (count !== undefined) resources.push({ name: resource.name, current: null, max: count, recovery: resource.recovery, certainty: "KNOWN" });
   }
