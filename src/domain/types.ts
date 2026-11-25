@@ -1,3 +1,5 @@
+import type { CanonDateMention, CanonSection } from "./canon-ingestion";
+
 export type CertaintyStatus = "KNOWN" | "APPROXIMATE" | "UNKNOWN";
 
 export type EpistemicLayer =
@@ -8,6 +10,18 @@ export type SourceType = "GOVERNING_DOC" | "WORLD_CANON" | "PLAYER_DOSSIER" | "S
 export type SourceContentStatus = "NOT_ATTACHED" | "ATTACHED";
 
 export type FactScope = "GLOBAL" | "REGION" | "LOCATION" | "FACTION" | "PERSONAL";
+
+export interface SourceProcessingSummary {
+  status: "NOT_PROCESSED" | "PROCESSED" | "FAILED";
+  sha256: string | null;
+  characterCount: number;
+  lineCount: number;
+  sectionCount: number;
+  chunkCount: number;
+  dateCandidateCount: number;
+  processedAt: string | null;
+  warnings: string[];
+}
 
 export interface SourceDocument {
   id: string;
@@ -22,6 +36,9 @@ export interface SourceDocument {
   checksum: string;
   attachedAt: string | null;
   notes: string;
+  processing?: SourceProcessingSummary;
+  canonSections?: CanonSection[];
+  dateMentions?: CanonDateMention[];
 }
 
 export interface FactRevision {

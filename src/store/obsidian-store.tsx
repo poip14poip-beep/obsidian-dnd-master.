@@ -44,6 +44,7 @@ import type {
   PlayerCharacterState,
   SessionLogState,
   SourceDocument,
+  SourceProcessingSummary,
   TechnicalMessageEntry,
   TravelRoute,
   TurnDraft,
@@ -88,7 +89,7 @@ export interface ObsidianStoreValue {
   // Sources
   attachSourceContent: (
     sourceId: string,
-    payload: { fileName: string | null; content: string; originLabel: string; notes: string },
+    payload: { fileName: string | null; content: string; originLabel: string; notes: string; processing?: SourceProcessingSummary; canonSections?: SourceDocument["canonSections"]; dateMentions?: SourceDocument["dateMentions"] },
   ) => PersistVerifyResult;
   addSupplementalSource: (payload: {
     title: string;
@@ -283,6 +284,9 @@ export function ObsidianStoreProvider({
               certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
               checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
               attachedAt: hasText ? now : null,
+              processing: payload.processing ?? src.processing,
+              canonSections: payload.canonSections ?? (src.type === "WORLD_CANON" ? [] : src.canonSections),
+              dateMentions: payload.dateMentions ?? (src.type === "WORLD_CANON" ? [] : src.dateMentions),
             }
           : src,
       );

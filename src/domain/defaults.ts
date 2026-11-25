@@ -30,6 +30,7 @@ export function createInitialSources(): SourceDocument[] {
       attachedAt: null,
       notes:
         "Управляющий документ симуляции D&D 5e (2024) по ОБСИДИАН 4.1. Загрузите оригинал в разделе «Источники»; содержимое не додумывается.",
+      processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
     {
       id: DEFAULT_SOURCE_IDS.CANON,
@@ -45,6 +46,7 @@ export function createInitialSources(): SourceDocument[] {
       attachedAt: null,
       notes:
         "Канонический источник сведений о мире. Наличие файла не означает старт кампании и не импортирует старые ходы или локации автоматически.",
+      processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
     {
       id: DEFAULT_SOURCE_IDS.DOSSIER,
@@ -60,6 +62,7 @@ export function createInitialSources(): SourceDocument[] {
       attachedAt: null,
       notes:
         "Изолированный источник для PLAYER_CHARACTER_STATE. Никогда не вкладывается в CAMPAIGN_STATE.",
+      processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
   ];
 }
