@@ -7,7 +7,7 @@ export interface GameMasterContext {
 }
 export interface GameMasterTurn {
   narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
-  newInGameDate: string; consequenceText: string;
+  newInGameDate: string; newLocationId: string | null; consequenceText: string;
   rolls: Array<{ label: string; formula: string; result: string }>;
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -26,7 +26,7 @@ const turnSchema = {
   properties: {
     narration: { type: "string" }, summary: { type: "string" }, worldOutcome: { type: "string" },
     timeDeltaMinutes: { type: "integer" }, hpDelta: { type: "integer" }, newInGameDate: { type: "string" },
-    consequenceText: { type: "string" },
+    consequenceText: { type: "string" },\n    newLocationId: { type: ["string", "null"] },
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
     }, required: ["label", "formula", "result"] } },
@@ -59,7 +59,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -117,7 +117,7 @@ function validateTurn(value: unknown): GameMasterTurn {
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
   if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn.timeDeltaMinutes) ||
-    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || typeof turn.needsClarification !== "boolean" ||
+    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || (turn.newLocationId !== null && typeof turn.newLocationId !== "string") || typeof turn.needsClarification !== "boolean" ||
     !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
   if (!Array.isArray(turn.npcChanges)) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
@@ -138,7 +138,7 @@ function validateTurn(value: unknown): GameMasterTurn {
       }
     }
   }
-  const changes = turn.characterChanges as Record<string, unknown> | undefined;
+  if (typeof turn.newLocationId === "string" && !context.locations.some((location) => location.id === turn.newLocationId)) {\n    throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");\n  }\n  const changes = turn.characterChanges as Record<string, unknown> | undefined;
   if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
       !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
     throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
@@ -212,7 +212,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "Ответ narration должен соблюдать формат ОБСИДИАН 4.1 и быть на русском языке.",
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
-      "newInGameDate оставь текущей датой, если время не продвинулось.",
+      "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
       "Учитывай scheduledAndDelayedEvents: событие срабатывает только при пересечении его подтверждённого срока/условия. Не запускай его раньше и не игнорируй при пересечении. Если точный формат даты неизвестен, не угадывай — оставь событие ожидающим уточнения.",
