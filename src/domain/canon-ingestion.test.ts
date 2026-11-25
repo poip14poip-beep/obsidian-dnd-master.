@@ -11,7 +11,17 @@ describe("Ekdrasil canon ingestion", () => {
     expect(manifest.sections.map((section) => section.heading)).toEqual(["Мир", "История", "Причины"]);
     expect(manifest.sections[2]!.headingPath).toEqual(["Мир", "История", "Причины"]);
     expect(manifest.sections[1]!.text).toContain("Великий разлом");
+    expect(manifest.sections[1]!.startLine).toBe(5);
+    expect(manifest.sections[1]!.endLine).toBe(5);
     expect(manifest.dateMentions.some((mention) => mention.rawText.includes("851"))).toBe(true);
+  });
+  it("tracks distinct line ranges across multiple chunks", async () => {
+    const content = "# Раздел\n" + Array.from({ length: 18 }, (_, index) =>
+      `Абзац ${index + 1}: ${"текст ".repeat(70)}`).join("\n\n");
+    const manifest = await ingestCanonSources([{ sourceId: "chunks", title: "Chunks", fileName: "chunks.md", version: "1", content }], { maxChunkChars: 500 });
+    expect(manifest.sections.length).toBeGreaterThan(1);
+    expect(manifest.sections[0]!.startLine).toBe(2);
+    expect(manifest.sections[1]!.startLine).toBeGreaterThan(manifest.sections[0]!.startLine);
   });
   it("rejects duplicate source IDs", async () => {
     await expect(ingestCanonSources([
