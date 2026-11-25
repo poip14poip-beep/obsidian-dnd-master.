@@ -1,0 +1,52 @@
+name: Build and publish static Obsidian app
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "static-site/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: obsidian-static-site
+  cancel-in-progress: true
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Build static application
+        env:
+          GITHUB_STATIC_SITE: "true"
+          VITE_GITHUB_STATIC_SITE: "true"
+        run: bun run build
+      - name: Prepare static SPA files
+        run: |
+          test -s .output/public/_shell.html
+          cp .output/public/_shell.html .output/public/index.html
+          cp .output/public/_shell.html .output/public/404.html
+          touch .output/public/.nojekyll
+      - name: Publish static files to a dedicated branch
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/obsidian-static-site
+          cp -R .output/public/. /tmp/obsidian-static-site/
+          cd /tmp/obsidian-static-site
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Static app build from ${SOURCE_SHA}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:static-site
