@@ -70,8 +70,8 @@ jobs:
             sleep 5
           done
           grep -q "Obsidian Control" /tmp/obsidian-smoke/index.html
-          CONTENT_TYPE="$(curl --silent --show-error --head "$APP_URL/" | tr -d '\r' | grep -i '^content-type:' | head -n 1)"
-          echo "Root response: $CONTENT_TYPE"
+          CONTENT_TYPE="$(curl --silent --show-error -D /tmp/obsidian-smoke/root.headers "$APP_URL/" -o /tmp/obsidian-smoke/root.body && tr -d '\r' < /tmp/obsidian-smoke/root.headers | grep -i '^content-type:' | tail -n 1)"
+          echo "Root GET response: $CONTENT_TYPE"
           echo "$CONTENT_TYPE" | grep -qi 'text/html'
           CSS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.css' /tmp/obsidian-smoke/index.html | head -n 1)"
           JS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.js' /tmp/obsidian-smoke/index.html | head -n 1)"
