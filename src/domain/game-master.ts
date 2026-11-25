@@ -386,5 +386,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
-  const turn = validateTurn(parsed);\n  validateReferences(turn, context);\n  return { turn, model, usage };
+  const turn = validateTurn(parsed);
+  validateReferences(turn, context);
+  return { turn, model, usage };
 }
