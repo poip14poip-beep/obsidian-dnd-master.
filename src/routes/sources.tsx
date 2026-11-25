@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { SourceDocument } from "@/domain/types";
+import { extractDocxText } from "@/domain/docx-text";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/sources")({
@@ -57,7 +58,14 @@ function SourcesPage() {
   async function handleFileUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const text = await file.text();
+    let text: string;
+    try {
+      text = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось прочитать файл.");
+      e.target.value = "";
+      return;
+    }
     setDraftFileName(file.name);
     setDraftContent(text);
     setDraftOrigin(`Загруженный файл: ${file.name}`);
@@ -234,12 +242,12 @@ function SourcesPage() {
                 <form onSubmit={handleSaveSource} className="space-y-3 border-t border-border pt-3">
                   <div className="space-y-1.5">
                     <Label htmlFor={`file-${src.id}`}>
-                      Загрузить текстовый файл (.txt, .md, .json)
+                      Загрузить текстовый файл (.txt, .md, .json, .docx)
                     </Label>
                     <Input
                       id={`file-${src.id}`}
                       type="file"
-                      accept=".txt,.md,.json,.csv"
+                      accept=".txt,.md,.json,.csv,.docx"
                       onChange={handleFileUpload}
                       className="touch-target"
                     />
