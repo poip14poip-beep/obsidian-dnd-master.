@@ -306,7 +306,7 @@ function SettingsPage() {
           <h3 className="text-sm font-semibold text-foreground">
             Шаг 3. Случайное начало свободной кампании
           </h3>
-          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение прежней биографии Лии.</p>
+          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение прежней биографии Лии. Задания, обязательные встречи и сюжетные цели не назначаются.</p>
           <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleGenerateRandomStart} disabled={s.confirmed || !sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED")}>
             Сгенерировать случайную стартовую ситуацию
           </Button>
