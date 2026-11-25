@@ -445,6 +445,40 @@ function CharacterPage() {
         </Button>
       </form>
 
+      {(character.savingThrowBonuses || character.skillBonuses?.length || character.weaponAttacks?.length || character.classFeaturesByLevel?.length) && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Боевые и проверочные параметры</h2>
+          {character.savingThrowBonuses && (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Спасброски (итоговые значения)</p>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                {([["СИЛ", character.savingThrowBonuses.strength], ["ЛОВ", character.savingThrowBonuses.dexterity], ["ТЕЛ", character.savingThrowBonuses.constitution], ["ИНТ", character.savingThrowBonuses.intelligence], ["МДР", character.savingThrowBonuses.wisdom], ["ХАР", character.savingThrowBonuses.charisma]] as const).map(([label, value]) => <div key={label} className="rounded border border-border p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code font-semibold">{value >= 0 ? "+" + value : value}</p></div>)}
+              </div>
+              {character.baseSavingThrowBonuses && <p className="text-[10px] text-muted-foreground">Базовые значения до экипировки: {Object.values(character.baseSavingThrowBonuses).map((value) => value >= 0 ? "+" + value : String(value)).join(" / ")}. Итоговые значения учитывают явно указанные бонусы досье.</p>}
+            </div>
+          )}
+          {character.skillBonuses?.length ? (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Навыки</p>
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                {character.skillBonuses.map((skill) => <div key={skill.name} className="flex justify-between gap-2 rounded bg-muted/30 px-2 py-1 text-xs"><span>{skill.name}</span><strong className="mono-code">{skill.bonus >= 0 ? "+" + skill.bonus : skill.bonus}</strong></div>)}
+              </div>
+            </div>
+          ) : null}
+          {character.weaponAttacks?.length ? (
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Атаки из досье</p>
+              {character.weaponAttacks.map((weapon) => <div key={weapon.weapon} className="rounded border border-border p-2 text-xs"><strong>{weapon.weapon}</strong> · атака {weapon.attackBonus >= 0 ? "+" + weapon.attackBonus : weapon.attackBonus} · {weapon.damage} · Mastery: {weapon.mastery}</div>)}
+            </div>
+          ) : null}
+          {character.classFeaturesByLevel?.length ? (
+            <details className="text-xs">
+              <summary className="touch-target cursor-pointer font-medium">Особенности Fighter по уровням ({character.classFeaturesByLevel.length})</summary>
+              <div className="mt-2 space-y-1">{character.classFeaturesByLevel.map((feature) => <p key={feature.level}><strong>{feature.level} ур.</strong> · {feature.features}</p>)}</div>
+            </details>
+          ) : null}
+        </section>
+      )}
       {character.abilityScores && (
         <section className="panel-surface space-y-3 p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">

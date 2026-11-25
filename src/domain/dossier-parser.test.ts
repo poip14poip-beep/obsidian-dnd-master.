@@ -25,6 +25,7 @@ describe("player dossier summary extraction", () => {
       "Кость хитов | 20d10",
       "## 9.2. Спасброски",
       "+11 | +3 | +9 | +4 | +2 | +3",
+      "Cloak of Protection добавляет +1 ко всем спасброскам: итог +12, +4, +10, +5, +3, +4 соответственно.",
       "## 9.3. Навыки и пассивные показатели",
       "Атлетика | +11 | Сила +5, владение +6; Soldier",
       "История | +10 | Интеллект +4, владение +6; Skilled",
@@ -50,7 +51,8 @@ describe("player dossier summary extraction", () => {
     expect(result.speedFeet).toBe(30);
     expect(result.hitDice).toBe("20d10");
     expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
-    expect(result.savingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.savingThrowBonuses).toEqual({ strength: 12, dexterity: 4, constitution: 10, intelligence: 5, wisdom: 3, charisma: 4 });
     expect(result.skillBonuses).toHaveLength(2);
     expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
     expect(result.classFeaturesByLevel).toHaveLength(2);
