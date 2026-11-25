@@ -189,7 +189,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   D&D 5e (2024) · ОБСИДИАН 4.1
                 </p>
                 <p className="truncate pt-1 text-xs text-foreground">
-                  {user?.email ?? "Авторизованный пользователь"}
+                  {guestMode ? "Гостевой режим" : user?.email ?? "Авторизованный пользователь"}
                 </p>
                 <p className="text-[10px] text-status-approx">
                   Локальный слой · облачная синхронизация не подключена
