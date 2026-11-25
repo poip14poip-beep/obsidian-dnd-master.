@@ -29,7 +29,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     ?? text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
     ?? text.match(/общий\s+(\d{1,2})-й\s+уровень/i);
   const level = levelMatch ? Number(levelMatch[1]) : null;
-  const classLevelMatch = text.match(/Классовые уровни\\s*\\|\\s*[^\\d]*(\\d{1,2})\\b/i);
+  const classLevelMatch = text.match(/Классовые уровни\s*\|\s*[^\d]*(\d{1,2})\b/i);
   const classLevel = classLevelMatch ? Number(classLevelMatch[1]) : null;
   const epicCampaignLevels = level !== null && classLevel !== null && level > classLevel ? level - classLevel : 0;
   const hpMatch = text.match(/^\s*HP\s*\|\s*([1-9]\d{1,2})\b/im) ?? text.match(/(?:^|[\s·])([1-9]\d{1,2})\s*HP\b/i);
