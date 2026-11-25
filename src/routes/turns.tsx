@@ -81,7 +81,12 @@ function TurnsPage() {
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
 
-  async function handleResolveAction(actionOverride?: string) {\n    const actionToResolve = actionOverride ?? playerAction;\n    if (!actionToResolve.trim()) {\n      setGmError("Опиши действие персонажа перед отправкой мастеру.");\n      return;\n    }
+  async function handleResolveAction(actionOverride?: string) {
+    const actionToResolve = actionOverride ?? playerAction;
+    if (!actionToResolve.trim()) {
+      setGmError("Опиши действие персонажа перед отправкой мастеру.");
+      return;
+    }
     setGmError(null);
     setGmTurn(null);
     if (!worldState.setup.confirmed) {
