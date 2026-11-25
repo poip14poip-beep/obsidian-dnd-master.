@@ -52,7 +52,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 
-function item(name: string, quantity: number, notes: string, location: InventoryItem["location"], certainty: InventoryItem["certainty"] = "KNOWN"): InventoryItem {
+function item(name: string, quantity: number, notes: string, location: NonNullable<InventoryItem["location"]>, certainty: InventoryItem["certainty"] = "KNOWN"): InventoryItem {
   return { id: `start-${name.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-")}`, name, quantity, notes, location, certainty };
 }
 
