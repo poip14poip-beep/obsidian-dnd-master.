@@ -107,8 +107,29 @@ function CharacterPage() {
     if (extracted.hitPointMaximum !== null) setHpMaxStr(String(extracted.hitPointMaximum));
     if (extracted.armorClass !== null) setAcStr(String(extracted.armorClass));
     setStatsCertainty("KNOWN");
+    const importedInventory = extracted.inventory.map((item, index) => ({
+      id: `dossier-item-${index + 1}`, name: item.name, quantity: item.quantity,
+      notes: [item.location, item.notes].filter(Boolean).join(" · "), certainty: item.certainty,
+    }));
+    const saved = updatePlayerCharacter({
+      ...(extracted.name ? { name: extracted.name, nameCertainty: "KNOWN" as const } : {}),
+      ...(extracted.speciesAndClass ? { speciesAndClass: extracted.speciesAndClass } : {}),
+      ...(extracted.level !== null ? { level: extracted.level } : {}),
+      ...(extracted.hitPointMaximum !== null ? { hpMax: extracted.hitPointMaximum } : {}),
+      ...(extracted.armorClass !== null ? { armorClass: extracted.armorClass } : {}),
+      ...(extracted.abilityScores ? { abilityScores: extracted.abilityScores } : {}),
+      ...(extracted.proficiencyBonus !== null ? { proficiencyBonus: extracted.proficiencyBonus } : {}),
+      ...(extracted.speedFeet !== null ? { speedFeet: extracted.speedFeet } : {}),
+      ...(extracted.hitDice ? { hitDice: extracted.hitDice } : {}),
+      ...(importedInventory.length > 0 ? { inventory: importedInventory } : {}),
+      statsCertainty: "KNOWN",
+    });
+    if (!saved.ok) {
+      toast.error(saved.error);
+      return;
+    }
     setDossierImportSummary(extracted.evidence);
-    toast.success("Подтянуты только явно найденные значения. Текущие HP, инвентарь и неизвестные поля не заполнены.");
+    toast.success("Из досье сохранены найденные характеристики и предметы. Текущие HP и неизвестные веса не выдуманы.");
   }
 
   function handleSaveSheet(e: FormEvent) {
