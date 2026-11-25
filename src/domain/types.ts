@@ -253,6 +253,7 @@ export interface GameTurnEntry {
   summary: string;
   playerIntent: string;
   worldOutcome: string;
+  gmNarration?: string;
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];
