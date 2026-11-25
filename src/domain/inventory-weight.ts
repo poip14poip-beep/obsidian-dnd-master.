@@ -8,8 +8,9 @@ export interface PlayerInventoryWeight {
   totalKnownLoadLb: number;
   carryingCapacityLb: number | null;
   overCapacity: boolean | null;
+  encumbranceStatus: "UNKNOWN" | "ABSTRACT" | "UNENCUMBERED" | "ENCUMBERED" | "HEAVILY_ENCUMBERED" | "OVER_CAPACITY";
 }
-export function calculatePlayerInventoryWeight(character: PlayerCharacterState): PlayerInventoryWeight {
+export function calculatePlayerInventoryWeight(character: PlayerCharacterState, mode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT" = "UNSET"): PlayerInventoryWeight {
   let knownCarriedWeightLb = 0;
   let storedWeightLb = 0;
   let droppedWeightLb = 0;
@@ -32,9 +33,17 @@ export function calculatePlayerInventoryWeight(character: PlayerCharacterState):
     : null;
   const totalKnownLoadLb = knownCarriedWeightLb + (currencyWeightLb ?? 0);
   const strength = character.abilityScores?.strength;
-  const carryingCapacityLb = typeof strength === "number" ? strength * 15 : null;
-  const overCapacity = carryingCapacityLb === null || currencyWeightLb === null || unknownCarriedItems.length > 0
-    ? null : totalKnownLoadLb > carryingCapacityLb;
+  const carryingCapacityLb = (mode === "STANDARD" || mode === "VARIANT") && typeof strength === "number" ? strength * 15 : null;
+  const complete = typeof strength === "number" && currencyWeightLb !== null && unknownCarriedItems.length === 0;
+  let encumbranceStatus: PlayerInventoryWeight["encumbranceStatus"] = "UNKNOWN";
+  if (mode === "ABSTRACT") encumbranceStatus = "ABSTRACT";
+  else if (complete && carryingCapacityLb !== null) {
+    if (totalKnownLoadLb > carryingCapacityLb) encumbranceStatus = "OVER_CAPACITY";
+    else if (mode === "VARIANT" && totalKnownLoadLb > strength! * 10) encumbranceStatus = "HEAVILY_ENCUMBERED";
+    else if (mode === "VARIANT" && totalKnownLoadLb > strength! * 5) encumbranceStatus = "ENCUMBERED";
+    else encumbranceStatus = "UNENCUMBERED";
+  }
+  const overCapacity = encumbranceStatus === "UNKNOWN" || encumbranceStatus === "ABSTRACT" ? null : encumbranceStatus === "OVER_CAPACITY";
   return { knownCarriedWeightLb, unknownCarriedItems, storedWeightLb, droppedWeightLb,
-    currencyWeightLb, totalKnownLoadLb, carryingCapacityLb, overCapacity };
+    currencyWeightLb, totalKnownLoadLb, carryingCapacityLb, overCapacity, encumbranceStatus };
 }

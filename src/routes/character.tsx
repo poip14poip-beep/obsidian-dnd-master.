@@ -98,7 +98,7 @@ function CharacterPage() {
   }, [character]);
 
   const dossier = sources.find((s) => s.id === character.sourceDossierId);
-  const inventoryWeight = calculatePlayerInventoryWeight(character);
+  const inventoryWeight = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
 
   function handleImportDossier() {
     if (!dossier || dossier.contentStatus !== "ATTACHED") {
@@ -498,7 +498,7 @@ function CharacterPage() {
           <div><p className="text-muted-foreground">Известный переносимый вес</p><p className="mono-code font-semibold">{inventoryWeight.knownCarriedWeightLb.toFixed(2)} lb</p></div>
           <div><p className="text-muted-foreground">Вес монет</p><p className="mono-code font-semibold">{inventoryWeight.currencyWeightLb === null ? "UNKNOWN" : inventoryWeight.currencyWeightLb.toFixed(2) + " lb"}</p></div>
           <div><p className="text-muted-foreground">Вместимость</p><p className="mono-code font-semibold">{inventoryWeight.carryingCapacityLb === null ? "UNKNOWN" : inventoryWeight.carryingCapacityLb + " lb"}</p></div>
-          <div><p className="text-muted-foreground">Проверка нагрузки</p><p className="mono-code font-semibold">{inventoryWeight.overCapacity === null ? "INCOMPLETE" : inventoryWeight.overCapacity ? "OVER" : "OK"}</p></div>
+          <div><p className="text-muted-foreground">Проверка нагрузки</p><p className="mono-code font-semibold">{inventoryWeight.encumbranceStatus}</p></div>
           {inventoryWeight.unknownCarriedItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Вес неизвестен: {inventoryWeight.unknownCarriedItems.join(", ")}</p>}
         </div>
         <form onSubmit={handleAddInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-6">
