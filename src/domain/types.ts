@@ -185,6 +185,16 @@ export interface WorldState {
   elapsedMinutes: number;
   encumbranceMode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT";
   startLocationName: string;
+  startNarrative?: string;
+  startGeneration?: {
+    method: "WEB_CRYPTO_GETRANDOMVALUES";
+    generatedAt: string;
+    cityIndex: number;
+    sceneIndex: number;
+    healthProfileRoll: number;
+    hpRoll: number;
+    hpRange: [number, number];
+  };
   currentLocationId: string | null;
   setup: CampaignSetupState;
   routes: TravelRoute[];
