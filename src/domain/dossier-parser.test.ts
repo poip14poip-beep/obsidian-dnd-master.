@@ -49,6 +49,7 @@ describe("player dossier summary extraction", () => {
     expect(result.proficiencyBonus).toBe(6);
     expect(result.speedFeet).toBe(30);
     expect(result.hitDice).toBe("20d10");
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
     expect(result.savingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
     expect(result.skillBonuses).toHaveLength(2);
     expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
@@ -60,7 +61,7 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "OTHER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
-      { name: "Action Surge", current: null, max: 2, recovery: "Long Rest", certainty: "KNOWN" },
+      { name: "Action Surge", current: null, max: 2, recovery: "UNKNOWN", certainty: "KNOWN" },
       { name: "Indomitable", current: null, max: 3, recovery: "UNKNOWN", certainty: "KNOWN" },
     ]);
   });

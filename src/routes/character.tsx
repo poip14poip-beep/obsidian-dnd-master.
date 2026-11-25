@@ -142,6 +142,7 @@ function CharacterPage() {
       ...(extracted.speedFeet !== null ? { speedFeet: extracted.speedFeet } : {}),
       ...(extracted.hitDice ? { hitDice: extracted.hitDice } : {}),
       ...(extracted.savingThrowBonuses ? { savingThrowBonuses: extracted.savingThrowBonuses } : {}),
+      ...(extracted.baseSavingThrowBonuses ? { baseSavingThrowBonuses: extracted.baseSavingThrowBonuses } : {}),
       ...(extracted.skillBonuses.length ? { skillBonuses: extracted.skillBonuses } : {}),
       ...(extracted.classFeaturesByLevel.length ? { classFeaturesByLevel: extracted.classFeaturesByLevel } : {}),
       ...(extracted.weaponAttacks.length ? { weaponAttacks: extracted.weaponAttacks } : {}),
