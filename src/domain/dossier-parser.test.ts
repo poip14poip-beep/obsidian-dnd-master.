@@ -22,7 +22,7 @@ describe("player dossier summary extraction", () => {
       "1 | Cloak of Protection | +1 КБ",
       "11.2. Оружие и обслуживание",
       "1 | Катана в ножнах | Основное оружие",
-    ].join("\\n"));
+    ].join("\n"));
     expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
     expect(result.proficiencyBonus).toBe(6);
     expect(result.speedFeet).toBe(30);
