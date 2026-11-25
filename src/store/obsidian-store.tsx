@@ -952,6 +952,7 @@ export function ObsidianStoreProvider({
       activeDraft,
       collections.world_state,
       collections.player_character_state,
+      collections.npcs,
     );
     const nextDraft: TurnDraft = {
       ...activeDraft,

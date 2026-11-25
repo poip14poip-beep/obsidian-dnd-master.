@@ -5,6 +5,7 @@ import type {
   IntegrityCheckItem,
   IntegrityReport,
   ObsidianCollections,
+  NpcRecord,
   PlayerCharacterState,
   TurnDraft,
   WorldState,
@@ -109,6 +110,7 @@ export function validateTurnDraft(
   draft: TurnDraft,
   worldState: WorldState,
   character: PlayerCharacterState,
+  collectionsNpcs: NpcRecord[] = [],
 ): string[] {
   const errors: string[] = [];
   if (!worldState.setup.confirmed) {
