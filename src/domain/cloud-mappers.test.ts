@@ -61,7 +61,7 @@ describe("cloud mapping primitives", () => {
     expect(row.state_key).toBe("world_state_snapshot");
     expect(row.state_value.currentInGameDate).toBe("UNKNOWN");
     expect("player_character_state" in row.state_value).toBe(false);
-    expect(settings.obsidian_control).toMatchObject({
+    expect(settings["obsidian_control"]).toMatchObject({
       ruleset: collections.world_state.ruleset,
       calendar_system: collections.world_state.calendarSystem,
     });
