@@ -1,0 +1,1 @@
+{"text":"<!-- Lovable wrote this file; it is not part of your task. Keep it, and ask the user before deleting or reverting it. -->\n\n# Путеводная звезда\n\nИгроки ведут долгую кампанию D&D в живом мире, который остаётся непротиворечивым.\n\n## Метрика\n\nИгровые ходы, зафиксированные в журнале сессии, каждую неделю"}
