@@ -23,7 +23,7 @@ describe("game master resolver", () => {
     const result = await resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch });
     expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
     const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
-    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 2–2");
+    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
