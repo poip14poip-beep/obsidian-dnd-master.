@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { CertaintyStatus } from "@/domain/types";
 import { extractDossierBasics } from "@/domain/dossier-parser";
+import { calculatePlayerInventoryWeight } from "@/domain/inventory-weight";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/character")({
@@ -76,6 +77,8 @@ function CharacterPage() {
   const [invName, setInvName] = useState("");
   const [invQty, setInvQty] = useState("1");
   const [invNotes, setInvNotes] = useState("");
+  const [invWeight, setInvWeight] = useState("");
+  const [invLocation, setInvLocation] = useState<"CARRIED" | "WORN" | "STORED" | "DROPPED">("CARRIED");
 
   useEffect(() => {
     setName(character.name);
@@ -89,7 +92,7 @@ function CharacterPage() {
     setNotes(character.notes);
   }, [character]);
 
-  const dossier = sources.find((s) => s.id === character.sourceDossierId);
+  const dossier = sources.find((s) => s.id === character.sourceDossierId);\n  const inventoryWeight = calculatePlayerInventoryWeight(character);
 
   function handleImportDossier() {
     if (!dossier || dossier.contentStatus !== "ATTACHED") {
@@ -225,7 +228,7 @@ function CharacterPage() {
       toast.success("Предмет добавлен в инвентарь.");
       setInvName("");
       setInvQty("1");
-      setInvNotes("");
+      setInvNotes("");\n      setInvWeight("");\n      setInvLocation("CARRIED");
     } else {
       toast.error(res.error);
     }
@@ -360,6 +363,22 @@ function CharacterPage() {
         </Button>
       </form>
 
+      {character.abilityScores && (
+        <section className="panel-surface space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-foreground">Характеристики D&D</h2>
+            <span className="mono-code text-xs text-muted-foreground">PB +{character.proficiencyBonus ?? "?"} · Скорость {character.speedFeet ?? "?"} ft · Кости хитов {character.hitDice ?? "UNKNOWN"}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {([
+              ["СИЛ", character.abilityScores.strength], ["ЛОВ", character.abilityScores.dexterity],
+              ["ТЕЛ", character.abilityScores.constitution], ["ИНТ", character.abilityScores.intelligence],
+              ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma],
+            ] as const).map(([label, value]) => <div key={label} className="rounded border border-border bg-background/60 p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code text-lg font-semibold">{value}</p><p className="mono-code text-xs text-muted-foreground">{value >= 10 ? "+" : ""}{Math.floor((value - 10) / 2)}</p></div>)}
+          </div>
+        </section>
+      )}
+
       {/* Resources */}
       <section className="panel-surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-foreground">
@@ -445,7 +464,14 @@ function CharacterPage() {
         <h2 className="text-sm font-semibold text-foreground">
           Инвентарь ({character.inventory.length})
         </h2>
-        <form onSubmit={handleAddInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 rounded border border-border bg-background/50 p-3 text-xs sm:grid-cols-4">
+          <div><p className="text-muted-foreground">Известный переносимый вес</p><p className="mono-code font-semibold">{inventoryWeight.knownCarriedWeightLb.toFixed(2)} lb</p></div>
+          <div><p className="text-muted-foreground">Вес монет</p><p className="mono-code font-semibold">{inventoryWeight.currencyWeightLb === null ? "UNKNOWN" : inventoryWeight.currencyWeightLb.toFixed(2) + " lb"}</p></div>
+          <div><p className="text-muted-foreground">Вместимость</p><p className="mono-code font-semibold">{inventoryWeight.carryingCapacityLb === null ? "UNKNOWN" : inventoryWeight.carryingCapacityLb + " lb"}</p></div>
+          <div><p className="text-muted-foreground">Проверка нагрузки</p><p className="mono-code font-semibold">{inventoryWeight.overCapacity === null ? "INCOMPLETE" : inventoryWeight.overCapacity ? "OVER" : "OK"}</p></div>
+          {inventoryWeight.unknownCarriedItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Вес неизвестен: {inventoryWeight.unknownCarriedItems.join(", ")}</p>}
+        </div>
+        <form onSubmit={handleAddInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-6">
           <Input
             value={invName}
             onChange={(e) => setInvName(e.target.value)}
@@ -477,7 +503,7 @@ function CharacterPage() {
               >
                 <div>
                   <span className="font-medium text-foreground">{item.name}</span>
-                  <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>
+                  <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>\n                  <p className="text-[11px] text-muted-foreground">{item.location ?? "CARRIED"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : item.unitWeightLb + " lb/ед."}</p>
                 </div>
                 <Button
                   type="button"

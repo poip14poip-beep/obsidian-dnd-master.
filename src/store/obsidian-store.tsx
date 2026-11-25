@@ -1062,7 +1062,7 @@ export function ObsidianStoreProvider({
             const existing = nextInventory[existingIndex]!;
             nextInventory[existingIndex] = { ...existing, quantity: existing.quantity + change.quantity, notes: change.notes || existing.notes, certainty: change.certainty };
           } else {
-            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty });
+            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
           }
         } else if (change.action === "REMOVE" && existingIndex >= 0) {
           const existing = nextInventory[existingIndex]!;
