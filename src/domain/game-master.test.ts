@@ -12,7 +12,7 @@ const context: GameMasterContext = {
   character: { schemaVersion: 1, stateVersion: 1, sourceDossierId: "dossier", name: "Лия", nameCertainty: "KNOWN", speciesAndClass: "Человек / Воин", level: 20, hpCurrent: 100, hpMax: 100, hpTemp: 0, armorClass: 18, statsCertainty: "KNOWN", currentLocationLabel: "UNKNOWN", conditions: [], resources: [], inventory: [], notes: "", updatedAt: "2026-01-01T00:00:00Z" },
   canonFacts: [], npcs: [], factions: [], locations: [], journal: [],
 };
-const validTurn = { narration: "Перед тобой дверь.", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", consequenceText: "", rolls: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
+const validTurn = { narration: "Перед тобой дверь.", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", consequenceText: "", rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 describe("game master resolver", () => {
   it("requires the governing source before a model request", async () => {
     await expect(resolvePlayerAction("sk-test", { ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch }))

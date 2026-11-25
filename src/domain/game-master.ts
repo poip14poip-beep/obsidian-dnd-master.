@@ -110,13 +110,48 @@ function validateTurn(value: unknown): GameMasterTurn {
     (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || typeof turn.needsClarification !== "boolean" ||
     !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
+  const changes = turn.characterChanges as Record<string, unknown> | undefined;
+  if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
+      !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
+    throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
+  }
+  for (const item of changes.inventory as Array<Record<string, unknown>>) {
+    if (!["ADD", "REMOVE", "SET"].includes(String(item.action)) || typeof item.name !== "string" ||
+        !item.name.trim() || !Number.isInteger(item.quantity) ||
+        (item.action === "SET" ? (item.quantity as number) < 0 : (item.quantity as number) < 1) ||
+        typeof item.notes !== "string" || !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(item.certainty))) {
+      throw new GameMasterError("Некорректное изменение инвентаря в ответе мастера.", "INVALID_INVENTORY_CHANGE");
+    }
+  }
+  for (const resource of changes.resources as Array<Record<string, unknown>>) {
+    if (typeof resource.name !== "string" || !resource.name.trim() ||
+        (resource.current !== null && (!Number.isInteger(resource.current) || (resource.current as number) < 0)) ||
+        (resource.max !== null && (!Number.isInteger(resource.max) || (resource.max as number) < 0)) ||
+        (resource.current !== null && resource.max !== null && (resource.current as number) > (resource.max as number)) ||
+        typeof resource.recovery !== "string" ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(resource.certainty))) {
+      throw new GameMasterError("Некорректное изменение ресурса в ответе мастера.", "INVALID_RESOURCE_CHANGE");
+    }
+  }
+  const currency = changes.currencyDelta as Record<string, unknown>;
+  for (const coin of ["cp", "sp", "ep", "gp", "pp"]) {
+    if (!Number.isInteger(currency[coin])) throw new GameMasterError("Некорректное изменение валюты.", "INVALID_CURRENCY_CHANGE");
+  }
+  for (const condition of changes.conditions as Array<Record<string, unknown>>) {
+    if (!["ADD", "REMOVE"].includes(String(condition.action)) || typeof condition.name !== "string" || !condition.name.trim()) {
+      throw new GameMasterError("Некорректное изменение состояния персонажа.", "INVALID_CONDITION_CHANGE");
+    }
+  }
   for (const roll of turn.rolls as Array<Record<string, unknown>>) {
     if (typeof roll.label !== "string" || typeof roll.formula !== "string" ||
         roll.result !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
     }
   }
-  if (turn.needsClarification && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0)) {
+  const hasPendingRoll = (turn.rolls as Array<Record<string, unknown>>).length > 0;
+  if ((turn.needsClarification || hasPendingRoll) && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0 ||
+      (changes.inventory as unknown[]).length > 0 || (changes.resources as unknown[]).length > 0 ||
+      (changes.conditions as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
     throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
   }
   return turn as unknown as GameMasterTurn;

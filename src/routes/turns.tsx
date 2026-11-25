@@ -110,6 +110,7 @@ function TurnsPage() {
           newInGameDate: result.turn.newInGameDate,
           hpDelta: result.turn.hpDelta,
           consequenceText: result.turn.consequenceText,
+          characterChanges: result.turn.characterChanges,
           rolls: result.turn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
