@@ -4,6 +4,7 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { CloudCampaignPanel } from "@/components/CloudCampaignPanel";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -175,6 +176,8 @@ function SettingsPage() {
           Мастер подготовки кампании (обязателен до начала игры) и резервное копирование JSON.
         </p>
       </header>
+
+      <CloudCampaignPanel worldState={worldState} />
 
       <section className="panel-surface space-y-3 p-4">
         <div>
