@@ -6,7 +6,9 @@ export interface GameMasterContext {
   journal: Array<GameTurnEntry | TechnicalMessageEntry>; timelineEvents: DelayedEvent[];
 }
 export interface GameMasterTurn {
-  narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
+  narration: string; campaignMemory: string; sensoryDescription: string; spatialAccounting: string;
+  mechanics: string; consequences: string; resourceAccounting: string; nextAction: string;
+  summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   rolls: Array<{ label: string; formula: string; result: string }>;
   npcChanges: NpcTurnChange[];
@@ -25,7 +27,10 @@ export class GameMasterError extends Error {
 const turnSchema = {
   type: "object", additionalProperties: false,
   properties: {
-    narration: { type: "string" }, summary: { type: "string" }, worldOutcome: { type: "string" },
+    narration: { type: "string" }, campaignMemory: { type: "string" }, sensoryDescription: { type: "string" },
+    spatialAccounting: { type: "string" }, mechanics: { type: "string" }, consequences: { type: "string" },
+    resourceAccounting: { type: "string" }, nextAction: { type: "string" },
+    summary: { type: "string" }, worldOutcome: { type: "string" },
     timeDeltaMinutes: { type: "integer" }, hpDelta: { type: "integer" }, newInGameDate: { type: "string" },
     consequenceText: { type: "string" },
     newLocationId: { type: ["string", "null"] },
@@ -61,7 +66,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -219,7 +224,13 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
     recentJournal: context.journal.slice(-12),
     requirements: [
-      "Ответ narration должен соблюдать формат ОБСИДИАН 4.1 и быть на русском языке.",
+      "Верни отдельные обязательные блоки campaignMemory, sensoryDescription, spatialAccounting, mechanics, consequences, resourceAccounting и nextAction. narration — только описание сцены.",
+      "Не придумывай дату, погоду, освещение, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE.",
+      "sensoryDescription содержит только то, что персонаж реально воспринимает; если новых ощущений нет, так и напиши.",
+      "spatialAccounting показывает только известные позиции, расстояния и препятствия; не выводи точные расстояния из художественного описания.",
+      "mechanics указывает применённое правило/источник, проверку, модификатор, преимущество/помеху, DC/AC и результат; если бросок не нужен, объясни почему.",
+      "resourceAccounting показывает затронутые ресурсы и явно отмечает, если изменений нет. nextAction заканчивается открытым вопросом без навязывания вариантов.",
+      "Ответ должен быть на русском языке.",
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
