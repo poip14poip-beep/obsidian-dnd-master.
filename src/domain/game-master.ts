@@ -102,8 +102,8 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
   const record = payload as Record<string, unknown>;
-  if (typeof record["output_text"] === "string") return record["output"]_text;
-  for (const item of Array.isArray(record.output) ? record.output : []) {
+  if (typeof record["output_text"] === "string") return record["output_text"] as string;
+  for (const item of Array.isArray(record["output"]) ? record["output"] : []) {
     if (!item || typeof item !== "object") continue;
     const content = (item as Record<string, unknown>).content;
     if (!Array.isArray(content)) continue;
