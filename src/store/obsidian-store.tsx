@@ -1073,7 +1073,7 @@ export function ObsidianStoreProvider({
         } else if (change.action === "SET") {
           if (change.quantity === 0) nextInventory = nextInventory.filter((_, index) => index !== existingIndex);
           else if (existingIndex >= 0) nextInventory[existingIndex] = { ...nextInventory[existingIndex]!, quantity: change.quantity, notes: change.notes, certainty: change.certainty };
-          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty });
+          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
         }
       }
       const nextResources = [...pc.resources];
