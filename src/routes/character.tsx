@@ -116,7 +116,9 @@ function CharacterPage() {
     if (extracted.level !== null) setLevelStr(String(extracted.level));
     if (extracted.hitPointMaximum !== null) setHpMaxStr(String(extracted.hitPointMaximum));
     if (extracted.armorClass !== null) setAcStr(String(extracted.armorClass));
-    setStatsCertainty("KNOWN");
+    const hasExplicitStats = extracted.level !== null || extracted.hitPointMaximum !== null ||
+      extracted.armorClass !== null || extracted.abilityScores !== null;
+    if (hasExplicitStats) setStatsCertainty("KNOWN");
     const importedInventory = extracted.inventory.map((item, index) => ({
       id: `dossier-item-${index + 1}`, name: item.name, quantity: item.quantity,
       notes: item.notes, location: item.location, unitWeightLb: null, certainty: item.certainty,
@@ -126,7 +128,7 @@ function CharacterPage() {
       ...(extracted.speciesAndClass ? { speciesAndClass: extracted.speciesAndClass } : {}),
       ...(extracted.level !== null ? { level: extracted.level } : {}),
       ...(extracted.classLevel !== null ? { classLevel: extracted.classLevel } : {}),
-      epicCampaignLevels: extracted.epicCampaignLevels,
+      ...(extracted.level !== null || extracted.classLevel !== null ? { epicCampaignLevels: extracted.epicCampaignLevels } : {}),
       ...(extracted.hitPointMaximum !== null ? { hpMax: extracted.hitPointMaximum } : {}),
       ...(extracted.armorClass !== null ? { armorClass: extracted.armorClass } : {}),
       ...(extracted.abilityScores ? { abilityScores: extracted.abilityScores } : {}),
@@ -139,14 +141,14 @@ function CharacterPage() {
       ...(extracted.weaponAttacks.length ? { weaponAttacks: extracted.weaponAttacks } : {}),
       ...(importedInventory.length > 0 ? { inventory: importedInventory } : {}),
       ...(extracted.resources.length > 0 ? { resources: extracted.resources.map((resource, index) => ({ id: `dossier-resource-${index + 1}`, ...resource })) } : {}),
-      statsCertainty: "KNOWN",
+      ...(hasExplicitStats ? { statsCertainty: "KNOWN" as const } : {}),
     });
     if (!saved.ok) {
       toast.error(saved.error);
       return;
     }
     setDossierImportSummary(extracted.evidence);
-    toast.success("Из досье сохранены найденные характеристики и предметы. Текущие HP и неизвестные веса не выдуманы.");
+    toast.success("Из досье сохранены только явно найденные поля. Текущие HP, неуказанные ресурсы и неизвестные веса не выдуманы.");
   }
 
   function handleSaveSheet(e: FormEvent) {
