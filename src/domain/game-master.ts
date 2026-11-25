@@ -1,0 +1,123 @@
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState } from "./types";
+
+export interface GameMasterContext {
+  action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
+  canonFacts: CanonFact[]; npcs: NpcRecord[]; factions: FactionRecord[]; locations: LocationRecord[];
+  journal: Array<GameTurnEntry | TechnicalMessageEntry>;
+}
+export interface GameMasterTurn {
+  narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
+  newInGameDate: string; consequenceText: string;
+  rolls: Array<{ label: string; formula: string; result: string }>;
+  needsClarification: boolean; clarificationQuestion: string; stateNotes: string[];
+}
+export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
+export class GameMasterError extends Error {
+  constructor(message: string, readonly code: string) { super(message); this.name = "GameMasterError"; }
+}
+const turnSchema = {
+  type: "object", additionalProperties: false,
+  properties: {
+    narration: { type: "string" }, summary: { type: "string" }, worldOutcome: { type: "string" },
+    timeDeltaMinutes: { type: "integer" }, hpDelta: { type: "integer" }, newInGameDate: { type: "string" },
+    consequenceText: { type: "string" },
+    rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+      label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
+    }, required: ["label", "formula", "result"] } },
+    needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
+    stateNotes: { type: "array", items: { type: "string" } },
+  },
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "needsClarification", "clarificationQuestion", "stateNotes"],
+} as const;
+function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
+  const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
+  const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED");
+  const ranked = canon.flatMap((source) => source.content.split(/\n(?=#{1,6}\s)|\n\s*\n/)
+    .filter((part) => part.trim()).map((text, index) => ({ source: source.title, index, text,
+      score: terms.reduce((score, term) => score + (text.toLocaleLowerCase().includes(term) ? 1 : 0), 0) })))
+    .filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+  const factText = facts.filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
+    .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\n");
+  return [ranked.length ? ranked.map((item) => `[ИСТОЧНИК: ${item.source}; фрагмент ${item.index + 1}]\n${item.text}`).join("\n\n")
+    : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
+    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : ""].filter(Boolean).join("\n\n");
+}
+function extractOutputText(payload: unknown): string {
+  if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
+  const record = payload as Record<string, unknown>;
+  if (typeof record.output_text === "string") return record.output_text;
+  for (const item of Array.isArray(record.output) ? record.output : []) {
+    if (!item || typeof item !== "object") continue;
+    const content = (item as Record<string, unknown>).content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) if (part && typeof part === "object" &&
+      (part as Record<string, unknown>).type === "output_text" && typeof (part as Record<string, unknown>).text === "string")
+      return (part as Record<string, unknown>).text as string;
+  }
+  throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
+}
+function validateTurn(value: unknown): GameMasterTurn {
+  if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
+  const turn = value as Record<string, unknown>;
+  const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
+  if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn.timeDeltaMinutes) ||
+    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn.hpDelta) || typeof turn.needsClarification !== "boolean" ||
+    !Array.isArray(turn.rolls) || !Array.isArray(turn.stateNotes))
+    throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
+  return turn as unknown as GameMasterTurn;
+}
+export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
+  options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
+  if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
+  if (!context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
+  const governing = context.sources.find((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED");
+  if (!governing) throw new GameMasterError("Не загружен ОБСИДИАН 4.1. Игра заблокирована: мастер не должен работать по пересказу правил.", "GOVERNING_SOURCE_MISSING");
+  const dossier = context.sources.find((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED");
+  const system = [
+    "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
+    "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
+    "=== ПОЛНЫЙ ОБСИДИАН 4.1 ===\n" + governing.content,
+    "=== ЭПИСТЕМИЧЕСКИЕ И КАНОНИЧЕСКИЕ ОГРАНИЧЕНИЯ ===",
+    "Различай объективную истину, знания персонажа, знания каждого NPC и OOC. NPC не всеведущи. Не добавляй неподтверждённые факты Экдрасиля. При неизвестности используй UNKNOWN, при приблизительности APPROXIMATE. Досье персонажа не является каноном мира.",
+    "Игрок может пытаться совершать любые действия. Не запрещай их произвольно: оцени физическую возможность, механику, риски и последствия.",
+    "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
+    "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
+    "Выводи только JSON по заданной схеме. Не включай markdown.",
+  ].join("\n\n");
+  const user = {
+    action: context.action, campaign: context.world, playerCharacterState: context.character,
+    playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
+    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
+    knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations,
+    recentJournal: context.journal.slice(-12),
+    requirements: [
+      "Ответ narration должен соблюдать формат ОБСИДИАН 4.1 и быть на русском языке.",
+      "В summary/worldOutcome записывай только произошедшее, не предположения.",
+      "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
+      "newInGameDate оставь текущей датой, если время не продвинулось.",
+      "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
+    ],
+  };
+  const model = options.model ?? "gpt-4.1-mini";
+  let response: Response;
+  try {
+    response = await (options.fetcher ?? fetch)("https://api.openai.com/v1/responses", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
+      body: JSON.stringify({ model, instructions: system, input: JSON.stringify(user),
+        text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } } }),
+    });
+  } catch { throw new GameMasterError("Не удалось подключиться к API модели. Проверь интернет-соединение.", "NETWORK_ERROR"); }
+  const payload = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const err = payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : null;
+    const detail = err && typeof err === "object" && typeof (err as Record<string, unknown>).message === "string"
+      ? (err as { message: string }).message : "API отклонил запрос.";
+    throw new GameMasterError(detail, "MODEL_API_ERROR");
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(extractOutputText(payload)); }
+  catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
+  const record = payload as Record<string, unknown>;
+  const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
+  return { turn: validateTurn(parsed), model, usage };
+}
