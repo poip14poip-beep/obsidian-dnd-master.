@@ -249,7 +249,7 @@ export async function mapCloudNpcs(
     if (!sourceId || !UUID_PATTERN.test(sourceId)) {
       throw new CloudMappingError(`No cloud source ID is available for NPC ${npc.name}.`);
     }
-    const currentLocationId = npc.locationId ? locationIds[npc.locationId] : null;
+    const currentLocationId = npc.locationId ? (locationIds[npc.locationId] ?? null) : null;
     if (npc.locationId && (!currentLocationId || !UUID_PATTERN.test(currentLocationId))) {
       throw new CloudMappingError(`No cloud location ID is available for NPC ${npc.name}.`);
     }
