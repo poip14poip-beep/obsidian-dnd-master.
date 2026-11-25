@@ -9,6 +9,19 @@ describe("turn HP validation", () => {
     expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
       .toContain("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа.");
   });
+  it("rejects NPC creation duplicates and updates to unknown NPCs", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    const base = { ...createEmptyTurnDraft(), summary: "Встреча", worldOutcome: "Разговор завершён" };
+    const duplicate = { action: "CREATE" as const, name: "Страж", role: "Стражник", goals: "Охраняет ворота", attitudeToPlayer: "Нейтральное", locationName: null, factionName: null, certainty: "KNOWN" as const, reason: "Встречен у ворот", knowledgeAdditions: [] };
+    state.npcs = [{ id: "npc-1", name: "Страж", role: "Стражник", locationId: null, factionId: null, goals: "Охрана", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN", sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge: [], version: 1, history: [] }];
+    const createDraft = { ...base, npcChanges: [duplicate] };
+    expect(validateTurnDraft(createDraft, state.world_state, state.player_character_state, state.npcs))
+      .toContain("NPC «Страж» уже существует; нельзя создать дубликат.");
+    const updateDraft = { ...base, npcChanges: [{ ...duplicate, action: "UPDATE" as const, name: "Неизвестный" }] };
+    expect(validateTurnDraft(updateDraft, state.world_state, state.player_character_state, state.npcs))
+      .toContain("Нельзя обновить NPC «Неизвестный»: он отсутствует в реестре.");
+  });
   it("rejects inventory removal beyond the recorded quantity", () => {
     const state = createInitialCollections();
     state.world_state.setup.confirmed = true;
