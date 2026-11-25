@@ -24,7 +24,7 @@ describe("player inventory weight", () => {
     const character = createInitialPlayerCharacterState();
     character.abilityScores = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
     character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
-    character.inventory = [{ id: "x", name: "Груз", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: 60 }];
+    character.inventory = [{ id: "x", name: "Груз", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: 110 }];
     const result = calculatePlayerInventoryWeight(character, "VARIANT");
     expect(result.encumbranceStatus).toBe("HEAVILY_ENCUMBERED");
     expect(result.encumberedAtLb).toBe(50);
