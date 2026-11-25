@@ -3,7 +3,7 @@ import { resolvePlayerAction, type GameMasterContext } from "./game-master";
 import type { SourceDocument } from "./types";
 const source = (type: SourceDocument["type"], content: string): SourceDocument => ({
   id: type, title: type, type, targetPartition: type === "GOVERNING_DOC" ? "SYSTEM_RULES" : type === "PLAYER_DOSSIER" ? "PLAYER_CHARACTER_STATE" : "CAMPAIGN_STATE",
-  originLabel: "test", contentStatus: "ATTACHED", certainty: "KNOWN", fileName: "source.md", content, checksum: "test", attachedAt: null, notes: "",
+  originLabel: "test", contentStatus: "ATTACHED", reviewStatus: "VERIFIED", contextEnabled: true, certainty: "KNOWN", fileName: "source.md", content, checksum: "test", attachedAt: null, notes: "", processing: { status: "PROCESSED", sha256: "a".repeat(64), characterCount: content.length, lineCount: content.split("\\n").length, sectionCount: 1, chunkCount: 1, dateCandidateCount: 0, processedAt: "2026-01-01T00:00:00Z", warnings: [] },
 });
 const context: GameMasterContext = {
   action: "Осмотреть дверь",
@@ -16,7 +16,21 @@ const validTurn = { narration: "Перед тобой дверь.", campaignMemo
 describe("game master resolver", () => {
   it("requires the governing source before a model request", async () => {
     await expect(resolvePlayerAction("sk-test", { ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch }))
-      .rejects.toMatchObject({ code: "GOVERNING_SOURCE_MISSING" });
+      .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
+  });
+  it("blocks unverified or context-disabled source content before calling the model", async () => {
+    const fetcher = vi.fn();
+    const unverified = context.sources.map((item) => item.type === "GOVERNING_DOC"
+      ? { ...item, reviewStatus: "UNREVIEWED" as const }
+      : item);
+    await expect(resolvePlayerAction("sk-test", { ...context, sources: unverified }, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
+    const disabledDossier = context.sources.map((item) => item.type === "PLAYER_DOSSIER"
+      ? { ...item, contextEnabled: false }
+      : item);
+    await expect(resolvePlayerAction("sk-test", { ...context, sources: disabledDossier }, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "PLAYER_DOSSIER_NOT_READY" });
+    expect(fetcher).not.toHaveBeenCalled();
   });
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
