@@ -132,6 +132,7 @@ function CharacterPage() {
       ...(extracted.speedFeet !== null ? { speedFeet: extracted.speedFeet } : {}),
       ...(extracted.hitDice ? { hitDice: extracted.hitDice } : {}),
       ...(importedInventory.length > 0 ? { inventory: importedInventory } : {}),
+      ...(extracted.resources.length > 0 ? { resources: extracted.resources.map((resource, index) => ({ id: `dossier-resource-${index + 1}`, ...resource })) } : {}),
       statsCertainty: "KNOWN",
     });
     if (!saved.ok) {

@@ -21,6 +21,7 @@ describe("player dossier summary extraction", () => {
       "1 | Кожа Последнего Часа | Лёгкий доспех",
       "1 | Cloak of Protection | +1 КБ",
       "11.2. Оружие и обслуживание",
+      "Second Wind: четыре использования; Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
       "1 | Катана в ножнах | Основное оружие",
     ].join("\n"));
     expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
@@ -30,6 +31,11 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory).toHaveLength(3);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED" });
+    expect(result.resources).toEqual([
+      { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
+      { name: "Action Surge", current: null, max: 2, recovery: "Long Rest", certainty: "KNOWN" },
+      { name: "Indomitable", current: null, max: 3, recovery: "UNKNOWN", certainty: "KNOWN" },
+    ]);
   });
   it("does not invent missing values", () => {
     const result = extractDossierBasics("Персонаж\nБиография без игровых характеристик.");

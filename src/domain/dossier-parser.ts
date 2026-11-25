@@ -1,3 +1,4 @@
+export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
   name: string; quantity: number; notes: string; location: "WORN" | "CARRIED"; certainty: "KNOWN" | "APPROXIMATE";
 }
@@ -12,6 +13,7 @@ export interface DossierBasics {
   speedFeet: number | null;
   hitDice: string | null;
   inventory: DossierInventoryItem[];
+  resources: DossierResource[];
   evidence: string[];
 }
 /** Extracts only explicit summary values; current HP, inventory and origin are never inferred. */
@@ -56,6 +58,19 @@ export function extractDossierBasics(text: string): DossierBasics {
     inventory.push({ name, quantity, notes, location: inventoryLocation,
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
+  const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
+  const resources: DossierResource[] = [];
+  const resourcePatterns: Array<{ name: string; pattern: RegExp; recovery: string }> = [
+    { name: "Second Wind", pattern: /Second Wind:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован/iu, recovery: "UNKNOWN" },
+    { name: "Action Surge", pattern: /Action Surge:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "Long Rest" },
+    { name: "Indomitable", pattern: /Indomitable:\\s*(один|одна|два|две|три|четыре|\\d+)\\s+использован/iu, recovery: "UNKNOWN" },
+  ];
+  for (const resource of resourcePatterns) {
+    const match = text.match(resource.pattern);
+    if (!match) continue;
+    const count = /^\\d+$/.test(match[1]) ? Number(match[1]) : numberWords[match[1].toLocaleLowerCase()];
+    if (count !== undefined) resources.push({ name: resource.name, current: null, max: count, recovery: resource.recovery, certainty: "KNOWN" });
+  }
   const evidence = [
     name ? `Имя: ${name}` : "",
     speciesAndClass ? `Вид/класс: ${speciesAndClass}` : "",
@@ -64,8 +79,9 @@ export function extractDossierBasics(text: string): DossierBasics {
     acMatch ? `КБ: ${acMatch[0]}` : "",
     abilityScores ? "Характеристики: STR " + abilityScores.strength + ", DEX " + abilityScores.dexterity + ", CON " + abilityScores.constitution + ", INT " + abilityScores.intelligence + ", WIS " + abilityScores.wisdom + ", CHA " + abilityScores.charisma : "",
     inventory.length ? `Предметов импортировано: ${inventory.length}` : "",
+    resources.length ? `Классовых ресурсов распознано: ${resources.map((item) => item.name + " " + item.max).join(", ")}` : "",
   ].filter(Boolean);
   return { name, speciesAndClass, level, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
     armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
-    speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null, inventory, evidence };
+    speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null, inventory, resources, evidence };
 }
