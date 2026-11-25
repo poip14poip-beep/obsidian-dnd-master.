@@ -174,6 +174,15 @@ export interface ObsidianStoreValue {
   updateInventoryItem: (id: string, patch: Partial<Omit<InventoryItem, "id">>) => PersistVerifyResult;
 
   // Setup Wizard & Campaign Parameters
+  applyGeneratedStart: (input: {
+    city: { name: string; region: string; continent: string; population: number };
+    date: string;
+    narrative: string;
+    locationDescription: string;
+    generationRecord: NonNullable<WorldState["startGeneration"]>;
+    characterPatch: Partial<Omit<PlayerCharacterState, "schemaVersion" | "stateVersion" | "updatedAt">>;
+    inventory: Array<Omit<InventoryItem, "id">>;
+  }) => PersistVerifyResult;
   updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
   confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
 
@@ -883,6 +892,62 @@ export function ObsidianStoreProvider({
     },
     [collections.player_character_state.inventory, updatePlayerCharacter],
   );
+
+  const applyGeneratedStart: ObsidianStoreValue["applyGeneratedStart"] = useCallback((input) => {
+    if (collections.world_state.setup.confirmed || collections.session_log.lastTurnNumber > 0) {
+      return { ok: false, error: "Случайный старт можно создать только до подтверждения кампании и первого игрового хода.", report: lastIntegrityReport };
+    }
+    const now = new Date().toISOString();
+    const locationId = makeId("loc");
+    const location: LocationRecord = {
+      id: locationId,
+      name: input.city.name,
+      region: input.city.region,
+      description: input.locationDescription,
+      certainty: "KNOWN",
+      sourceId: "src-ekdrasil-chronicle",
+    };
+    const previousCharacter = collections.player_character_state;
+    const nextCharacter: PlayerCharacterState = {
+      ...previousCharacter,
+      ...input.characterPatch,
+      stateVersion: previousCharacter.stateVersion + 1,
+      currentLocationLabel: input.city.name,
+      inventory: input.inventory.map((item) => ({ ...item, id: makeId("inv") })),
+      updatedAt: now,
+    };
+    const previousWorld = collections.world_state;
+    const nextWorld: WorldState = {
+      ...previousWorld,
+      stateVersion: previousWorld.stateVersion + 1,
+      campaignName: previousWorld.campaignName || "Экдрасиль — свободная кампания",
+      calendarSystem: previousWorld.calendarSystem === "UNKNOWN"
+        ? "Хронология Экдрасиля; точная календарная система UNKNOWN"
+        : previousWorld.calendarSystem,
+      startInGameDate: input.date,
+      currentInGameDate: input.date,
+      startLocationName: input.city.name,
+      currentLocationId: locationId,
+      startNarrative: input.narrative,
+      startGeneration: input.generationRecord,
+      setup: {
+        ...previousWorld.setup,
+        parametersConfirmed: false,
+        startPointConfirmed: false,
+        characterConfirmed: false,
+        noAutoImportAcknowledged: false,
+        confirmed: false,
+        confirmedAt: null,
+      },
+      updatedAt: now,
+    };
+    return commitCollections({
+      ...collections,
+      locations: [location, ...collections.locations.filter((item) => item.name.toLocaleLowerCase() !== input.city.name.toLocaleLowerCase())],
+      world_state: nextWorld,
+      player_character_state: nextCharacter,
+    });
+  }, [collections, commitCollections, lastIntegrityReport]);
 
   const updateCampaignParameters: ObsidianStoreValue["updateCampaignParameters"] = useCallback(
     (patch) => {
