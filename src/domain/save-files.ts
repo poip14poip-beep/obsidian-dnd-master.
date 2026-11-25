@@ -17,7 +17,7 @@ export function buildCampaignStateMarkdown(collections: ObsidianCollections, gen
     jsonBlock(world_state),
     "",
     "## Source registry",
-    jsonBlock(sources.map(({ id, title, type, targetPartition, contentStatus, checksum, fileName }) =>
+    jsonBlock(sources.filter((source) => source.type !== "PLAYER_DOSSIER").map(({ id, title, type, targetPartition, contentStatus, checksum, fileName }) =>
       ({ id, title, type, targetPartition, contentStatus, checksum, fileName }))),
     "",
     "## Canon facts",
