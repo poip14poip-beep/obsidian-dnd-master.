@@ -1,1 +1,17 @@
-{"text":"import { QueryClient } from \"@tanstack/react-query\";\nimport { createRouter, rootRouteId } from \"@tanstack/react-router\";\nimport { describe, expect, it } from \"vitest\";\n\nimport { routeTree } from \"@/routeTree.gen\";\n\n// Match routes without running loaders or rendering: loaders may need a server or\n// network the test run lacks, and jsdom never loads the stylesheets React waits on.\ndescribe(\"App routing\", () => {\n  it(\"matches a page for / instead of falling back to not found\", () => {\n    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });\n\n    const matches = router.matchRoutes(\"/\");\n\n    expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);\n  });\n});"}
+import { QueryClient } from "@tanstack/react-query";
+import { createRouter, rootRouteId } from "@tanstack/react-router";
+import { describe, expect, it } from "vitest";
+
+import { routeTree } from "@/routeTree.gen";
+
+// Match routes without running loaders or rendering: loaders may need a server or
+// network the test run lacks, and jsdom never loads the stylesheets React waits on.
+describe("App routing", () => {
+  it("matches a page for / instead of falling back to not found", () => {
+    const router = createRouter({ routeTree, context: { queryClient: new QueryClient() } });
+
+    const matches = router.matchRoutes("/");
+
+    expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
+  });
+});

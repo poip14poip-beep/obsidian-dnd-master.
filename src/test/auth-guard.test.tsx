@@ -1,1 +1,149 @@
-{"text":"import { fireEvent, render, screen } from \"@testing-library/react\";\nimport { describe, expect, it, vi } from \"vitest\";\n\nimport { evaluateAuthGuard, isPublicAuthRoute, sanitizeRedirectPath } from \"@/auth/auth-guard\";\nimport { AuthConfigErrorScreen, AuthErrorScreen, AuthLoadingScreen } from \"@/components/AuthGate\";\nimport { readSupabaseEnv } from \"@/lib/supabase-auth\";\n\nconst ALL_PROTECTED_ROUTES = [\n  \"/\",\n  \"/sources\",\n  \"/canon\",\n  \"/world\",\n  \"/character\",\n  \"/npcs\",\n  \"/factions\",\n  \"/time-map\",\n  \"/turns\",\n  \"/audit\",\n  \"/settings\",\n] as const;\n\ndescribe(\"Supabase Auth env handling & auth guard invariants\", () => {\n  it(\"handles missing or invalid VITE_SUPABASE_* env variables gracefully without throwing\", () => {\n    const missingBoth = readSupabaseEnv({});\n    expect(missingBoth.ok).toBe(false);\n    if (!missingBoth.ok) {\n      expect(missingBoth.missingKeys).toEqual([\n        \"VITE_SUPABASE_URL\",\n        \"VITE_SUPABASE_PUBLISHABLE_KEY\",\n      ]);\n    }\n\n    const missingKey = readSupabaseEnv({\n      VITE_SUPABASE_URL: \"https://example.supabase.co\",\n    });\n    expect(missingKey.ok).toBe(false);\n    if (!missingKey.ok) {\n      expect(missingKey.missingKeys).toEqual([\"VITE_SUPABASE_PUBLISHABLE_KEY\"]);\n    }\n\n    const invalidUrl = readSupabaseEnv({\n      VITE_SUPABASE_URL: \"not-a-url\",\n      VITE_SUPABASE_PUBLISHABLE_KEY: \"sb_publishable_test\",\n    });\n    expect(invalidUrl.ok).toBe(false);\n\n    const valid = readSupabaseEnv({\n      VITE_SUPABASE_URL: \"https://example.supabase.co\",\n      VITE_SUPABASE_PUBLISHABLE_KEY: \"sb_publishable_test\",\n    });\n    expect(valid.ok).toBe(true);\n  });\n\n  it(\"rejects sb_secret_ and service_role keys in frontend VITE_SUPABASE_PUBLISHABLE_KEY\", () => {\n    const secretPrefix = readSupabaseEnv({\n      VITE_SUPABASE_URL: \"https://example.supabase.co\",\n      VITE_SUPABASE_PUBLISHABLE_KEY: \"sb_secret_should_never_be_in_browser\",\n    });\n    expect(secretPrefix.ok).toBe(false);\n\n    // Legacy JWT with {\"role\":\"service_role\"}\n    const serviceRolePayload = btoa(JSON.stringify({ role: \"service_role\" }))\n      .replace(/\\+/g, \"-\")\n      .replace(/\\//g, \"_\")\n      .replace(/=+$/, \"\");\n    const fakeServiceJwt = `eyJhbGciOiJIUzI1NiJ9.${serviceRolePayload}.sig`;\n    const jwtReject = readSupabaseEnv({\n      VITE_SUPABASE_URL: \"https://example.supabase.co\",\n      VITE_SUPABASE_PUBLISHABLE_KEY: fakeServiceJwt,\n    });\n    expect(jwtReject.ok).toBe(false);\n  });\n\n  it(\"blocks all 11 campaign routes when unauthenticated, loading, errored, or unconfigured\", () => {\n    for (const pathname of ALL_PROTECTED_ROUTES) {\n      expect(isPublicAuthRoute(pathname)).toBe(false);\n      expect(evaluateAuthGuard({ pathname, status: \"unauthenticated\" })).toEqual({\n        action: \"redirect_to_auth\",\n        redirectTo: pathname,\n      });\n      expect(evaluateAuthGuard({ pathname, status: \"loading\" })).toEqual({\n        action: \"render_loading\",\n      });\n      expect(evaluateAuthGuard({ pathname, status: \"error\" })).toEqual({\n        action: \"render_error\",\n      });\n      expect(evaluateAuthGuard({ pathname, status: \"unconfigured\" })).toEqual({\n        action: \"render_unconfigured\",\n      });\n      expect(evaluateAuthGuard({ pathname, status: \"authenticated\" })).toEqual({\n        action: \"allow_protected\",\n      });\n    }\n  });\n\n  it(\"keeps /auth and /reset-password public and redirects authenticated users off /auth\", () => {\n    expect(isPublicAuthRoute(\"/auth\")).toBe(true);\n    expect(isPublicAuthRoute(\"/reset-password\")).toBe(true);\n\n    expect(evaluateAuthGuard({ pathname: \"/auth\", status: \"unauthenticated\" })).toEqual({\n      action: \"allow_public\",\n    });\n    expect(evaluateAuthGuard({ pathname: \"/reset-password\", status: \"unauthenticated\" })).toEqual({\n      action: \"allow_public\",\n    });\n    expect(\n      evaluateAuthGuard({\n        pathname: \"/auth\",\n        status: \"authenticated\",\n        redirectParam: \"/turns\",\n      }),\n    ).toEqual({\n      action: \"redirect_to_app\",\n      target: \"/turns\",\n    });\n  });\n\n  it(\"sanitizes redirect paths to prevent open redirects and auth loops\", () => {\n    expect(sanitizeRedirectPath(\"/canon\")).toBe(\"/canon\");\n    expect(sanitizeRedirectPath(\"//evil.example.com\")).toBe(\"/\");\n    expect(sanitizeRedirectPath(\"https://evil.example.com\")).toBe(\"/\");\n    expect(sanitizeRedirectPath(\"/auth\")).toBe(\"/\");\n    expect(sanitizeRedirectPath(\"/reset-password\")).toBe(\"/\");\n    expect(sanitizeRedirectPath(undefined)).toBe(\"/\");\n  });\n\n  it(\"renders dedicated Russian loading, missing-env, and retryable auth error screens\", () => {\n    const { unmount } = render(<AuthLoadingScreen />);\n    expect(screen.getByText(\"Проверка сессии...\")).toBeInTheDocument();\n    unmount();\n\n    const cfg = render(\n      <AuthConfigErrorScreen\n        error=\"Отсутствуют обязательные переменные окружения.\"\n        missingKeys={[\"VITE_SUPABASE_URL\", \"VITE_SUPABASE_PUBLISHABLE_KEY\"]}\n      />,\n    );\n    expect(screen.getByText(\"Supabase Auth не настроен\")).toBeInTheDocument();\n    expect(screen.getByText(/VITE_SUPABASE_URL/)).toBeInTheDocument();\n    expect(screen.getByText(/VITE_SUPABASE_PUBLISHABLE_KEY/)).toBeInTheDocument();\n    cfg.unmount();\n\n    const retry = vi.fn();\n    render(<AuthErrorScreen error=\"Сеть недоступна\" onRetry={retry} />);\n    expect(screen.getByText(\"Ошибка проверки авторизации\")).toBeInTheDocument();\n    fireEvent.click(screen.getByRole(\"button\", { name: \"Повторить проверку\" }));\n    expect(retry).toHaveBeenCalledTimes(1);\n  });\n});"}
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+
+import { evaluateAuthGuard, isPublicAuthRoute, sanitizeRedirectPath } from "@/auth/auth-guard";
+import { AuthConfigErrorScreen, AuthErrorScreen, AuthLoadingScreen } from "@/components/AuthGate";
+import { readSupabaseEnv } from "@/lib/supabase-auth";
+
+const ALL_PROTECTED_ROUTES = [
+  "/",
+  "/sources",
+  "/canon",
+  "/world",
+  "/character",
+  "/npcs",
+  "/factions",
+  "/time-map",
+  "/turns",
+  "/audit",
+  "/settings",
+] as const;
+
+describe("Supabase Auth env handling & auth guard invariants", () => {
+  it("handles missing or invalid VITE_SUPABASE_* env variables gracefully without throwing", () => {
+    const missingBoth = readSupabaseEnv({});
+    expect(missingBoth.ok).toBe(false);
+    if (!missingBoth.ok) {
+      expect(missingBoth.missingKeys).toEqual([
+        "VITE_SUPABASE_URL",
+        "VITE_SUPABASE_PUBLISHABLE_KEY",
+      ]);
+    }
+
+    const missingKey = readSupabaseEnv({
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+    });
+    expect(missingKey.ok).toBe(false);
+    if (!missingKey.ok) {
+      expect(missingKey.missingKeys).toEqual(["VITE_SUPABASE_PUBLISHABLE_KEY"]);
+    }
+
+    const invalidUrl = readSupabaseEnv({
+      VITE_SUPABASE_URL: "not-a-url",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+    });
+    expect(invalidUrl.ok).toBe(false);
+
+    const valid = readSupabaseEnv({
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+    });
+    expect(valid.ok).toBe(true);
+  });
+
+  it("rejects sb_secret_ and service_role keys in frontend VITE_SUPABASE_PUBLISHABLE_KEY", () => {
+    const secretPrefix = readSupabaseEnv({
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "sb_secret_should_never_be_in_browser",
+    });
+    expect(secretPrefix.ok).toBe(false);
+
+    // Legacy JWT with {"role":"service_role"}
+    const serviceRolePayload = btoa(JSON.stringify({ role: "service_role" }))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+    const fakeServiceJwt = `eyJhbGciOiJIUzI1NiJ9.${serviceRolePayload}.sig`;
+    const jwtReject = readSupabaseEnv({
+      VITE_SUPABASE_URL: "https://example.supabase.co",
+      VITE_SUPABASE_PUBLISHABLE_KEY: fakeServiceJwt,
+    });
+    expect(jwtReject.ok).toBe(false);
+  });
+
+  it("blocks all 11 campaign routes when unauthenticated, loading, errored, or unconfigured", () => {
+    for (const pathname of ALL_PROTECTED_ROUTES) {
+      expect(isPublicAuthRoute(pathname)).toBe(false);
+      expect(evaluateAuthGuard({ pathname, status: "unauthenticated" })).toEqual({
+        action: "redirect_to_auth",
+        redirectTo: pathname,
+      });
+      expect(evaluateAuthGuard({ pathname, status: "loading" })).toEqual({
+        action: "render_loading",
+      });
+      expect(evaluateAuthGuard({ pathname, status: "error" })).toEqual({
+        action: "render_error",
+      });
+      expect(evaluateAuthGuard({ pathname, status: "unconfigured" })).toEqual({
+        action: "render_unconfigured",
+      });
+      expect(evaluateAuthGuard({ pathname, status: "authenticated" })).toEqual({
+        action: "allow_protected",
+      });
+    }
+  });
+
+  it("keeps /auth and /reset-password public and redirects authenticated users off /auth", () => {
+    expect(isPublicAuthRoute("/auth")).toBe(true);
+    expect(isPublicAuthRoute("/reset-password")).toBe(true);
+
+    expect(evaluateAuthGuard({ pathname: "/auth", status: "unauthenticated" })).toEqual({
+      action: "allow_public",
+    });
+    expect(evaluateAuthGuard({ pathname: "/reset-password", status: "unauthenticated" })).toEqual({
+      action: "allow_public",
+    });
+    expect(
+      evaluateAuthGuard({
+        pathname: "/auth",
+        status: "authenticated",
+        redirectParam: "/turns",
+      }),
+    ).toEqual({
+      action: "redirect_to_app",
+      target: "/turns",
+    });
+  });
+
+  it("sanitizes redirect paths to prevent open redirects and auth loops", () => {
+    expect(sanitizeRedirectPath("/canon")).toBe("/canon");
+    expect(sanitizeRedirectPath("//evil.example.com")).toBe("/");
+    expect(sanitizeRedirectPath("https://evil.example.com")).toBe("/");
+    expect(sanitizeRedirectPath("/auth")).toBe("/");
+    expect(sanitizeRedirectPath("/reset-password")).toBe("/");
+    expect(sanitizeRedirectPath(undefined)).toBe("/");
+  });
+
+  it("renders dedicated Russian loading, missing-env, and retryable auth error screens", () => {
+    const { unmount } = render(<AuthLoadingScreen />);
+    expect(screen.getByText("Проверка сессии...")).toBeInTheDocument();
+    unmount();
+
+    const cfg = render(
+      <AuthConfigErrorScreen
+        error="Отсутствуют обязательные переменные окружения."
+        missingKeys={["VITE_SUPABASE_URL", "VITE_SUPABASE_PUBLISHABLE_KEY"]}
+      />,
+    );
+    expect(screen.getByText("Supabase Auth не настроен")).toBeInTheDocument();
+    expect(screen.getByText(/VITE_SUPABASE_URL/)).toBeInTheDocument();
+    expect(screen.getByText(/VITE_SUPABASE_PUBLISHABLE_KEY/)).toBeInTheDocument();
+    cfg.unmount();
+
+    const retry = vi.fn();
+    render(<AuthErrorScreen error="Сеть недоступна" onRetry={retry} />);
+    expect(screen.getByText("Ошибка проверки авторизации")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Повторить проверку" }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+});

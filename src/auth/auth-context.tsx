@@ -1,1 +1,281 @@
-{"text":"import type { Session, User } from \"@supabase/supabase-js\";\nimport { useQueryClient } from \"@tanstack/react-query\";\nimport {\n  createContext,\n  useCallback,\n  useContext,\n  useEffect,\n  useMemo,\n  useState,\n  type ReactNode,\n} from \"react\";\n\nimport { getSupabaseAuthClient, readSupabaseEnv } from \"@/lib/supabase-auth\";\nimport type { AuthStatus } from \"./auth-guard\";\n\nexport interface AuthActionResult {\n  ok: boolean;\n  error?: string;\n  needsEmailConfirmation?: boolean;\n}\n\nexport interface AuthContextValue {\n  status: AuthStatus;\n  user: User | null;\n  session: Session | null;\n  configError: string | null;\n  missingEnvKeys: string[];\n  authError: string | null;\n  isRecoverySession: boolean;\n  signIn: (email: string, password: string) => Promise<AuthActionResult>;\n  signUp: (email: string, password: string) => Promise<AuthActionResult>;\n  requestPasswordReset: (email: string) => Promise<AuthActionResult>;\n  updateRecoveredPassword: (newPassword: string) => Promise<AuthActionResult>;\n  signOut: () => Promise<void>;\n  retryInit: () => Promise<void>;\n}\n\nconst AuthContext = createContext<AuthContextValue | null>(null);\n\nfunction mapSupabaseError(message: string): string {\n  const lower = message.toLowerCase();\n  if (lower.includes(\"invalid login credentials\")) {\n    return \"Неверный email или пароль.\";\n  }\n  if (lower.includes(\"email not confirmed\")) {\n    return \"Email ещё не подтверждён. Проверьте почту и перейдите по ссылке из письма.\";\n  }\n  if (lower.includes(\"user already registered\")) {\n    return \"Пользователь с таким email уже зарегистрирован.\";\n  }\n  if (lower.includes(\"password should be at least\")) {\n    return \"Пароль слишком короткий (минимум 6 символов).\";\n  }\n  if (lower.includes(\"rate limit\") || lower.includes(\"too many requests\")) {\n    return \"Слишком много попыток. Повторите через минуту.\";\n  }\n  return message;\n}\n\nexport function AuthProvider({ children }: { children: ReactNode }) {\n  const queryClient = useQueryClient();\n  const initialEnv = readSupabaseEnv();\n\n  const [status, setStatus] = useState<AuthStatus>(() =>\n    initialEnv.ok ? \"loading\" : \"unconfigured\",\n  );\n  const [user, setUser] = useState<User | null>(null);\n  const [session, setSession] = useState<Session | null>(null);\n  const [configError] = useState<string | null>(() => (initialEnv.ok ? null : initialEnv.error));\n  const [missingEnvKeys] = useState<string[]>(() => (initialEnv.ok ? [] : initialEnv.missingKeys));\n  const [authError, setAuthError] = useState<string | null>(null);\n  const [isRecoverySession, setIsRecoverySession] = useState(false);\n\n  const hydrateSession = useCallback(async () => {\n    const { client, envResult } = getSupabaseAuthClient();\n    if (!envResult.ok || !client) {\n      setStatus(\"unconfigured\");\n      return;\n    }\n\n    setStatus(\"loading\");\n    setAuthError(null);\n\n    try {\n      const { data: sessionData, error: sessionErr } = await client.auth.getSession();\n      if (sessionErr) {\n        setAuthError(mapSupabaseError(sessionErr.message));\n        setStatus(\"error\");\n        return;\n      }\n\n      if (!sessionData.session) {\n        setSession(null);\n        setUser(null);\n        setStatus(\"unauthenticated\");\n        return;\n      }\n\n      // Revalidate existing session with Supabase Auth server\n      const { data: userData, error: userErr } = await client.auth.getUser();\n      if (userErr || !userData.user) {\n        setSession(null);\n        setUser(null);\n        setStatus(\"unauthenticated\");\n        return;\n      }\n\n      setSession(sessionData.session);\n      setUser(userData.user);\n      setStatus(\"authenticated\");\n    } catch (err) {\n      const msg = err instanceof Error ? err.message : \"Не удалось подключиться к Supabase Auth.\";\n      setAuthError(msg);\n      setStatus(\"error\");\n    }\n  }, []);\n\n  useEffect(() => {\n    const { client, envResult } = getSupabaseAuthClient();\n    if (!envResult.ok || !client) {\n      setStatus(\"unconfigured\");\n      return;\n    }\n\n    const { data: listener } = client.auth.onAuthStateChange((event, nextSession) => {\n      if (event === \"PASSWORD_RECOVERY\") {\n        setIsRecoverySession(true);\n        setSession(nextSession);\n        setUser(nextSession?.user ?? null);\n        setStatus(nextSession?.user ? \"authenticated\" : \"unauthenticated\");\n        return;\n      }\n      if (event === \"SIGNED_OUT\") {\n        setIsRecoverySession(false);\n        setSession(null);\n        setUser(null);\n        setStatus(\"unauthenticated\");\n        return;\n      }\n      if (event === \"SIGNED_IN\" || event === \"USER_UPDATED\" || event === \"TOKEN_REFRESHED\") {\n        setSession(nextSession);\n        setUser(nextSession?.user ?? null);\n        setStatus(nextSession?.user ? \"authenticated\" : \"unauthenticated\");\n      }\n    });\n\n    void hydrateSession();\n\n    return () => {\n      listener.subscription.unsubscribe();\n    };\n  }, [hydrateSession]);\n\n  const signIn = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {\n    const { client, envResult } = getSupabaseAuthClient();\n    if (!envResult.ok || !client) {\n      return { ok: false, error: envResult.ok ? \"Клиент Auth не готов.\" : envResult.error };\n    }\n    const { data, error } = await client.auth.signInWithPassword({\n      email: email.trim(),\n      password,\n    });\n    if (error) {\n      return { ok: false, error: mapSupabaseError(error.message) };\n    }\n    setSession(data.session);\n    setUser(data.user);\n    setStatus(\"authenticated\");\n    return { ok: true };\n  }, []);\n\n  const signUp = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {\n    const { client, envResult } = getSupabaseAuthClient();\n    if (!envResult.ok || !client) {\n      return { ok: false, error: envResult.ok ? \"Клиент Auth не готов.\" : envResult.error };\n    }\n    const redirectTo = typeof window !== \"undefined\" ? window.location.origin : undefined;\n    const { data, error } = await client.auth.signUp({\n      email: email.trim(),\n      password,\n      ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),\n    });\n    if (error) {\n      return { ok: false, error: mapSupabaseError(error.message) };\n    }\n    if (!data.session) {\n      return { ok: true, needsEmailConfirmation: true };\n    }\n    setSession(data.session);\n    setUser(data.user);\n    setStatus(\"authenticated\");\n    return { ok: true, needsEmailConfirmation: false };\n  }, []);\n\n  const requestPasswordReset = useCallback(async (email: string): Promise<AuthActionResult> => {\n    const { client, envResult } = getSupabaseAuthClient();\n    if (!envResult.ok || !client) {\n      return { ok: false, error: envResult.ok ? \"Клиент Auth не готов.\" : envResult.error };\n    }\n    const redirectTo =\n      typeof window !== \"undefined\" ? `${window.location.origin}/reset-password` : undefined;\n    const { error } = await client.auth.resetPasswordForEmail(\n      email.trim(),\n      redirectTo ? { redirectTo } : undefined,\n    );\n    if (error) {\n      return { ok: false, error: mapSupabaseError(error.message) };\n    }\n    return { ok: true };\n  }, []);\n\n  const updateRecoveredPassword = useCallback(\n    async (newPassword: string): Promise<AuthActionResult> => {\n      const { client, envResult } = getSupabaseAuthClient();\n      if (!envResult.ok || !client) {\n        return { ok: false, error: envResult.ok ? \"Клиент Auth не готов.\" : envResult.error };\n      }\n      const { error } = await client.auth.updateUser({ password: newPassword });\n      if (error) {\n        return { ok: false, error: mapSupabaseError(error.message) };\n      }\n      setIsRecoverySession(false);\n      return { ok: true };\n    },\n    [],\n  );\n\n  const signOut = useCallback(async () => {\n    await queryClient.cancelQueries();\n    queryClient.clear();\n    const { client } = getSupabaseAuthClient();\n    if (client) {\n      await client.auth.signOut();\n    }\n    setIsRecoverySession(false);\n    setSession(null);\n    setUser(null);\n    setStatus(\"unauthenticated\");\n  }, [queryClient]);\n\n  const value = useMemo<AuthContextValue>(\n    () => ({\n      status,\n      user,\n      session,\n      configError,\n      missingEnvKeys,\n      authError,\n      isRecoverySession,\n      signIn,\n      signUp,\n      requestPasswordReset,\n      updateRecoveredPassword,\n      signOut,\n      retryInit: hydrateSession,\n    }),\n    [\n      status,\n      user,\n      session,\n      configError,\n      missingEnvKeys,\n      authError,\n      isRecoverySession,\n      signIn,\n      signUp,\n      requestPasswordReset,\n      updateRecoveredPassword,\n      signOut,\n      hydrateSession,\n    ],\n  );\n\n  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;\n}\n\nexport function useAuth(): AuthContextValue {\n  const ctx = useContext(AuthContext);\n  if (!ctx) throw new Error(\"useAuth must be used inside AuthProvider\");\n  return ctx;\n}"}
+import type { Session, User } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+import { getSupabaseAuthClient, readSupabaseEnv } from "@/lib/supabase-auth";
+import type { AuthStatus } from "./auth-guard";
+
+export interface AuthActionResult {
+  ok: boolean;
+  error?: string;
+  needsEmailConfirmation?: boolean;
+}
+
+export interface AuthContextValue {
+  status: AuthStatus;
+  user: User | null;
+  session: Session | null;
+  configError: string | null;
+  missingEnvKeys: string[];
+  authError: string | null;
+  isRecoverySession: boolean;
+  signIn: (email: string, password: string) => Promise<AuthActionResult>;
+  signUp: (email: string, password: string) => Promise<AuthActionResult>;
+  requestPasswordReset: (email: string) => Promise<AuthActionResult>;
+  updateRecoveredPassword: (newPassword: string) => Promise<AuthActionResult>;
+  signOut: () => Promise<void>;
+  retryInit: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
+
+function mapSupabaseError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("invalid login credentials")) {
+    return "Неверный email или пароль.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Email ещё не подтверждён. Проверьте почту и перейдите по ссылке из письма.";
+  }
+  if (lower.includes("user already registered")) {
+    return "Пользователь с таким email уже зарегистрирован.";
+  }
+  if (lower.includes("password should be at least")) {
+    return "Пароль слишком короткий (минимум 6 символов).";
+  }
+  if (lower.includes("rate limit") || lower.includes("too many requests")) {
+    return "Слишком много попыток. Повторите через минуту.";
+  }
+  return message;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const initialEnv = readSupabaseEnv();
+
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    initialEnv.ok ? "loading" : "unconfigured",
+  );
+  const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [configError] = useState<string | null>(() => (initialEnv.ok ? null : initialEnv.error));
+  const [missingEnvKeys] = useState<string[]>(() => (initialEnv.ok ? [] : initialEnv.missingKeys));
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isRecoverySession, setIsRecoverySession] = useState(false);
+
+  const hydrateSession = useCallback(async () => {
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!envResult.ok || !client) {
+      setStatus("unconfigured");
+      return;
+    }
+
+    setStatus("loading");
+    setAuthError(null);
+
+    try {
+      const { data: sessionData, error: sessionErr } = await client.auth.getSession();
+      if (sessionErr) {
+        setAuthError(mapSupabaseError(sessionErr.message));
+        setStatus("error");
+        return;
+      }
+
+      if (!sessionData.session) {
+        setSession(null);
+        setUser(null);
+        setStatus("unauthenticated");
+        return;
+      }
+
+      // Revalidate existing session with Supabase Auth server
+      const { data: userData, error: userErr } = await client.auth.getUser();
+      if (userErr || !userData.user) {
+        setSession(null);
+        setUser(null);
+        setStatus("unauthenticated");
+        return;
+      }
+
+      setSession(sessionData.session);
+      setUser(userData.user);
+      setStatus("authenticated");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Не удалось подключиться к Supabase Auth.";
+      setAuthError(msg);
+      setStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!envResult.ok || !client) {
+      setStatus("unconfigured");
+      return;
+    }
+
+    const { data: listener } = client.auth.onAuthStateChange((event, nextSession) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setIsRecoverySession(true);
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
+        setStatus(nextSession?.user ? "authenticated" : "unauthenticated");
+        return;
+      }
+      if (event === "SIGNED_OUT") {
+        setIsRecoverySession(false);
+        setSession(null);
+        setUser(null);
+        setStatus("unauthenticated");
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "TOKEN_REFRESHED") {
+        setSession(nextSession);
+        setUser(nextSession?.user ?? null);
+        setStatus(nextSession?.user ? "authenticated" : "unauthenticated");
+      }
+    });
+
+    void hydrateSession();
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
+  }, [hydrateSession]);
+
+  const signIn = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!envResult.ok || !client) {
+      return { ok: false, error: envResult.ok ? "Клиент Auth не готов." : envResult.error };
+    }
+    const { data, error } = await client.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
+    if (error) {
+      return { ok: false, error: mapSupabaseError(error.message) };
+    }
+    setSession(data.session);
+    setUser(data.user);
+    setStatus("authenticated");
+    return { ok: true };
+  }, []);
+
+  const signUp = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!envResult.ok || !client) {
+      return { ok: false, error: envResult.ok ? "Клиент Auth не готов." : envResult.error };
+    }
+    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { data, error } = await client.auth.signUp({
+      email: email.trim(),
+      password,
+      ...(redirectTo ? { options: { emailRedirectTo: redirectTo } } : {}),
+    });
+    if (error) {
+      return { ok: false, error: mapSupabaseError(error.message) };
+    }
+    if (!data.session) {
+      return { ok: true, needsEmailConfirmation: true };
+    }
+    setSession(data.session);
+    setUser(data.user);
+    setStatus("authenticated");
+    return { ok: true, needsEmailConfirmation: false };
+  }, []);
+
+  const requestPasswordReset = useCallback(async (email: string): Promise<AuthActionResult> => {
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!envResult.ok || !client) {
+      return { ok: false, error: envResult.ok ? "Клиент Auth не готов." : envResult.error };
+    }
+    const redirectTo =
+      typeof window !== "undefined" ? `${window.location.origin}/reset-password` : undefined;
+    const { error } = await client.auth.resetPasswordForEmail(
+      email.trim(),
+      redirectTo ? { redirectTo } : undefined,
+    );
+    if (error) {
+      return { ok: false, error: mapSupabaseError(error.message) };
+    }
+    return { ok: true };
+  }, []);
+
+  const updateRecoveredPassword = useCallback(
+    async (newPassword: string): Promise<AuthActionResult> => {
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!envResult.ok || !client) {
+        return { ok: false, error: envResult.ok ? "Клиент Auth не готов." : envResult.error };
+      }
+      const { error } = await client.auth.updateUser({ password: newPassword });
+      if (error) {
+        return { ok: false, error: mapSupabaseError(error.message) };
+      }
+      setIsRecoverySession(false);
+      return { ok: true };
+    },
+    [],
+  );
+
+  const signOut = useCallback(async () => {
+    await queryClient.cancelQueries();
+    queryClient.clear();
+    const { client } = getSupabaseAuthClient();
+    if (client) {
+      await client.auth.signOut();
+    }
+    setIsRecoverySession(false);
+    setSession(null);
+    setUser(null);
+    setStatus("unauthenticated");
+  }, [queryClient]);
+
+  const value = useMemo<AuthContextValue>(
+    () => ({
+      status,
+      user,
+      session,
+      configError,
+      missingEnvKeys,
+      authError,
+      isRecoverySession,
+      signIn,
+      signUp,
+      requestPasswordReset,
+      updateRecoveredPassword,
+      signOut,
+      retryInit: hydrateSession,
+    }),
+    [
+      status,
+      user,
+      session,
+      configError,
+      missingEnvKeys,
+      authError,
+      isRecoverySession,
+      signIn,
+      signUp,
+      requestPasswordReset,
+      updateRecoveredPassword,
+      signOut,
+      hydrateSession,
+    ],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth(): AuthContextValue {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
+}

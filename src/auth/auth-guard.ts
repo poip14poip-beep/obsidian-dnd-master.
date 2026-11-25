@@ -1,1 +1,63 @@
-{"text":"export type AuthStatus = \"loading\" | \"unconfigured\" | \"error\" | \"authenticated\" | \"unauthenticated\";\n\nexport const PUBLIC_AUTH_ROUTES = new Set<string>([\"/auth\", \"/reset-password\"]);\n\nexport function isPublicAuthRoute(pathname: string): boolean {\n  return PUBLIC_AUTH_ROUTES.has(pathname);\n}\n\n/**\n * Allows only safe same-origin relative paths and avoids auth redirect loops.\n */\nexport function sanitizeRedirectPath(raw: string | undefined | null): string {\n  if (!raw || typeof raw !== \"string\") return \"/\";\n  const trimmed = raw.trim();\n  if (!trimmed.startsWith(\"/\") || trimmed.startsWith(\"//\")) return \"/\";\n  if (trimmed === \"/auth\" || trimmed.startsWith(\"/auth?\") || trimmed === \"/reset-password\") {\n    return \"/\";\n  }\n  return trimmed;\n}\n\nexport type GuardDecision =\n  | { action: \"render_unconfigured\" }\n  | { action: \"render_loading\" }\n  | { action: \"render_error\" }\n  | { action: \"redirect_to_auth\"; redirectTo: string }\n  | { action: \"redirect_to_app\"; target: string }\n  | { action: \"allow_public\" }\n  | { action: \"allow_protected\" };\n\nexport function evaluateAuthGuard(params: {\n  pathname: string;\n  status: AuthStatus;\n  redirectParam?: string | undefined;\n}): GuardDecision {\n  const { pathname, status, redirectParam } = params;\n\n  if (status === \"unconfigured\") {\n    return { action: \"render_unconfigured\" };\n  }\n  if (status === \"loading\") {\n    return { action: \"render_loading\" };\n  }\n  if (status === \"error\") {\n    return { action: \"render_error\" };\n  }\n\n  if (isPublicAuthRoute(pathname)) {\n    if (pathname === \"/auth\" && status === \"authenticated\") {\n      return { action: \"redirect_to_app\", target: sanitizeRedirectPath(redirectParam) };\n    }\n    return { action: \"allow_public\" };\n  }\n\n  if (status !== \"authenticated\") {\n    return {\n      action: \"redirect_to_auth\",\n      redirectTo: sanitizeRedirectPath(pathname),\n    };\n  }\n\n  return { action: \"allow_protected\" };\n}"}
+export type AuthStatus = "loading" | "unconfigured" | "error" | "authenticated" | "unauthenticated";
+
+export const PUBLIC_AUTH_ROUTES = new Set<string>(["/auth", "/reset-password"]);
+
+export function isPublicAuthRoute(pathname: string): boolean {
+  return PUBLIC_AUTH_ROUTES.has(pathname);
+}
+
+/**
+ * Allows only safe same-origin relative paths and avoids auth redirect loops.
+ */
+export function sanitizeRedirectPath(raw: string | undefined | null): string {
+  if (!raw || typeof raw !== "string") return "/";
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return "/";
+  if (trimmed === "/auth" || trimmed.startsWith("/auth?") || trimmed === "/reset-password") {
+    return "/";
+  }
+  return trimmed;
+}
+
+export type GuardDecision =
+  | { action: "render_unconfigured" }
+  | { action: "render_loading" }
+  | { action: "render_error" }
+  | { action: "redirect_to_auth"; redirectTo: string }
+  | { action: "redirect_to_app"; target: string }
+  | { action: "allow_public" }
+  | { action: "allow_protected" };
+
+export function evaluateAuthGuard(params: {
+  pathname: string;
+  status: AuthStatus;
+  redirectParam?: string | undefined;
+}): GuardDecision {
+  const { pathname, status, redirectParam } = params;
+
+  if (status === "unconfigured") {
+    return { action: "render_unconfigured" };
+  }
+  if (status === "loading") {
+    return { action: "render_loading" };
+  }
+  if (status === "error") {
+    return { action: "render_error" };
+  }
+
+  if (isPublicAuthRoute(pathname)) {
+    if (pathname === "/auth" && status === "authenticated") {
+      return { action: "redirect_to_app", target: sanitizeRedirectPath(redirectParam) };
+    }
+    return { action: "allow_public" };
+  }
+
+  if (status !== "authenticated") {
+    return {
+      action: "redirect_to_auth",
+      redirectTo: sanitizeRedirectPath(pathname),
+    };
+  }
+
+  return { action: "allow_protected" };
+}

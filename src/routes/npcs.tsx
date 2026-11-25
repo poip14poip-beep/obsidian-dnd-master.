@@ -1,1 +1,430 @@
-{"text":"import { createFileRoute } from \"@tanstack/react-router\";\nimport { Brain, Plus } from \"lucide-react\";\nimport { useState, type FormEvent } from \"react\";\nimport { toast } from \"sonner\";\n\nimport { CertaintyBadge } from \"@/components/StatusPill\";\nimport { Button } from \"@/components/ui/button\";\nimport { Input } from \"@/components/ui/input\";\nimport { Label } from \"@/components/ui/label\";\nimport { DEFAULT_SOURCE_IDS } from \"@/domain/defaults\";\nimport type { CertaintyStatus } from \"@/domain/types\";\nimport { useObsidianStore } from \"@/store/obsidian-store\";\n\nexport const Route = createFileRoute(\"/npcs\")({\n  head: () => ({\n    meta: [\n      { title: \"NPC — Obsidian Control\" },\n      {\n        name: \"description\",\n        content:\n          \"Реестр NPC с целями, локацией, отношением и ограниченным знанием с путём получения.\",\n      },\n      { property: \"og:title\", content: \"NPC — Obsidian Control\" },\n      {\n        property: \"og:description\",\n        content:\n          \"Реестр NPC с целями, локацией, отношением и ограниченным знанием с путём получения.\",\n      },\n      { property: \"og:type\", content: \"website\" },\n      { name: \"twitter:card\", content: \"summary\" },\n    ],\n  }),\n  component: NpcsPage,\n});\n\nfunction NpcsPage() {\n  const { sources, npcs, locations, factions, worldState, addNpc, amendNpc, addNpcKnowledge } =\n    useObsidianStore();\n  const [showCreate, setShowCreate] = useState(false);\n\n  const [name, setName] = useState(\"\");\n  const [role, setRole] = useState(\"\");\n  const [locationId, setLocationId] = useState(\"\");\n  const [factionId, setFactionId] = useState(\"\");\n  const [goals, setGoals] = useState(\"UNKNOWN\");\n  const [attitude, setAttitude] = useState(\"UNKNOWN\");\n  const [certainty, setCertainty] = useState<CertaintyStatus>(\"APPROXIMATE\");\n  const [sourceId, setSourceId] = useState<string>(DEFAULT_SOURCE_IDS.CANON);\n\n  const [knwNpcId, setKnwNpcId] = useState<string | null>(null);\n  const [knwSummary, setKnwSummary] = useState(\"\");\n  const [knwPath, setKnwPath] = useState(\"\");\n  const [knwCertainty, setKnwCertainty] = useState<CertaintyStatus>(\"KNOWN\");\n\n  const [editNpcId, setEditNpcId] = useState<string | null>(null);\n  const [editGoals, setEditGoals] = useState(\"\");\n  const [editAttitude, setEditAttitude] = useState(\"\");\n  const [editReason, setEditReason] = useState(\"\");\n\n  function handleCreateNpc(e: FormEvent) {\n    e.preventDefault();\n    if (!name.trim()) {\n      toast.error(\"Укажите имя NPC.\");\n      return;\n    }\n    const res = addNpc({\n      name: name.trim(),\n      role: role.trim() || \"UNKNOWN\",\n      locationId: locationId || null,\n      factionId: factionId || null,\n      goals: goals.trim() || \"UNKNOWN\",\n      attitudeToPlayer: attitude.trim() || \"UNKNOWN\",\n      certainty,\n      sourceId,\n      locked: true,\n    });\n    if (res.ok) {\n      toast.success(\"NPC добавлен в реестр.\");\n      setName(\"\");\n      setRole(\"\");\n      setGoals(\"UNKNOWN\");\n      setAttitude(\"UNKNOWN\");\n      setShowCreate(false);\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  function handleAddKnowledge(e: FormEvent) {\n    e.preventDefault();\n    if (!knwNpcId) return;\n    if (!knwSummary.trim() || !knwPath.trim()) {\n      toast.error(\"Укажите содержание знания и путь его получения (NPC не всеведущи).\");\n      return;\n    }\n    const res = addNpcKnowledge(knwNpcId, {\n      factSummary: knwSummary.trim(),\n      sourceId,\n      acquisitionPath: knwPath.trim(),\n      inGameDate: worldState.currentInGameDate,\n      certainty: knwCertainty,\n    });\n    if (res.ok) {\n      toast.success(\"Знание NPC записано с указанием пути получения.\");\n      setKnwSummary(\"\");\n      setKnwPath(\"\");\n      setKnwNpcId(null);\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  function handleAmendNpc(e: FormEvent, npcId: string) {\n    e.preventDefault();\n    const current = npcs.find((n) => n.id === npcId);\n    if (!current) return;\n    const res = amendNpc(npcId, {\n      role: current.role,\n      locationId: current.locationId,\n      factionId: current.factionId,\n      goals: editGoals.trim() || current.goals,\n      attitudeToPlayer: editAttitude.trim() || current.attitudeToPlayer,\n      certainty: current.certainty,\n      reason: editReason,\n    });\n    if (res.ok) {\n      toast.success(\"Состояние NPC обновлено с сохранением истории.\");\n      setEditNpcId(null);\n      setEditReason(\"\");\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  const locName = (id: string | null) => locations.find((l) => l.id === id)?.name ?? \"UNKNOWN\";\n\n  return (\n    <div className=\"space-y-4\">\n      <header className=\"flex flex-wrap items-start justify-between gap-3\">\n        <div className=\"space-y-1\">\n          <h1 className=\"text-xl font-bold text-foreground\">Реестр NPC</h1>\n          <p className=\"text-xs text-muted-foreground\">\n            NPC не всеведущи: каждая единица знания NPC требует явного пути получения и источника.\n          </p>\n        </div>\n        <Button type=\"button\" className=\"touch-target\" onClick={() => setShowCreate((v) => !v)}>\n          <Plus className=\"mr-1.5 h-4 w-4\" />\n          Новый NPC\n        </Button>\n      </header>\n\n      {showCreate && (\n        <form onSubmit={handleCreateNpc} className=\"panel-surface space-y-3 p-4\">\n          <div className=\"grid grid-cols-1 gap-3 sm:grid-cols-2\">\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-name\">Имя NPC</Label>\n              <Input\n                id=\"npc-name\"\n                value={name}\n                onChange={(e) => setName(e.target.value)}\n                className=\"touch-target\"\n              />\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-role\">Роль / статус</Label>\n              <Input\n                id=\"npc-role\"\n                value={role}\n                onChange={(e) => setRole(e.target.value)}\n                placeholder=\"UNKNOWN\"\n                className=\"touch-target\"\n              />\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-loc\">Локация</Label>\n              <select\n                id=\"npc-loc\"\n                value={locationId}\n                onChange={(e) => setLocationId(e.target.value)}\n                className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n              >\n                <option value=\"\">UNKNOWN</option>\n                {locations.map((l) => (\n                  <option key={l.id} value={l.id}>\n                    {l.name}\n                  </option>\n                ))}\n              </select>\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-fac\">Фракция</Label>\n              <select\n                id=\"npc-fac\"\n                value={factionId}\n                onChange={(e) => setFactionId(e.target.value)}\n                className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n              >\n                <option value=\"\">Нет / UNKNOWN</option>\n                {factions.map((f) => (\n                  <option key={f.id} value={f.id}>\n                    {f.name}\n                  </option>\n                ))}\n              </select>\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-goals\">Цели NPC</Label>\n              <Input\n                id=\"npc-goals\"\n                value={goals}\n                onChange={(e) => setGoals(e.target.value)}\n                className=\"touch-target\"\n              />\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-att\">Отношение к персонажу</Label>\n              <Input\n                id=\"npc-att\"\n                value={attitude}\n                onChange={(e) => setAttitude(e.target.value)}\n                className=\"touch-target\"\n              />\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-cert\">Уверенность</Label>\n              <select\n                id=\"npc-cert\"\n                value={certainty}\n                onChange={(e) => setCertainty(e.target.value as CertaintyStatus)}\n                className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n              >\n                <option value=\"KNOWN\">KNOWN</option>\n                <option value=\"APPROXIMATE\">APPROXIMATE</option>\n                <option value=\"UNKNOWN\">UNKNOWN</option>\n              </select>\n            </div>\n            <div className=\"space-y-1\">\n              <Label htmlFor=\"npc-src\">Источник</Label>\n              <select\n                id=\"npc-src\"\n                value={sourceId}\n                onChange={(e) => setSourceId(e.target.value)}\n                className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n              >\n                {sources.map((s) => (\n                  <option key={s.id} value={s.id}>\n                    {s.title}\n                  </option>\n                ))}\n                <option value=\"MANUAL_GM_ENTRY\">Ручная запись</option>\n              </select>\n            </div>\n          </div>\n          <div className=\"flex gap-2\">\n            <Button type=\"submit\" className=\"touch-target\">\n              Сохранить NPC\n            </Button>\n            <Button\n              type=\"button\"\n              variant=\"ghost\"\n              className=\"touch-target\"\n              onClick={() => setShowCreate(false)}\n            >\n              Отмена\n            </Button>\n          </div>\n        </form>\n      )}\n\n      {npcs.length === 0 ? (\n        <div className=\"panel-surface p-6 text-center text-sm text-muted-foreground\">\n          Реестр NPC пуст. Добавьте персонажей вручную по мере появления в каноне или игре.\n        </div>\n      ) : (\n        <div className=\"space-y-3\">\n          {npcs.map((npc) => (\n            <article key={npc.id} className=\"panel-surface space-y-3 p-4\">\n              <div className=\"flex flex-wrap items-start justify-between gap-2\">\n                <div>\n                  <div className=\"flex flex-wrap items-center gap-2\">\n                    <h2 className=\"text-base font-semibold text-foreground\">{npc.name}</h2>\n                    <CertaintyBadge status={npc.certainty} />\n                    <span className=\"mono-code text-xs text-muted-foreground\">v{npc.version}</span>\n                  </div>\n                  <p className=\"text-xs text-muted-foreground\">\n                    Роль: {npc.role} · Локация: {locName(npc.locationId)}\n                  </p>\n                </div>\n                <div className=\"flex gap-1.5\">\n                  <Button\n                    type=\"button\"\n                    size=\"sm\"\n                    variant=\"secondary\"\n                    className=\"touch-target\"\n                    onClick={() => setKnwNpcId(knwNpcId === npc.id ? null : npc.id)}\n                  >\n                    <Brain className=\"mr-1 h-4 w-4\" />+ Знание\n                  </Button>\n                  <Button\n                    type=\"button\"\n                    size=\"sm\"\n                    variant=\"ghost\"\n                    className=\"touch-target\"\n                    onClick={() => {\n                      if (editNpcId === npc.id) {\n                        setEditNpcId(null);\n                      } else {\n                        setEditNpcId(npc.id);\n                        setEditGoals(npc.goals);\n                        setEditAttitude(npc.attitudeToPlayer);\n                        setEditReason(\"\");\n                      }\n                    }}\n                  >\n                    Ревизия\n                  </Button>\n                </div>\n              </div>\n\n              <div className=\"grid grid-cols-1 gap-2 text-xs sm:grid-cols-2\">\n                <div className=\"rounded bg-background/60 p-2.5\">\n                  <span className=\"text-muted-foreground\">Цели: </span>\n                  <span className=\"text-foreground\">{npc.goals}</span>\n                </div>\n                <div className=\"rounded bg-background/60 p-2.5\">\n                  <span className=\"text-muted-foreground\">Отношение: </span>\n                  <span className=\"text-foreground\">{npc.attitudeToPlayer}</span>\n                </div>\n              </div>\n\n              {editNpcId === npc.id && (\n                <form\n                  onSubmit={(e) => handleAmendNpc(e, npc.id)}\n                  className=\"space-y-2 border-t border-border pt-3\"\n                >\n                  <Input\n                    value={editGoals}\n                    onChange={(e) => setEditGoals(e.target.value)}\n                    placeholder=\"Обновлённые цели\"\n                    className=\"touch-target\"\n                  />\n                  <Input\n                    value={editAttitude}\n                    onChange={(e) => setEditAttitude(e.target.value)}\n                    placeholder=\"Обновлённое отношение\"\n                    className=\"touch-target\"\n                  />\n                  <Input\n                    value={editReason}\n                    onChange={(e) => setEditReason(e.target.value)}\n                    placeholder=\"Причина изменения (обязательно)\"\n                    className=\"touch-target\"\n                  />\n                  <Button type=\"submit\" size=\"sm\" className=\"touch-target\">\n                    Зафиксировать ревизию\n                  </Button>\n                </form>\n              )}\n\n              {knwNpcId === npc.id && (\n                <form\n                  onSubmit={handleAddKnowledge}\n                  className=\"space-y-2 border-t border-border pt-3\"\n                >\n                  <p className=\"text-xs font-medium text-layer-npc\">\n                    Добавить знание NPC (обязателен путь получения)\n                  </p>\n                  <Input\n                    value={knwSummary}\n                    onChange={(e) => setKnwSummary(e.target.value)}\n                    placeholder=\"Что именно знает этот NPC?\"\n                    className=\"touch-target\"\n                  />\n                  <Input\n                    value={knwPath}\n                    onChange={(e) => setKnwPath(e.target.value)}\n                    placeholder=\"Как/откуда NPC это узнал? (обязательно)\"\n                    className=\"touch-target\"\n                  />\n                  <div className=\"flex gap-2\">\n                    <select\n                      value={knwCertainty}\n                      onChange={(e) => setKnwCertainty(e.target.value as CertaintyStatus)}\n                      className=\"touch-target rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n                    >\n                      <option value=\"KNOWN\">KNOWN</option>\n                      <option value=\"APPROXIMATE\">APPROXIMATE</option>\n                      <option value=\"UNKNOWN\">UNKNOWN</option>\n                    </select>\n                    <Button type=\"submit\" size=\"sm\" className=\"touch-target\">\n                      Сохранить знание\n                    </Button>\n                  </div>\n                </form>\n              )}\n\n              <div className=\"space-y-1.5\">\n                <p className=\"text-xs font-medium text-muted-foreground\">\n                  Ограниченное знание NPC ({npc.knowledge.length})\n                </p>\n                {npc.knowledge.length === 0 ? (\n                  <p className=\"text-xs text-muted-foreground\">\n                    Записей знаний нет — NPC не осведомлён о событиях без пути получения.\n                  </p>\n                ) : (\n                  <ul className=\"space-y-1.5\">\n                    {npc.knowledge.map((k) => (\n                      <li\n                        key={k.id}\n                        className=\"rounded border border-border bg-background/50 p-2 text-xs\"\n                      >\n                        <div className=\"flex items-center justify-between gap-2\">\n                          <span className=\"font-medium text-foreground\">{k.factSummary}</span>\n                          <CertaintyBadge status={k.certainty} />\n                        </div>\n                        <p className=\"mt-1 text-muted-foreground\">\n                          Путь: {k.acquisitionPath} · Дата: {k.inGameDate}\n                        </p>\n                      </li>\n                    ))}\n                  </ul>\n                )}\n              </div>\n            </article>\n          ))}\n        </div>\n      )}\n    </div>\n  );\n}"}
+import { createFileRoute } from "@tanstack/react-router";
+import { Brain, Plus } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+
+import { CertaintyBadge } from "@/components/StatusPill";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DEFAULT_SOURCE_IDS } from "@/domain/defaults";
+import type { CertaintyStatus } from "@/domain/types";
+import { useObsidianStore } from "@/store/obsidian-store";
+
+export const Route = createFileRoute("/npcs")({
+  head: () => ({
+    meta: [
+      { title: "NPC — Obsidian Control" },
+      {
+        name: "description",
+        content:
+          "Реестр NPC с целями, локацией, отношением и ограниченным знанием с путём получения.",
+      },
+      { property: "og:title", content: "NPC — Obsidian Control" },
+      {
+        property: "og:description",
+        content:
+          "Реестр NPC с целями, локацией, отношением и ограниченным знанием с путём получения.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: NpcsPage,
+});
+
+function NpcsPage() {
+  const { sources, npcs, locations, factions, worldState, addNpc, amendNpc, addNpcKnowledge } =
+    useObsidianStore();
+  const [showCreate, setShowCreate] = useState(false);
+
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("");
+  const [locationId, setLocationId] = useState("");
+  const [factionId, setFactionId] = useState("");
+  const [goals, setGoals] = useState("UNKNOWN");
+  const [attitude, setAttitude] = useState("UNKNOWN");
+  const [certainty, setCertainty] = useState<CertaintyStatus>("APPROXIMATE");
+  const [sourceId, setSourceId] = useState<string>(DEFAULT_SOURCE_IDS.CANON);
+
+  const [knwNpcId, setKnwNpcId] = useState<string | null>(null);
+  const [knwSummary, setKnwSummary] = useState("");
+  const [knwPath, setKnwPath] = useState("");
+  const [knwCertainty, setKnwCertainty] = useState<CertaintyStatus>("KNOWN");
+
+  const [editNpcId, setEditNpcId] = useState<string | null>(null);
+  const [editGoals, setEditGoals] = useState("");
+  const [editAttitude, setEditAttitude] = useState("");
+  const [editReason, setEditReason] = useState("");
+
+  function handleCreateNpc(e: FormEvent) {
+    e.preventDefault();
+    if (!name.trim()) {
+      toast.error("Укажите имя NPC.");
+      return;
+    }
+    const res = addNpc({
+      name: name.trim(),
+      role: role.trim() || "UNKNOWN",
+      locationId: locationId || null,
+      factionId: factionId || null,
+      goals: goals.trim() || "UNKNOWN",
+      attitudeToPlayer: attitude.trim() || "UNKNOWN",
+      certainty,
+      sourceId,
+      locked: true,
+    });
+    if (res.ok) {
+      toast.success("NPC добавлен в реестр.");
+      setName("");
+      setRole("");
+      setGoals("UNKNOWN");
+      setAttitude("UNKNOWN");
+      setShowCreate(false);
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  function handleAddKnowledge(e: FormEvent) {
+    e.preventDefault();
+    if (!knwNpcId) return;
+    if (!knwSummary.trim() || !knwPath.trim()) {
+      toast.error("Укажите содержание знания и путь его получения (NPC не всеведущи).");
+      return;
+    }
+    const res = addNpcKnowledge(knwNpcId, {
+      factSummary: knwSummary.trim(),
+      sourceId,
+      acquisitionPath: knwPath.trim(),
+      inGameDate: worldState.currentInGameDate,
+      certainty: knwCertainty,
+    });
+    if (res.ok) {
+      toast.success("Знание NPC записано с указанием пути получения.");
+      setKnwSummary("");
+      setKnwPath("");
+      setKnwNpcId(null);
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  function handleAmendNpc(e: FormEvent, npcId: string) {
+    e.preventDefault();
+    const current = npcs.find((n) => n.id === npcId);
+    if (!current) return;
+    const res = amendNpc(npcId, {
+      role: current.role,
+      locationId: current.locationId,
+      factionId: current.factionId,
+      goals: editGoals.trim() || current.goals,
+      attitudeToPlayer: editAttitude.trim() || current.attitudeToPlayer,
+      certainty: current.certainty,
+      reason: editReason,
+    });
+    if (res.ok) {
+      toast.success("Состояние NPC обновлено с сохранением истории.");
+      setEditNpcId(null);
+      setEditReason("");
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  const locName = (id: string | null) => locations.find((l) => l.id === id)?.name ?? "UNKNOWN";
+
+  return (
+    <div className="space-y-4">
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold text-foreground">Реестр NPC</h1>
+          <p className="text-xs text-muted-foreground">
+            NPC не всеведущи: каждая единица знания NPC требует явного пути получения и источника.
+          </p>
+        </div>
+        <Button type="button" className="touch-target" onClick={() => setShowCreate((v) => !v)}>
+          <Plus className="mr-1.5 h-4 w-4" />
+          Новый NPC
+        </Button>
+      </header>
+
+      {showCreate && (
+        <form onSubmit={handleCreateNpc} className="panel-surface space-y-3 p-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label htmlFor="npc-name">Имя NPC</Label>
+              <Input
+                id="npc-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="touch-target"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-role">Роль / статус</Label>
+              <Input
+                id="npc-role"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                placeholder="UNKNOWN"
+                className="touch-target"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-loc">Локация</Label>
+              <select
+                id="npc-loc"
+                value={locationId}
+                onChange={(e) => setLocationId(e.target.value)}
+                className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                <option value="">UNKNOWN</option>
+                {locations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-fac">Фракция</Label>
+              <select
+                id="npc-fac"
+                value={factionId}
+                onChange={(e) => setFactionId(e.target.value)}
+                className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                <option value="">Нет / UNKNOWN</option>
+                {factions.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-goals">Цели NPC</Label>
+              <Input
+                id="npc-goals"
+                value={goals}
+                onChange={(e) => setGoals(e.target.value)}
+                className="touch-target"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-att">Отношение к персонажу</Label>
+              <Input
+                id="npc-att"
+                value={attitude}
+                onChange={(e) => setAttitude(e.target.value)}
+                className="touch-target"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-cert">Уверенность</Label>
+              <select
+                id="npc-cert"
+                value={certainty}
+                onChange={(e) => setCertainty(e.target.value as CertaintyStatus)}
+                className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                <option value="KNOWN">KNOWN</option>
+                <option value="APPROXIMATE">APPROXIMATE</option>
+                <option value="UNKNOWN">UNKNOWN</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="npc-src">Источник</Label>
+              <select
+                id="npc-src"
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+                className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+              >
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+                <option value="MANUAL_GM_ENTRY">Ручная запись</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" className="touch-target">
+              Сохранить NPC
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="touch-target"
+              onClick={() => setShowCreate(false)}
+            >
+              Отмена
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {npcs.length === 0 ? (
+        <div className="panel-surface p-6 text-center text-sm text-muted-foreground">
+          Реестр NPC пуст. Добавьте персонажей вручную по мере появления в каноне или игре.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {npcs.map((npc) => (
+            <article key={npc.id} className="panel-surface space-y-3 p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold text-foreground">{npc.name}</h2>
+                    <CertaintyBadge status={npc.certainty} />
+                    <span className="mono-code text-xs text-muted-foreground">v{npc.version}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Роль: {npc.role} · Локация: {locName(npc.locationId)}
+                  </p>
+                </div>
+                <div className="flex gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    className="touch-target"
+                    onClick={() => setKnwNpcId(knwNpcId === npc.id ? null : npc.id)}
+                  >
+                    <Brain className="mr-1 h-4 w-4" />+ Знание
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="touch-target"
+                    onClick={() => {
+                      if (editNpcId === npc.id) {
+                        setEditNpcId(null);
+                      } else {
+                        setEditNpcId(npc.id);
+                        setEditGoals(npc.goals);
+                        setEditAttitude(npc.attitudeToPlayer);
+                        setEditReason("");
+                      }
+                    }}
+                  >
+                    Ревизия
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
+                <div className="rounded bg-background/60 p-2.5">
+                  <span className="text-muted-foreground">Цели: </span>
+                  <span className="text-foreground">{npc.goals}</span>
+                </div>
+                <div className="rounded bg-background/60 p-2.5">
+                  <span className="text-muted-foreground">Отношение: </span>
+                  <span className="text-foreground">{npc.attitudeToPlayer}</span>
+                </div>
+              </div>
+
+              {editNpcId === npc.id && (
+                <form
+                  onSubmit={(e) => handleAmendNpc(e, npc.id)}
+                  className="space-y-2 border-t border-border pt-3"
+                >
+                  <Input
+                    value={editGoals}
+                    onChange={(e) => setEditGoals(e.target.value)}
+                    placeholder="Обновлённые цели"
+                    className="touch-target"
+                  />
+                  <Input
+                    value={editAttitude}
+                    onChange={(e) => setEditAttitude(e.target.value)}
+                    placeholder="Обновлённое отношение"
+                    className="touch-target"
+                  />
+                  <Input
+                    value={editReason}
+                    onChange={(e) => setEditReason(e.target.value)}
+                    placeholder="Причина изменения (обязательно)"
+                    className="touch-target"
+                  />
+                  <Button type="submit" size="sm" className="touch-target">
+                    Зафиксировать ревизию
+                  </Button>
+                </form>
+              )}
+
+              {knwNpcId === npc.id && (
+                <form
+                  onSubmit={handleAddKnowledge}
+                  className="space-y-2 border-t border-border pt-3"
+                >
+                  <p className="text-xs font-medium text-layer-npc">
+                    Добавить знание NPC (обязателен путь получения)
+                  </p>
+                  <Input
+                    value={knwSummary}
+                    onChange={(e) => setKnwSummary(e.target.value)}
+                    placeholder="Что именно знает этот NPC?"
+                    className="touch-target"
+                  />
+                  <Input
+                    value={knwPath}
+                    onChange={(e) => setKnwPath(e.target.value)}
+                    placeholder="Как/откуда NPC это узнал? (обязательно)"
+                    className="touch-target"
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      value={knwCertainty}
+                      onChange={(e) => setKnwCertainty(e.target.value as CertaintyStatus)}
+                      className="touch-target rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                    >
+                      <option value="KNOWN">KNOWN</option>
+                      <option value="APPROXIMATE">APPROXIMATE</option>
+                      <option value="UNKNOWN">UNKNOWN</option>
+                    </select>
+                    <Button type="submit" size="sm" className="touch-target">
+                      Сохранить знание
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Ограниченное знание NPC ({npc.knowledge.length})
+                </p>
+                {npc.knowledge.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Записей знаний нет — NPC не осведомлён о событиях без пути получения.
+                  </p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {npc.knowledge.map((k) => (
+                      <li
+                        key={k.id}
+                        className="rounded border border-border bg-background/50 p-2 text-xs"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-foreground">{k.factSummary}</span>
+                          <CertaintyBadge status={k.certainty} />
+                        </div>
+                        <p className="mt-1 text-muted-foreground">
+                          Путь: {k.acquisitionPath} · Дата: {k.inGameDate}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

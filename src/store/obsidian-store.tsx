@@ -1,1 +1,1289 @@
-{"text":"import {\n  createContext,\n  useCallback,\n  useContext,\n  useEffect,\n  useMemo,\n  useState,\n  type ReactNode,\n} from \"react\";\n\nimport { createEmptyTurnDraft, createInitialCollections } from \"@/domain/defaults\";\nimport {\n  buildBackupEnvelope,\n  computeChecksum,\n  runIntegrityAudit,\n  validateBackupEnvelope,\n  validateTurnDraft,\n} from \"@/domain/integrity\";\nimport {\n  getBrowserStorage,\n  loadAllCollections,\n  persistAndVerifyCollections,\n  STORAGE_KEYS,\n  type PersistVerifyResult,\n  type StorageLike,\n} from \"@/domain/storage\";\nimport type {\n  AuditEntry,\n  AuditLogState,\n  BackupEnvelope,\n  CampaignSetupState,\n  CanonFact,\n  CharacterResource,\n  DelayedEvent,\n  FactionRecord,\n  GameTurnEntry,\n  IntegrityReport,\n  InventoryItem,\n  LocationRecord,\n  NpcKnowledgeEntry,\n  NpcRecord,\n  ObsidianCollections,\n  PlayerCharacterState,\n  SessionLogState,\n  SourceDocument,\n  TechnicalMessageEntry,\n  TravelRoute,\n  TurnDraft,\n  WorldConsequence,\n  WorldState,\n} from \"@/domain/types\";\n\nfunction makeId(prefix: string): string {\n  if (typeof crypto !== \"undefined\" && typeof crypto.randomUUID === \"function\") {\n    return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;\n  }\n  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;\n}\n\nexport interface ObsidianStoreValue {\n  hydrated: boolean;\n  collections: ObsidianCollections;\n  sources: SourceDocument[];\n  canonFacts: CanonFact[];\n  worldState: WorldState;\n  character: PlayerCharacterState;\n  npcs: NpcRecord[];\n  factions: FactionRecord[];\n  locations: LocationRecord[];\n  timelineEvents: DelayedEvent[];\n  turnDrafts: TurnDraft[];\n  turnDraft: TurnDraft;\n  sessionLog: SessionLogState;\n  auditLog: AuditLogState;\n  lastIntegrityReport: IntegrityReport | null;\n  lastStorageError: string | null;\n\n  // Sources\n  attachSourceContent: (\n    sourceId: string,\n    payload: { fileName: string | null; content: string; originLabel: string; notes: string },\n  ) => PersistVerifyResult;\n  addSupplementalSource: (payload: {\n    title: string;\n    originLabel: string;\n    content: string;\n    fileName: string | null;\n    notes: string;\n  }) => PersistVerifyResult;\n\n  // Canon / Facts\n  addFact: (\n    input: Omit<CanonFact, \"id\" | \"createdAt\" | \"version\" | \"history\">,\n  ) => PersistVerifyResult;\n  amendFact: (\n    factId: string,\n    update: {\n      statement: string;\n      rationale: string;\n      certainty: CanonFact[\"certainty\"];\n      reason: string;\n    },\n  ) => PersistVerifyResult;\n  toggleFactLock: (factId: string) => PersistVerifyResult;\n\n  // NPCs\n  addNpc: (\n    input: Omit<NpcRecord, \"id\" | \"knowledge\" | \"version\" | \"history\">,\n  ) => PersistVerifyResult;\n  amendNpc: (\n    npcId: string,\n    update: {\n      role: string;\n      locationId: string | null;\n      factionId: string | null;\n      goals: string;\n      attitudeToPlayer: string;\n      certainty: NpcRecord[\"certainty\"];\n      reason: string;\n    },\n  ) => PersistVerifyResult;\n  addNpcKnowledge: (\n    npcId: string,\n    entry: Omit<NpcKnowledgeEntry, \"id\" | \"recordedAt\">,\n  ) => PersistVerifyResult;\n\n  // Factions\n  addFaction: (input: Omit<FactionRecord, \"id\" | \"version\" | \"history\">) => PersistVerifyResult;\n  amendFaction: (\n    factionId: string,\n    update: {\n      goals: string;\n      resources: string;\n      standing: string;\n      certainty: FactionRecord[\"certainty\"];\n      reason: string;\n    },\n  ) => PersistVerifyResult;\n\n  // Time & Map\n  addLocation: (input: Omit<LocationRecord, \"id\">) => PersistVerifyResult;\n  addTravelRoute: (input: Omit<TravelRoute, \"id\">) => PersistVerifyResult;\n  addDelayedEvent: (input: Omit<DelayedEvent, \"id\">) => PersistVerifyResult;\n  updateDelayedEventStatus: (\n    eventId: string,\n    status: DelayedEvent[\"status\"],\n  ) => PersistVerifyResult;\n  addWorldConsequence: (input: Omit<WorldConsequence, \"id\">) => PersistVerifyResult;\n\n  // Isolated PLAYER_CHARACTER_STATE\n  updatePlayerCharacter: (\n    patch: Partial<Omit<PlayerCharacterState, \"schemaVersion\" | \"stateVersion\" | \"updatedAt\">>,\n  ) => PersistVerifyResult;\n  addCharacterResource: (res: Omit<CharacterResource, \"id\">) => PersistVerifyResult;\n  updateCharacterResource: (id: string, current: number | null) => PersistVerifyResult;\n  addInventoryItem: (item: Omit<InventoryItem, \"id\">) => PersistVerifyResult;\n  removeInventoryItem: (id: string) => PersistVerifyResult;\n\n  // Setup Wizard & Campaign Parameters\n  updateCampaignParameters: (patch: {\n    campaignName?: string;\n    calendarSystem?: string;\n    startInGameDate?: string;\n    startLocationName?: string;\n    setupPatch?: Partial<Omit<CampaignSetupState, \"confirmed\" | \"confirmedAt\">>;\n  }) => PersistVerifyResult;\n  confirmCampaignSetup: () => PersistVerifyResult;\n\n  // Turns & Append-only Journal\n  updateTurnDraft: (patch: Partial<TurnDraft>) => void;\n  saveTurnDraftExplicit: () => PersistVerifyResult;\n  checkTurnDraft: () => { ok: boolean; errors: string[] };\n  commitTurnDraft: (explicitConfirmation: boolean) => PersistVerifyResult;\n  addTechnicalMessage: (text: string) => PersistVerifyResult;\n\n  // Audit & Backup\n  runAuditNow: () => IntegrityReport;\n  exportBackupJson: () => BackupEnvelope;\n  importBackupJson: (rawJson: string) => PersistVerifyResult;\n}\n\nconst ObsidianStoreContext = createContext<ObsidianStoreValue | null>(null);\n\nexport function ObsidianStoreProvider({\n  children,\n  storageOverride,\n}: {\n  children: ReactNode;\n  storageOverride?: StorageLike;\n}) {\n  const [hydrated, setHydrated] = useState(false);\n  const [collections, setCollections] = useState<ObsidianCollections>(() =>\n    createInitialCollections(),\n  );\n  const [lastIntegrityReport, setLastIntegrityReport] = useState<IntegrityReport | null>(null);\n  const [lastStorageError, setLastStorageError] = useState<string | null>(null);\n\n  const resolveStorage = useCallback(\n    () => storageOverride ?? getBrowserStorage(),\n    [storageOverride],\n  );\n\n  useEffect(() => {\n    const storage = resolveStorage();\n    const loaded = loadAllCollections(storage);\n    if (loaded.turn_drafts.length === 0) {\n      loaded.turn_drafts = [createEmptyTurnDraft()];\n    }\n    setCollections(loaded);\n    setLastIntegrityReport(runIntegrityAudit(loaded));\n    setHydrated(true);\n  }, [resolveStorage]);\n\n  const commitCollections = useCallback(\n    (next: ObsidianCollections, expectedTailTurnNumber?: number): PersistVerifyResult => {\n      const result = persistAndVerifyCollections(resolveStorage(), next, expectedTailTurnNumber);\n      if (result.ok) {\n        setCollections(next);\n        setLastIntegrityReport(result.report);\n        setLastStorageError(null);\n      } else {\n        setLastStorageError(result.error);\n        if (result.report) setLastIntegrityReport(result.report);\n      }\n      return result;\n    },\n    [resolveStorage],\n  );\n\n  const appendAudit = useCallback(\n    (\n      baseAudit: AuditLogState,\n      action: AuditEntry[\"action\"],\n      status: AuditEntry[\"status\"],\n      details: string,\n      nextWorld: WorldState,\n      nextCharacter: PlayerCharacterState,\n      turnNumber: number | null = null,\n    ): AuditLogState => ({\n      ...baseAudit,\n      entries: [\n        ...baseAudit.entries,\n        {\n          id: makeId(\"aud\"),\n          timestamp: new Date().toISOString(),\n          action,\n          status,\n          details,\n          campaignVersion: nextWorld.stateVersion,\n          characterVersion: nextCharacter.stateVersion,\n          turnNumber,\n          checksumSnapshot: computeChecksum({\n            w: nextWorld.stateVersion,\n            p: nextCharacter.stateVersion,\n            t: turnNumber,\n          }),\n        },\n      ],\n    }),\n    [],\n  );\n\n  const activeDraft = collections.turn_drafts[0] ?? createEmptyTurnDraft();\n\n  const attachSourceContent: ObsidianStoreValue[\"attachSourceContent\"] = useCallback(\n    (sourceId, payload) => {\n      const now = new Date().toISOString();\n      const hasText = payload.content.trim().length > 0;\n      const nextSources = collections.sources.map((src) =>\n        src.id === sourceId\n          ? {\n              ...src,\n              fileName: payload.fileName,\n              content: payload.content,\n              originLabel: payload.originLabel.trim() || src.originLabel,\n              notes: payload.notes,\n              contentStatus: hasText ? (\"ATTACHED\" as const) : (\"NOT_ATTACHED\" as const),\n              certainty: hasText ? (\"KNOWN\" as const) : (\"UNKNOWN\" as const),\n              checksum: hasText ? computeChecksum(payload.content) : \"EMPTY\",\n              attachedAt: hasText ? now : null,\n            }\n          : src,\n      );\n      const nextWorld: WorldState = {\n        ...collections.world_state,\n        stateVersion: collections.world_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"SOURCE_ATTACHED\",\n        \"OK\",\n        `Обновлён источник ${sourceId} (${payload.fileName ?? \"текст вручную\"}). Кампания не запущена автоматически.`,\n        nextWorld,\n        collections.player_character_state,\n      );\n      return commitCollections({\n        ...collections,\n        sources: nextSources,\n        world_state: nextWorld,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections],\n  );\n\n  const addSupplementalSource: ObsidianStoreValue[\"addSupplementalSource\"] = useCallback(\n    (payload) => {\n      const now = new Date().toISOString();\n      const hasText = payload.content.trim().length > 0;\n      const doc: SourceDocument = {\n        id: makeId(\"src\"),\n        title: payload.title.trim(),\n        type: \"SUPPLEMENTAL\",\n        targetPartition: \"CAMPAIGN_STATE\",\n        originLabel: payload.originLabel.trim() || \"Пользовательский источник\",\n        contentStatus: hasText ? \"ATTACHED\" : \"NOT_ATTACHED\",\n        certainty: hasText ? \"KNOWN\" : \"UNKNOWN\",\n        fileName: payload.fileName,\n        content: payload.content,\n        checksum: hasText ? computeChecksum(payload.content) : \"EMPTY\",\n        attachedAt: hasText ? now : null,\n        notes: payload.notes,\n      };\n      const nextWorld: WorldState = {\n        ...collections.world_state,\n        stateVersion: collections.world_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"SOURCE_ATTACHED\",\n        \"OK\",\n        `Добавлен дополнительный источник «${doc.title}».`,\n        nextWorld,\n        collections.player_character_state,\n      );\n      return commitCollections({\n        ...collections,\n        sources: [...collections.sources, doc],\n        world_state: nextWorld,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections],\n  );\n\n  const addFact: ObsidianStoreValue[\"addFact\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const fact: CanonFact = {\n        ...input,\n        id: makeId(\"fact\"),\n        createdAt: now,\n        version: 1,\n        history: [],\n      };\n      return commitCollections({\n        ...collections,\n        canon_facts: [fact, ...collections.canon_facts],\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const amendFact: ObsidianStoreValue[\"amendFact\"] = useCallback(\n    (factId, update) => {\n      const now = new Date().toISOString();\n      const target = collections.canon_facts.find((f) => f.id === factId);\n      if (!target) {\n        return { ok: false, error: \"Факт не найден.\", report: lastIntegrityReport };\n      }\n      if (target.locked && !update.reason.trim()) {\n        return {\n          ok: false,\n          error:\n            \"Для изменения утверждённого факта укажите причину ревизии (без перезаписи задним числом).\",\n          report: lastIntegrityReport,\n        };\n      }\n      const nextFacts = collections.canon_facts.map((f) =>\n        f.id === factId\n          ? {\n              ...f,\n              statement: update.statement.trim(),\n              rationale: update.rationale.trim(),\n              certainty: update.certainty,\n              version: f.version + 1,\n              history: [\n                ...f.history,\n                {\n                  version: f.version,\n                  changedAt: now,\n                  inGameDate: collections.world_state.currentInGameDate,\n                  previousStatement: f.statement,\n                  previousCertainty: f.certainty,\n                  previousRationale: f.rationale,\n                  reason: update.reason.trim() || \"Уточнение записи\",\n                },\n              ],\n            }\n          : f,\n      );\n      const nextWorld: WorldState = {\n        ...collections.world_state,\n        stateVersion: collections.world_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"FACT_AMENDED\",\n        \"OK\",\n        `Ревизия факта «${target.title}» (v${target.version} → v${target.version + 1}): ${update.reason.trim() || \"уточнение\"}`,\n        nextWorld,\n        collections.player_character_state,\n      );\n      return commitCollections({\n        ...collections,\n        canon_facts: nextFacts,\n        world_state: nextWorld,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections, lastIntegrityReport],\n  );\n\n  const toggleFactLock: ObsidianStoreValue[\"toggleFactLock\"] = useCallback(\n    (factId) => {\n      const now = new Date().toISOString();\n      return commitCollections({\n        ...collections,\n        canon_facts: collections.canon_facts.map((f) =>\n          f.id === factId ? { ...f, locked: !f.locked } : f,\n        ),\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const addNpc: ObsidianStoreValue[\"addNpc\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const npc: NpcRecord = {\n        ...input,\n        id: makeId(\"npc\"),\n        knowledge: [],\n        version: 1,\n        history: [],\n      };\n      return commitCollections({\n        ...collections,\n        npcs: [npc, ...collections.npcs],\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const amendNpc: ObsidianStoreValue[\"amendNpc\"] = useCallback(\n    (npcId, update) => {\n      const now = new Date().toISOString();\n      const target = collections.npcs.find((n) => n.id === npcId);\n      if (!target) return { ok: false, error: \"NPC не найден.\", report: lastIntegrityReport };\n      if (target.locked && !update.reason.trim()) {\n        return {\n          ok: false,\n          error: \"Для изменения утверждённого NPC укажите причину обновления состояния.\",\n          report: lastIntegrityReport,\n        };\n      }\n      const nextNpcs = collections.npcs.map((n) =>\n        n.id === npcId\n          ? {\n              ...n,\n              role: update.role,\n              locationId: update.locationId,\n              factionId: update.factionId,\n              goals: update.goals,\n              attitudeToPlayer: update.attitudeToPlayer,\n              certainty: update.certainty,\n              version: n.version + 1,\n              history: [\n                ...n.history,\n                {\n                  version: n.version,\n                  changedAt: now,\n                  inGameDate: collections.world_state.currentInGameDate,\n                  summary: `Цели: ${n.goals}; Отношение: ${n.attitudeToPlayer}`,\n                  reason: update.reason.trim() || \"Обновление состояния NPC\",\n                },\n              ],\n            }\n          : n,\n      );\n      const nextWorld: WorldState = {\n        ...collections.world_state,\n        stateVersion: collections.world_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"ENTITY_AMENDED\",\n        \"OK\",\n        `Обновлён NPC «${target.name}» (v${target.version} → v${target.version + 1}).`,\n        nextWorld,\n        collections.player_character_state,\n      );\n      return commitCollections({\n        ...collections,\n        npcs: nextNpcs,\n        world_state: nextWorld,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections, lastIntegrityReport],\n  );\n\n  const addNpcKnowledge: ObsidianStoreValue[\"addNpcKnowledge\"] = useCallback(\n    (npcId, entry) => {\n      if (!entry.acquisitionPath.trim()) {\n        return {\n          ok: false,\n          error: \"NPC не всеведущи: укажите путь/источник получения знания.\",\n          report: lastIntegrityReport,\n        };\n      }\n      const now = new Date().toISOString();\n      const item: NpcKnowledgeEntry = {\n        ...entry,\n        id: makeId(\"knw\"),\n        recordedAt: now,\n      };\n      return commitCollections({\n        ...collections,\n        npcs: collections.npcs.map((n) =>\n          n.id === npcId ? { ...n, knowledge: [item, ...n.knowledge] } : n,\n        ),\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections, lastIntegrityReport],\n  );\n\n  const addFaction: ObsidianStoreValue[\"addFaction\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const faction: FactionRecord = {\n        ...input,\n        id: makeId(\"fac\"),\n        version: 1,\n        history: [],\n      };\n      return commitCollections({\n        ...collections,\n        factions: [faction, ...collections.factions],\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const amendFaction: ObsidianStoreValue[\"amendFaction\"] = useCallback(\n    (factionId, update) => {\n      const now = new Date().toISOString();\n      const target = collections.factions.find((f) => f.id === factionId);\n      if (!target) return { ok: false, error: \"Фракция не найдена.\", report: lastIntegrityReport };\n      const nextFactions = collections.factions.map((f) =>\n        f.id === factionId\n          ? {\n              ...f,\n              goals: update.goals,\n              resources: update.resources,\n              standing: update.standing,\n              certainty: update.certainty,\n              version: f.version + 1,\n              history: [\n                ...f.history,\n                {\n                  version: f.version,\n                  changedAt: now,\n                  inGameDate: collections.world_state.currentInGameDate,\n                  summary: `Цели: ${f.goals}; Ресурсы: ${f.resources}; Отношение: ${f.standing}`,\n                  reason: update.reason.trim() || \"Изменение состояния фракции\",\n                },\n              ],\n            }\n          : f,\n      );\n      const nextWorld: WorldState = {\n        ...collections.world_state,\n        stateVersion: collections.world_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"ENTITY_AMENDED\",\n        \"OK\",\n        `Обновлена фракция «${target.name}» (v${target.version} → v${target.version + 1}).`,\n        nextWorld,\n        collections.player_character_state,\n      );\n      return commitCollections({\n        ...collections,\n        factions: nextFactions,\n        world_state: nextWorld,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections, lastIntegrityReport],\n  );\n\n  const addLocation: ObsidianStoreValue[\"addLocation\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const loc: LocationRecord = { ...input, id: makeId(\"loc\") };\n      return commitCollections({\n        ...collections,\n        locations: [loc, ...collections.locations],\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const addTravelRoute: ObsidianStoreValue[\"addTravelRoute\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const route: TravelRoute = { ...input, id: makeId(\"rte\") };\n      return commitCollections({\n        ...collections,\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n          routes: [route, ...collections.world_state.routes],\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const addDelayedEvent: ObsidianStoreValue[\"addDelayedEvent\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const ev: DelayedEvent = { ...input, id: makeId(\"evt\") };\n      return commitCollections({\n        ...collections,\n        timeline_events: [ev, ...collections.timeline_events],\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const updateDelayedEventStatus: ObsidianStoreValue[\"updateDelayedEventStatus\"] = useCallback(\n    (eventId, status) => {\n      const now = new Date().toISOString();\n      return commitCollections({\n        ...collections,\n        timeline_events: collections.timeline_events.map((e) =>\n          e.id === eventId ? { ...e, status } : e,\n        ),\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const addWorldConsequence: ObsidianStoreValue[\"addWorldConsequence\"] = useCallback(\n    (input) => {\n      const now = new Date().toISOString();\n      const item: WorldConsequence = { ...input, id: makeId(\"csq\") };\n      return commitCollections({\n        ...collections,\n        world_state: {\n          ...collections.world_state,\n          stateVersion: collections.world_state.stateVersion + 1,\n          updatedAt: now,\n          consequences: [item, ...collections.world_state.consequences],\n        },\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const updatePlayerCharacter: ObsidianStoreValue[\"updatePlayerCharacter\"] = useCallback(\n    (patch) => {\n      const now = new Date().toISOString();\n      const nextCharacter: PlayerCharacterState = {\n        ...collections.player_character_state,\n        ...patch,\n        stateVersion: collections.player_character_state.stateVersion + 1,\n        updatedAt: now,\n      };\n      return commitCollections({\n        ...collections,\n        player_character_state: nextCharacter,\n      });\n    },\n    [collections, commitCollections],\n  );\n\n  const addCharacterResource: ObsidianStoreValue[\"addCharacterResource\"] = useCallback(\n    (res) => {\n      return updatePlayerCharacter({\n        resources: [...collections.player_character_state.resources, { ...res, id: makeId(\"res\") }],\n      });\n    },\n    [collections.player_character_state.resources, updatePlayerCharacter],\n  );\n\n  const updateCharacterResource: ObsidianStoreValue[\"updateCharacterResource\"] = useCallback(\n    (id, current) => {\n      return updatePlayerCharacter({\n        resources: collections.player_character_state.resources.map((r) =>\n          r.id === id ? { ...r, current } : r,\n        ),\n      });\n    },\n    [collections.player_character_state.resources, updatePlayerCharacter],\n  );\n\n  const addInventoryItem: ObsidianStoreValue[\"addInventoryItem\"] = useCallback(\n    (item) => {\n      return updatePlayerCharacter({\n        inventory: [\n          ...collections.player_character_state.inventory,\n          { ...item, id: makeId(\"inv\") },\n        ],\n      });\n    },\n    [collections.player_character_state.inventory, updatePlayerCharacter],\n  );\n\n  const removeInventoryItem: ObsidianStoreValue[\"removeInventoryItem\"] = useCallback(\n    (id) => {\n      return updatePlayerCharacter({\n        inventory: collections.player_character_state.inventory.filter((i) => i.id !== id),\n      });\n    },\n    [collections.player_character_state.inventory, updatePlayerCharacter],\n  );\n\n  const updateCampaignParameters: ObsidianStoreValue[\"updateCampaignParameters\"] = useCallback(\n    (patch) => {\n      const now = new Date().toISOString();\n      const ws = collections.world_state;\n      const nextWorld: WorldState = {\n        ...ws,\n        stateVersion: ws.stateVersion + 1,\n        updatedAt: now,\n        campaignName: patch.campaignName ?? ws.campaignName,\n        calendarSystem: patch.calendarSystem ?? ws.calendarSystem,\n        startInGameDate: patch.startInGameDate ?? ws.startInGameDate,\n        currentInGameDate:\n          collections.session_log.lastTurnNumber === 0 && patch.startInGameDate !== undefined\n            ? patch.startInGameDate\n            : ws.currentInGameDate,\n        startLocationName: patch.startLocationName ?? ws.startLocationName,\n        setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,\n      };\n      return commitCollections({ ...collections, world_state: nextWorld });\n    },\n    [collections, commitCollections],\n  );\n\n  const confirmCampaignSetup: ObsidianStoreValue[\"confirmCampaignSetup\"] = useCallback(() => {\n    const ws = collections.world_state;\n    const pc = collections.player_character_state;\n    const s = ws.setup;\n    if (\n      !s.sourcesConfirmed ||\n      !s.parametersConfirmed ||\n      !s.startPointConfirmed ||\n      !s.characterConfirmed ||\n      !s.noAutoImportAcknowledged\n    ) {\n      return {\n        ok: false,\n        error:\n          \"Не все шаги мастера подготовки подтверждены. Отметьте все 4 этапа и отказ от автоимпорта.\",\n        report: lastIntegrityReport,\n      };\n    }\n    if (\n      !ws.campaignName.trim() ||\n      ws.startInGameDate.trim() === \"\" ||\n      ws.startInGameDate === \"UNKNOWN\" ||\n      ws.startLocationName.trim() === \"\" ||\n      ws.startLocationName === \"UNKNOWN\"\n    ) {\n      return {\n        ok: false,\n        error:\n          \"Укажите название кампании, явную стартовую дату и стартовую точку (не UNKNOWN) перед подтверждением старта.\",\n        report: lastIntegrityReport,\n      };\n    }\n    if (!pc.name.trim() || pc.name.trim() === \"UNKNOWN\") {\n      return {\n        ok: false,\n        error:\n          \"Заполните имя персонажа в отдельном листе игрока (раздел «Персонаж», не UNKNOWN) перед стартом кампании.\",\n        report: lastIntegrityReport,\n      };\n    }\n    const now = new Date().toISOString();\n    const startLocId = collections.locations.find(\n      (l) => l.name.toLowerCase() === ws.startLocationName.trim().toLowerCase(),\n    )?.id;\n    const nextLocations = startLocId\n      ? collections.locations\n      : [\n          {\n            id: makeId(\"loc\"),\n            name: ws.startLocationName.trim(),\n            region: \"UNKNOWN\",\n            description: \"Подтверждённая стартовая точка кампании (из мастера настройки).\",\n            certainty: \"KNOWN\" as const,\n            sourceId: \"MANUAL_GM_ENTRY\",\n          },\n          ...collections.locations,\n        ];\n    const activeLocId = startLocId ?? nextLocations[0]?.id ?? null;\n\n    const nextWorld: WorldState = {\n      ...ws,\n      stateVersion: ws.stateVersion + 1,\n      updatedAt: now,\n      currentInGameDate: ws.startInGameDate.trim(),\n      currentLocationId: activeLocId,\n      setup: {\n        ...ws.setup,\n        confirmed: true,\n        confirmedAt: now,\n      },\n    };\n    const nextCharacter: PlayerCharacterState = {\n      ...pc,\n      stateVersion: pc.stateVersion + 1,\n      updatedAt: now,\n      currentLocationLabel: ws.startLocationName.trim(),\n    };\n    const nextAudit = appendAudit(\n      collections.audit_log,\n      \"SETUP_CONFIRMED\",\n      \"OK\",\n      `Мастер подготовки подтверждён. Старт: ${ws.startInGameDate} · ${ws.startLocationName}. Персонаж: ${pc.name}.`,\n      nextWorld,\n      nextCharacter,\n    );\n    return commitCollections({\n      ...collections,\n      locations: nextLocations,\n      world_state: nextWorld,\n      player_character_state: nextCharacter,\n      audit_log: nextAudit,\n    });\n  }, [appendAudit, collections, commitCollections, lastIntegrityReport]);\n\n  const updateTurnDraft: ObsidianStoreValue[\"updateTurnDraft\"] = useCallback(\n    (patch) => {\n      setCollections((prev) => {\n        const current = prev.turn_drafts[0] ?? createEmptyTurnDraft();\n        const updated: TurnDraft = {\n          ...current,\n          ...patch,\n          updatedAt: new Date().toISOString(),\n          checkedAt: null,\n          validationErrors: [],\n        };\n        const nextDrafts = [updated, ...prev.turn_drafts.slice(1)];\n        const storage = resolveStorage();\n        if (storage) {\n          try {\n            storage.setItem(STORAGE_KEYS.turn_drafts, JSON.stringify(nextDrafts));\n          } catch {\n            // Surface storage errors explicitly on save/commit\n          }\n        }\n        return { ...prev, turn_drafts: nextDrafts };\n      });\n    },\n    [resolveStorage],\n  );\n\n  const saveTurnDraftExplicit: ObsidianStoreValue[\"saveTurnDraftExplicit\"] = useCallback(() => {\n    return commitCollections(collections);\n  }, [collections, commitCollections]);\n\n  const checkTurnDraft: ObsidianStoreValue[\"checkTurnDraft\"] = useCallback(() => {\n    const errors = validateTurnDraft(\n      activeDraft,\n      collections.world_state,\n      collections.player_character_state,\n    );\n    const nextDraft: TurnDraft = {\n      ...activeDraft,\n      updatedAt: new Date().toISOString(),\n      checkedAt: errors.length === 0 ? new Date().toISOString() : null,\n      validationErrors: errors,\n    };\n    const nextDrafts = [nextDraft, ...collections.turn_drafts.slice(1)];\n    setCollections((prev) => ({ ...prev, turn_drafts: nextDrafts }));\n    const storage = resolveStorage();\n    if (storage) {\n      try {\n        storage.setItem(STORAGE_KEYS.turn_drafts, JSON.stringify(nextDrafts));\n      } catch {\n        // Handled on commit\n      }\n    }\n    return { ok: errors.length === 0, errors };\n  }, [\n    activeDraft,\n    collections.player_character_state,\n    collections.turn_drafts,\n    collections.world_state,\n    resolveStorage,\n  ]);\n\n  const commitTurnDraft: ObsidianStoreValue[\"commitTurnDraft\"] = useCallback(\n    (explicitConfirmation) => {\n      const ws = collections.world_state;\n      const pc = collections.player_character_state;\n      if (!ws.setup.confirmed) {\n        return {\n          ok: false,\n          error: \"Commit заблокирован: сначала подтвердите Мастер подготовки кампании.\",\n          report: lastIntegrityReport,\n        };\n      }\n      if (!activeDraft.checkedAt) {\n        return {\n          ok: false,\n          error: \"Сначала выполните этап проверки черновика хода.\",\n          report: lastIntegrityReport,\n        };\n      }\n      if (!explicitConfirmation) {\n        return {\n          ok: false,\n          error: \"Требуется явное подтверждение игрока для фиксации хода (commit).\",\n          report: lastIntegrityReport,\n        };\n      }\n      const errors = validateTurnDraft(activeDraft, ws, pc);\n      if (errors.length > 0) {\n        return { ok: false, error: errors.join(\" \"), report: lastIntegrityReport };\n      }\n\n      const now = new Date().toISOString();\n      const nextTurnNumber = collections.session_log.lastTurnNumber + 1;\n      const nextWorldVersion = ws.stateVersion + 1;\n      const nextCharacterVersion = pc.stateVersion + 1;\n      const nextDate = activeDraft.newInGameDate.trim() || ws.currentInGameDate;\n      const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;\n      const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);\n\n      const nextFacts =\n        activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()\n          ? [\n              {\n                id: makeId(\"fact\"),\n                title: activeDraft.newFactTitle.trim(),\n                statement: activeDraft.newFactStatement.trim(),\n                rationale:\n                  activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,\n                layer: activeDraft.newFactLayer,\n                subjectNpcId: null,\n                certainty: activeDraft.newFactCertainty,\n                sourceId: activeDraft.newFactSourceId,\n                acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,\n                inGameDate: nextDate,\n                scope: \"LOCATION\" as const,\n                locked: true,\n                createdAt: now,\n                version: 1,\n                history: [],\n              },\n              ...collections.canon_facts,\n            ]\n          : collections.canon_facts;\n\n      const nextConsequences = activeDraft.consequenceText.trim()\n        ? [\n            {\n              id: makeId(\"csq\"),\n              summary: activeDraft.consequenceText.trim(),\n              inGameDate: nextDate,\n              turnNumber: nextTurnNumber,\n              certainty: \"KNOWN\" as const,\n              sourceId: \"MANUAL_GM_ENTRY\",\n            },\n            ...ws.consequences,\n          ]\n        : ws.consequences;\n\n      const nextWorld: WorldState = {\n        ...ws,\n        stateVersion: nextWorldVersion,\n        updatedAt: now,\n        currentInGameDate: nextDate,\n        elapsedMinutes: ws.elapsedMinutes + activeDraft.timeDeltaMinutes,\n        currentLocationId: nextLocationId,\n        consequences: nextConsequences,\n      };\n\n      const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;\n      const nextCharacter: PlayerCharacterState = {\n        ...pc,\n        stateVersion: nextCharacterVersion,\n        updatedAt: now,\n        hpCurrent: nextHp,\n        currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,\n      };\n\n      const baseTurnPayload = {\n        id: makeId(\"turn\"),\n        entryType: \"GAME_TURN\" as const,\n        turnNumber: nextTurnNumber,\n        committedAt: now,\n        inGameDateBefore: ws.currentInGameDate,\n        inGameDateAfter: nextDate,\n        timeDeltaMinutes: activeDraft.timeDeltaMinutes,\n        summary: activeDraft.summary.trim(),\n        playerIntent: activeDraft.playerIntent.trim(),\n        worldOutcome: activeDraft.worldOutcome.trim(),\n        locationIdAfter: nextLocationId,\n        hpDelta: activeDraft.hpDelta,\n        rolls: activeDraft.rolls,\n        affectedCampaignVersion: nextWorldVersion,\n        affectedCharacterVersion: nextCharacterVersion,\n      };\n\n      const turnEntry: GameTurnEntry = {\n        ...baseTurnPayload,\n        entryChecksum: computeChecksum(baseTurnPayload),\n      };\n\n      const nextSessionLog: SessionLogState = {\n        ...collections.session_log,\n        lastTurnNumber: nextTurnNumber,\n        entries: [...collections.session_log.entries, turnEntry],\n      };\n\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"TURN_COMMITTED\",\n        \"OK\",\n        `Зафиксирован ход №${nextTurnNumber}: ${turnEntry.summary} (+${turnEntry.timeDeltaMinutes} мин).`,\n        nextWorld,\n        nextCharacter,\n        nextTurnNumber,\n      );\n\n      return commitCollections(\n        {\n          ...collections,\n          canon_facts: nextFacts,\n          world_state: nextWorld,\n          player_character_state: nextCharacter,\n          turn_drafts: [createEmptyTurnDraft(makeId(\"draft\"))],\n          session_log: nextSessionLog,\n          audit_log: nextAudit,\n        },\n        nextTurnNumber,\n      );\n    },\n    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport],\n  );\n\n  const addTechnicalMessage: ObsidianStoreValue[\"addTechnicalMessage\"] = useCallback(\n    (text) => {\n      const trimmed = text.trim();\n      if (!trimmed) {\n        return {\n          ok: false,\n          error: \"Введите текст технического сообщения.\",\n          report: lastIntegrityReport,\n        };\n      }\n      const note: TechnicalMessageEntry = {\n        id: makeId(\"tech\"),\n        entryType: \"TECHNICAL_NOTE\",\n        recordedAt: new Date().toISOString(),\n        inGameDateSnapshot: collections.world_state.currentInGameDate,\n        text: trimmed,\n        advancesTime: false,\n      };\n      const nextSessionLog: SessionLogState = {\n        ...collections.session_log,\n        entries: [...collections.session_log.entries, note],\n      };\n      const nextAudit = appendAudit(\n        collections.audit_log,\n        \"TECHNICAL_NOTE_ADDED\",\n        \"OK\",\n        \"Добавлено техническое сообщение (не игровой ход, время не сдвинуто).\",\n        collections.world_state,\n        collections.player_character_state,\n        null,\n      );\n      return commitCollections({\n        ...collections,\n        session_log: nextSessionLog,\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, collections, commitCollections, lastIntegrityReport],\n  );\n\n  const runAuditNow = useCallback(() => {\n    const storage = resolveStorage();\n    const loaded = loadAllCollections(storage);\n    const report = runIntegrityAudit(loaded);\n    setLastIntegrityReport(report);\n    return report;\n  }, [resolveStorage]);\n\n  const exportBackupJson = useCallback(() => {\n    return buildBackupEnvelope(collections);\n  }, [collections]);\n\n  const importBackupJson: ObsidianStoreValue[\"importBackupJson\"] = useCallback(\n    (rawJson) => {\n      let parsed: unknown;\n      try {\n        parsed = JSON.parse(rawJson);\n      } catch {\n        return {\n          ok: false,\n          error: \"Некорректный JSON-файл резервной копии.\",\n          report: lastIntegrityReport,\n        };\n      }\n      const validated = validateBackupEnvelope(parsed);\n      if (!validated.ok) {\n        return { ok: false, error: validated.error, report: lastIntegrityReport };\n      }\n      const c = validated.envelope.collections;\n      const nextAudit = appendAudit(\n        c.audit_log,\n        \"BACKUP_IMPORTED\",\n        \"OK\",\n        `Импортирована резервная копия от ${validated.envelope.exportedAt}.`,\n        c.world_state,\n        c.player_character_state,\n        c.session_log.lastTurnNumber || null,\n      );\n      return commitCollections({\n        ...c,\n        turn_drafts: c.turn_drafts.length > 0 ? c.turn_drafts : [createEmptyTurnDraft()],\n        audit_log: nextAudit,\n      });\n    },\n    [appendAudit, commitCollections, lastIntegrityReport],\n  );\n\n  const value = useMemo<ObsidianStoreValue>(\n    () => ({\n      hydrated,\n      collections,\n      sources: collections.sources,\n      canonFacts: collections.canon_facts,\n      worldState: collections.world_state,\n      character: collections.player_character_state,\n      npcs: collections.npcs,\n      factions: collections.factions,\n      locations: collections.locations,\n      timelineEvents: collections.timeline_events,\n      turnDrafts: collections.turn_drafts,\n      turnDraft: activeDraft,\n      sessionLog: collections.session_log,\n      auditLog: collections.audit_log,\n      lastIntegrityReport,\n      lastStorageError,\n      attachSourceContent,\n      addSupplementalSource,\n      addFact,\n      amendFact,\n      toggleFactLock,\n      addNpc,\n      amendNpc,\n      addNpcKnowledge,\n      addFaction,\n      amendFaction,\n      addLocation,\n      addTravelRoute,\n      addDelayedEvent,\n      updateDelayedEventStatus,\n      addWorldConsequence,\n      updatePlayerCharacter,\n      addCharacterResource,\n      updateCharacterResource,\n      addInventoryItem,\n      removeInventoryItem,\n      updateCampaignParameters,\n      confirmCampaignSetup,\n      updateTurnDraft,\n      saveTurnDraftExplicit,\n      checkTurnDraft,\n      commitTurnDraft,\n      addTechnicalMessage,\n      runAuditNow,\n      exportBackupJson,\n      importBackupJson,\n    }),\n    [\n      hydrated,\n      collections,\n      activeDraft,\n      lastIntegrityReport,\n      lastStorageError,\n      attachSourceContent,\n      addSupplementalSource,\n      addFact,\n      amendFact,\n      toggleFactLock,\n      addNpc,\n      amendNpc,\n      addNpcKnowledge,\n      addFaction,\n      amendFaction,\n      addLocation,\n      addTravelRoute,\n      addDelayedEvent,\n      updateDelayedEventStatus,\n      addWorldConsequence,\n      updatePlayerCharacter,\n      addCharacterResource,\n      updateCharacterResource,\n      addInventoryItem,\n      removeInventoryItem,\n      updateCampaignParameters,\n      confirmCampaignSetup,\n      updateTurnDraft,\n      saveTurnDraftExplicit,\n      checkTurnDraft,\n      commitTurnDraft,\n      addTechnicalMessage,\n      runAuditNow,\n      exportBackupJson,\n      importBackupJson,\n    ],\n  );\n\n  return <ObsidianStoreContext.Provider value={value}>{children}</ObsidianStoreContext.Provider>;\n}\n\nexport function useObsidianStore(): ObsidianStoreValue {\n  const ctx = useContext(ObsidianStoreContext);\n  if (!ctx) throw new Error(\"useObsidianStore must be used within ObsidianStoreProvider\");\n  return ctx;\n}"}
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+
+import { createEmptyTurnDraft, createInitialCollections } from "@/domain/defaults";
+import {
+  buildBackupEnvelope,
+  computeChecksum,
+  runIntegrityAudit,
+  validateBackupEnvelope,
+  validateTurnDraft,
+} from "@/domain/integrity";
+import {
+  getBrowserStorage,
+  loadAllCollections,
+  persistAndVerifyCollections,
+  STORAGE_KEYS,
+  type PersistVerifyResult,
+  type StorageLike,
+} from "@/domain/storage";
+import type {
+  AuditEntry,
+  AuditLogState,
+  BackupEnvelope,
+  CampaignSetupState,
+  CanonFact,
+  CharacterResource,
+  DelayedEvent,
+  FactionRecord,
+  GameTurnEntry,
+  IntegrityReport,
+  InventoryItem,
+  LocationRecord,
+  NpcKnowledgeEntry,
+  NpcRecord,
+  ObsidianCollections,
+  PlayerCharacterState,
+  SessionLogState,
+  SourceDocument,
+  TechnicalMessageEntry,
+  TravelRoute,
+  TurnDraft,
+  WorldConsequence,
+  WorldState,
+} from "@/domain/types";
+
+function makeId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+  }
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export interface ObsidianStoreValue {
+  hydrated: boolean;
+  collections: ObsidianCollections;
+  sources: SourceDocument[];
+  canonFacts: CanonFact[];
+  worldState: WorldState;
+  character: PlayerCharacterState;
+  npcs: NpcRecord[];
+  factions: FactionRecord[];
+  locations: LocationRecord[];
+  timelineEvents: DelayedEvent[];
+  turnDrafts: TurnDraft[];
+  turnDraft: TurnDraft;
+  sessionLog: SessionLogState;
+  auditLog: AuditLogState;
+  lastIntegrityReport: IntegrityReport | null;
+  lastStorageError: string | null;
+
+  // Sources
+  attachSourceContent: (
+    sourceId: string,
+    payload: { fileName: string | null; content: string; originLabel: string; notes: string },
+  ) => PersistVerifyResult;
+  addSupplementalSource: (payload: {
+    title: string;
+    originLabel: string;
+    content: string;
+    fileName: string | null;
+    notes: string;
+  }) => PersistVerifyResult;
+
+  // Canon / Facts
+  addFact: (
+    input: Omit<CanonFact, "id" | "createdAt" | "version" | "history">,
+  ) => PersistVerifyResult;
+  amendFact: (
+    factId: string,
+    update: {
+      statement: string;
+      rationale: string;
+      certainty: CanonFact["certainty"];
+      reason: string;
+    },
+  ) => PersistVerifyResult;
+  toggleFactLock: (factId: string) => PersistVerifyResult;
+
+  // NPCs
+  addNpc: (
+    input: Omit<NpcRecord, "id" | "knowledge" | "version" | "history">,
+  ) => PersistVerifyResult;
+  amendNpc: (
+    npcId: string,
+    update: {
+      role: string;
+      locationId: string | null;
+      factionId: string | null;
+      goals: string;
+      attitudeToPlayer: string;
+      certainty: NpcRecord["certainty"];
+      reason: string;
+    },
+  ) => PersistVerifyResult;
+  addNpcKnowledge: (
+    npcId: string,
+    entry: Omit<NpcKnowledgeEntry, "id" | "recordedAt">,
+  ) => PersistVerifyResult;
+
+  // Factions
+  addFaction: (input: Omit<FactionRecord, "id" | "version" | "history">) => PersistVerifyResult;
+  amendFaction: (
+    factionId: string,
+    update: {
+      goals: string;
+      resources: string;
+      standing: string;
+      certainty: FactionRecord["certainty"];
+      reason: string;
+    },
+  ) => PersistVerifyResult;
+
+  // Time & Map
+  addLocation: (input: Omit<LocationRecord, "id">) => PersistVerifyResult;
+  addTravelRoute: (input: Omit<TravelRoute, "id">) => PersistVerifyResult;
+  addDelayedEvent: (input: Omit<DelayedEvent, "id">) => PersistVerifyResult;
+  updateDelayedEventStatus: (
+    eventId: string,
+    status: DelayedEvent["status"],
+  ) => PersistVerifyResult;
+  addWorldConsequence: (input: Omit<WorldConsequence, "id">) => PersistVerifyResult;
+
+  // Isolated PLAYER_CHARACTER_STATE
+  updatePlayerCharacter: (
+    patch: Partial<Omit<PlayerCharacterState, "schemaVersion" | "stateVersion" | "updatedAt">>,
+  ) => PersistVerifyResult;
+  addCharacterResource: (res: Omit<CharacterResource, "id">) => PersistVerifyResult;
+  updateCharacterResource: (id: string, current: number | null) => PersistVerifyResult;
+  addInventoryItem: (item: Omit<InventoryItem, "id">) => PersistVerifyResult;
+  removeInventoryItem: (id: string) => PersistVerifyResult;
+
+  // Setup Wizard & Campaign Parameters
+  updateCampaignParameters: (patch: {
+    campaignName?: string;
+    calendarSystem?: string;
+    startInGameDate?: string;
+    startLocationName?: string;
+    setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
+  }) => PersistVerifyResult;
+  confirmCampaignSetup: () => PersistVerifyResult;
+
+  // Turns & Append-only Journal
+  updateTurnDraft: (patch: Partial<TurnDraft>) => void;
+  saveTurnDraftExplicit: () => PersistVerifyResult;
+  checkTurnDraft: () => { ok: boolean; errors: string[] };
+  commitTurnDraft: (explicitConfirmation: boolean) => PersistVerifyResult;
+  addTechnicalMessage: (text: string) => PersistVerifyResult;
+
+  // Audit & Backup
+  runAuditNow: () => IntegrityReport;
+  exportBackupJson: () => BackupEnvelope;
+  importBackupJson: (rawJson: string) => PersistVerifyResult;
+}
+
+const ObsidianStoreContext = createContext<ObsidianStoreValue | null>(null);
+
+export function ObsidianStoreProvider({
+  children,
+  storageOverride,
+}: {
+  children: ReactNode;
+  storageOverride?: StorageLike;
+}) {
+  const [hydrated, setHydrated] = useState(false);
+  const [collections, setCollections] = useState<ObsidianCollections>(() =>
+    createInitialCollections(),
+  );
+  const [lastIntegrityReport, setLastIntegrityReport] = useState<IntegrityReport | null>(null);
+  const [lastStorageError, setLastStorageError] = useState<string | null>(null);
+
+  const resolveStorage = useCallback(
+    () => storageOverride ?? getBrowserStorage(),
+    [storageOverride],
+  );
+
+  useEffect(() => {
+    const storage = resolveStorage();
+    const loaded = loadAllCollections(storage);
+    if (loaded.turn_drafts.length === 0) {
+      loaded.turn_drafts = [createEmptyTurnDraft()];
+    }
+    setCollections(loaded);
+    setLastIntegrityReport(runIntegrityAudit(loaded));
+    setHydrated(true);
+  }, [resolveStorage]);
+
+  const commitCollections = useCallback(
+    (next: ObsidianCollections, expectedTailTurnNumber?: number): PersistVerifyResult => {
+      const result = persistAndVerifyCollections(resolveStorage(), next, expectedTailTurnNumber);
+      if (result.ok) {
+        setCollections(next);
+        setLastIntegrityReport(result.report);
+        setLastStorageError(null);
+      } else {
+        setLastStorageError(result.error);
+        if (result.report) setLastIntegrityReport(result.report);
+      }
+      return result;
+    },
+    [resolveStorage],
+  );
+
+  const appendAudit = useCallback(
+    (
+      baseAudit: AuditLogState,
+      action: AuditEntry["action"],
+      status: AuditEntry["status"],
+      details: string,
+      nextWorld: WorldState,
+      nextCharacter: PlayerCharacterState,
+      turnNumber: number | null = null,
+    ): AuditLogState => ({
+      ...baseAudit,
+      entries: [
+        ...baseAudit.entries,
+        {
+          id: makeId("aud"),
+          timestamp: new Date().toISOString(),
+          action,
+          status,
+          details,
+          campaignVersion: nextWorld.stateVersion,
+          characterVersion: nextCharacter.stateVersion,
+          turnNumber,
+          checksumSnapshot: computeChecksum({
+            w: nextWorld.stateVersion,
+            p: nextCharacter.stateVersion,
+            t: turnNumber,
+          }),
+        },
+      ],
+    }),
+    [],
+  );
+
+  const activeDraft = collections.turn_drafts[0] ?? createEmptyTurnDraft();
+
+  const attachSourceContent: ObsidianStoreValue["attachSourceContent"] = useCallback(
+    (sourceId, payload) => {
+      const now = new Date().toISOString();
+      const hasText = payload.content.trim().length > 0;
+      const nextSources = collections.sources.map((src) =>
+        src.id === sourceId
+          ? {
+              ...src,
+              fileName: payload.fileName,
+              content: payload.content,
+              originLabel: payload.originLabel.trim() || src.originLabel,
+              notes: payload.notes,
+              contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
+              certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
+              checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
+              attachedAt: hasText ? now : null,
+            }
+          : src,
+      );
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_ATTACHED",
+        "OK",
+        `Обновлён источник ${sourceId} (${payload.fileName ?? "текст вручную"}). Кампания не запущена автоматически.`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: nextSources,
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections],
+  );
+
+  const addSupplementalSource: ObsidianStoreValue["addSupplementalSource"] = useCallback(
+    (payload) => {
+      const now = new Date().toISOString();
+      const hasText = payload.content.trim().length > 0;
+      const doc: SourceDocument = {
+        id: makeId("src"),
+        title: payload.title.trim(),
+        type: "SUPPLEMENTAL",
+        targetPartition: "CAMPAIGN_STATE",
+        originLabel: payload.originLabel.trim() || "Пользовательский источник",
+        contentStatus: hasText ? "ATTACHED" : "NOT_ATTACHED",
+        certainty: hasText ? "KNOWN" : "UNKNOWN",
+        fileName: payload.fileName,
+        content: payload.content,
+        checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
+        attachedAt: hasText ? now : null,
+        notes: payload.notes,
+      };
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_ATTACHED",
+        "OK",
+        `Добавлен дополнительный источник «${doc.title}».`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: [...collections.sources, doc],
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections],
+  );
+
+  const addFact: ObsidianStoreValue["addFact"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const fact: CanonFact = {
+        ...input,
+        id: makeId("fact"),
+        createdAt: now,
+        version: 1,
+        history: [],
+      };
+      return commitCollections({
+        ...collections,
+        canon_facts: [fact, ...collections.canon_facts],
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const amendFact: ObsidianStoreValue["amendFact"] = useCallback(
+    (factId, update) => {
+      const now = new Date().toISOString();
+      const target = collections.canon_facts.find((f) => f.id === factId);
+      if (!target) {
+        return { ok: false, error: "Факт не найден.", report: lastIntegrityReport };
+      }
+      if (target.locked && !update.reason.trim()) {
+        return {
+          ok: false,
+          error:
+            "Для изменения утверждённого факта укажите причину ревизии (без перезаписи задним числом).",
+          report: lastIntegrityReport,
+        };
+      }
+      const nextFacts = collections.canon_facts.map((f) =>
+        f.id === factId
+          ? {
+              ...f,
+              statement: update.statement.trim(),
+              rationale: update.rationale.trim(),
+              certainty: update.certainty,
+              version: f.version + 1,
+              history: [
+                ...f.history,
+                {
+                  version: f.version,
+                  changedAt: now,
+                  inGameDate: collections.world_state.currentInGameDate,
+                  previousStatement: f.statement,
+                  previousCertainty: f.certainty,
+                  previousRationale: f.rationale,
+                  reason: update.reason.trim() || "Уточнение записи",
+                },
+              ],
+            }
+          : f,
+      );
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "FACT_AMENDED",
+        "OK",
+        `Ревизия факта «${target.title}» (v${target.version} → v${target.version + 1}): ${update.reason.trim() || "уточнение"}`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        canon_facts: nextFacts,
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const toggleFactLock: ObsidianStoreValue["toggleFactLock"] = useCallback(
+    (factId) => {
+      const now = new Date().toISOString();
+      return commitCollections({
+        ...collections,
+        canon_facts: collections.canon_facts.map((f) =>
+          f.id === factId ? { ...f, locked: !f.locked } : f,
+        ),
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const addNpc: ObsidianStoreValue["addNpc"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const npc: NpcRecord = {
+        ...input,
+        id: makeId("npc"),
+        knowledge: [],
+        version: 1,
+        history: [],
+      };
+      return commitCollections({
+        ...collections,
+        npcs: [npc, ...collections.npcs],
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const amendNpc: ObsidianStoreValue["amendNpc"] = useCallback(
+    (npcId, update) => {
+      const now = new Date().toISOString();
+      const target = collections.npcs.find((n) => n.id === npcId);
+      if (!target) return { ok: false, error: "NPC не найден.", report: lastIntegrityReport };
+      if (target.locked && !update.reason.trim()) {
+        return {
+          ok: false,
+          error: "Для изменения утверждённого NPC укажите причину обновления состояния.",
+          report: lastIntegrityReport,
+        };
+      }
+      const nextNpcs = collections.npcs.map((n) =>
+        n.id === npcId
+          ? {
+              ...n,
+              role: update.role,
+              locationId: update.locationId,
+              factionId: update.factionId,
+              goals: update.goals,
+              attitudeToPlayer: update.attitudeToPlayer,
+              certainty: update.certainty,
+              version: n.version + 1,
+              history: [
+                ...n.history,
+                {
+                  version: n.version,
+                  changedAt: now,
+                  inGameDate: collections.world_state.currentInGameDate,
+                  summary: `Цели: ${n.goals}; Отношение: ${n.attitudeToPlayer}`,
+                  reason: update.reason.trim() || "Обновление состояния NPC",
+                },
+              ],
+            }
+          : n,
+      );
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "ENTITY_AMENDED",
+        "OK",
+        `Обновлён NPC «${target.name}» (v${target.version} → v${target.version + 1}).`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        npcs: nextNpcs,
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const addNpcKnowledge: ObsidianStoreValue["addNpcKnowledge"] = useCallback(
+    (npcId, entry) => {
+      if (!entry.acquisitionPath.trim()) {
+        return {
+          ok: false,
+          error: "NPC не всеведущи: укажите путь/источник получения знания.",
+          report: lastIntegrityReport,
+        };
+      }
+      const now = new Date().toISOString();
+      const item: NpcKnowledgeEntry = {
+        ...entry,
+        id: makeId("knw"),
+        recordedAt: now,
+      };
+      return commitCollections({
+        ...collections,
+        npcs: collections.npcs.map((n) =>
+          n.id === npcId ? { ...n, knowledge: [item, ...n.knowledge] } : n,
+        ),
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections, lastIntegrityReport],
+  );
+
+  const addFaction: ObsidianStoreValue["addFaction"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const faction: FactionRecord = {
+        ...input,
+        id: makeId("fac"),
+        version: 1,
+        history: [],
+      };
+      return commitCollections({
+        ...collections,
+        factions: [faction, ...collections.factions],
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const amendFaction: ObsidianStoreValue["amendFaction"] = useCallback(
+    (factionId, update) => {
+      const now = new Date().toISOString();
+      const target = collections.factions.find((f) => f.id === factionId);
+      if (!target) return { ok: false, error: "Фракция не найдена.", report: lastIntegrityReport };
+      const nextFactions = collections.factions.map((f) =>
+        f.id === factionId
+          ? {
+              ...f,
+              goals: update.goals,
+              resources: update.resources,
+              standing: update.standing,
+              certainty: update.certainty,
+              version: f.version + 1,
+              history: [
+                ...f.history,
+                {
+                  version: f.version,
+                  changedAt: now,
+                  inGameDate: collections.world_state.currentInGameDate,
+                  summary: `Цели: ${f.goals}; Ресурсы: ${f.resources}; Отношение: ${f.standing}`,
+                  reason: update.reason.trim() || "Изменение состояния фракции",
+                },
+              ],
+            }
+          : f,
+      );
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "ENTITY_AMENDED",
+        "OK",
+        `Обновлена фракция «${target.name}» (v${target.version} → v${target.version + 1}).`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        factions: nextFactions,
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const addLocation: ObsidianStoreValue["addLocation"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const loc: LocationRecord = { ...input, id: makeId("loc") };
+      return commitCollections({
+        ...collections,
+        locations: [loc, ...collections.locations],
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const addTravelRoute: ObsidianStoreValue["addTravelRoute"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const route: TravelRoute = { ...input, id: makeId("rte") };
+      return commitCollections({
+        ...collections,
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+          routes: [route, ...collections.world_state.routes],
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const addDelayedEvent: ObsidianStoreValue["addDelayedEvent"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const ev: DelayedEvent = { ...input, id: makeId("evt") };
+      return commitCollections({
+        ...collections,
+        timeline_events: [ev, ...collections.timeline_events],
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const updateDelayedEventStatus: ObsidianStoreValue["updateDelayedEventStatus"] = useCallback(
+    (eventId, status) => {
+      const now = new Date().toISOString();
+      return commitCollections({
+        ...collections,
+        timeline_events: collections.timeline_events.map((e) =>
+          e.id === eventId ? { ...e, status } : e,
+        ),
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const addWorldConsequence: ObsidianStoreValue["addWorldConsequence"] = useCallback(
+    (input) => {
+      const now = new Date().toISOString();
+      const item: WorldConsequence = { ...input, id: makeId("csq") };
+      return commitCollections({
+        ...collections,
+        world_state: {
+          ...collections.world_state,
+          stateVersion: collections.world_state.stateVersion + 1,
+          updatedAt: now,
+          consequences: [item, ...collections.world_state.consequences],
+        },
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const updatePlayerCharacter: ObsidianStoreValue["updatePlayerCharacter"] = useCallback(
+    (patch) => {
+      const now = new Date().toISOString();
+      const nextCharacter: PlayerCharacterState = {
+        ...collections.player_character_state,
+        ...patch,
+        stateVersion: collections.player_character_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      return commitCollections({
+        ...collections,
+        player_character_state: nextCharacter,
+      });
+    },
+    [collections, commitCollections],
+  );
+
+  const addCharacterResource: ObsidianStoreValue["addCharacterResource"] = useCallback(
+    (res) => {
+      return updatePlayerCharacter({
+        resources: [...collections.player_character_state.resources, { ...res, id: makeId("res") }],
+      });
+    },
+    [collections.player_character_state.resources, updatePlayerCharacter],
+  );
+
+  const updateCharacterResource: ObsidianStoreValue["updateCharacterResource"] = useCallback(
+    (id, current) => {
+      return updatePlayerCharacter({
+        resources: collections.player_character_state.resources.map((r) =>
+          r.id === id ? { ...r, current } : r,
+        ),
+      });
+    },
+    [collections.player_character_state.resources, updatePlayerCharacter],
+  );
+
+  const addInventoryItem: ObsidianStoreValue["addInventoryItem"] = useCallback(
+    (item) => {
+      return updatePlayerCharacter({
+        inventory: [
+          ...collections.player_character_state.inventory,
+          { ...item, id: makeId("inv") },
+        ],
+      });
+    },
+    [collections.player_character_state.inventory, updatePlayerCharacter],
+  );
+
+  const removeInventoryItem: ObsidianStoreValue["removeInventoryItem"] = useCallback(
+    (id) => {
+      return updatePlayerCharacter({
+        inventory: collections.player_character_state.inventory.filter((i) => i.id !== id),
+      });
+    },
+    [collections.player_character_state.inventory, updatePlayerCharacter],
+  );
+
+  const updateCampaignParameters: ObsidianStoreValue["updateCampaignParameters"] = useCallback(
+    (patch) => {
+      const now = new Date().toISOString();
+      const ws = collections.world_state;
+      const nextWorld: WorldState = {
+        ...ws,
+        stateVersion: ws.stateVersion + 1,
+        updatedAt: now,
+        campaignName: patch.campaignName ?? ws.campaignName,
+        calendarSystem: patch.calendarSystem ?? ws.calendarSystem,
+        startInGameDate: patch.startInGameDate ?? ws.startInGameDate,
+        currentInGameDate:
+          collections.session_log.lastTurnNumber === 0 && patch.startInGameDate !== undefined
+            ? patch.startInGameDate
+            : ws.currentInGameDate,
+        startLocationName: patch.startLocationName ?? ws.startLocationName,
+        setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
+      };
+      return commitCollections({ ...collections, world_state: nextWorld });
+    },
+    [collections, commitCollections],
+  );
+
+  const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback(() => {
+    const ws = collections.world_state;
+    const pc = collections.player_character_state;
+    const s = ws.setup;
+    if (
+      !s.sourcesConfirmed ||
+      !s.parametersConfirmed ||
+      !s.startPointConfirmed ||
+      !s.characterConfirmed ||
+      !s.noAutoImportAcknowledged
+    ) {
+      return {
+        ok: false,
+        error:
+          "Не все шаги мастера подготовки подтверждены. Отметьте все 4 этапа и отказ от автоимпорта.",
+        report: lastIntegrityReport,
+      };
+    }
+    if (
+      !ws.campaignName.trim() ||
+      ws.startInGameDate.trim() === "" ||
+      ws.startInGameDate === "UNKNOWN" ||
+      ws.startLocationName.trim() === "" ||
+      ws.startLocationName === "UNKNOWN"
+    ) {
+      return {
+        ok: false,
+        error:
+          "Укажите название кампании, явную стартовую дату и стартовую точку (не UNKNOWN) перед подтверждением старта.",
+        report: lastIntegrityReport,
+      };
+    }
+    if (!pc.name.trim() || pc.name.trim() === "UNKNOWN") {
+      return {
+        ok: false,
+        error:
+          "Заполните имя персонажа в отдельном листе игрока (раздел «Персонаж», не UNKNOWN) перед стартом кампании.",
+        report: lastIntegrityReport,
+      };
+    }
+    const now = new Date().toISOString();
+    const startLocId = collections.locations.find(
+      (l) => l.name.toLowerCase() === ws.startLocationName.trim().toLowerCase(),
+    )?.id;
+    const nextLocations = startLocId
+      ? collections.locations
+      : [
+          {
+            id: makeId("loc"),
+            name: ws.startLocationName.trim(),
+            region: "UNKNOWN",
+            description: "Подтверждённая стартовая точка кампании (из мастера настройки).",
+            certainty: "KNOWN" as const,
+            sourceId: "MANUAL_GM_ENTRY",
+          },
+          ...collections.locations,
+        ];
+    const activeLocId = startLocId ?? nextLocations[0]?.id ?? null;
+
+    const nextWorld: WorldState = {
+      ...ws,
+      stateVersion: ws.stateVersion + 1,
+      updatedAt: now,
+      currentInGameDate: ws.startInGameDate.trim(),
+      currentLocationId: activeLocId,
+      setup: {
+        ...ws.setup,
+        confirmed: true,
+        confirmedAt: now,
+      },
+    };
+    const nextCharacter: PlayerCharacterState = {
+      ...pc,
+      stateVersion: pc.stateVersion + 1,
+      updatedAt: now,
+      currentLocationLabel: ws.startLocationName.trim(),
+    };
+    const nextAudit = appendAudit(
+      collections.audit_log,
+      "SETUP_CONFIRMED",
+      "OK",
+      `Мастер подготовки подтверждён. Старт: ${ws.startInGameDate} · ${ws.startLocationName}. Персонаж: ${pc.name}.`,
+      nextWorld,
+      nextCharacter,
+    );
+    return commitCollections({
+      ...collections,
+      locations: nextLocations,
+      world_state: nextWorld,
+      player_character_state: nextCharacter,
+      audit_log: nextAudit,
+    });
+  }, [appendAudit, collections, commitCollections, lastIntegrityReport]);
+
+  const updateTurnDraft: ObsidianStoreValue["updateTurnDraft"] = useCallback(
+    (patch) => {
+      setCollections((prev) => {
+        const current = prev.turn_drafts[0] ?? createEmptyTurnDraft();
+        const updated: TurnDraft = {
+          ...current,
+          ...patch,
+          updatedAt: new Date().toISOString(),
+          checkedAt: null,
+          validationErrors: [],
+        };
+        const nextDrafts = [updated, ...prev.turn_drafts.slice(1)];
+        const storage = resolveStorage();
+        if (storage) {
+          try {
+            storage.setItem(STORAGE_KEYS.turn_drafts, JSON.stringify(nextDrafts));
+          } catch {
+            // Surface storage errors explicitly on save/commit
+          }
+        }
+        return { ...prev, turn_drafts: nextDrafts };
+      });
+    },
+    [resolveStorage],
+  );
+
+  const saveTurnDraftExplicit: ObsidianStoreValue["saveTurnDraftExplicit"] = useCallback(() => {
+    return commitCollections(collections);
+  }, [collections, commitCollections]);
+
+  const checkTurnDraft: ObsidianStoreValue["checkTurnDraft"] = useCallback(() => {
+    const errors = validateTurnDraft(
+      activeDraft,
+      collections.world_state,
+      collections.player_character_state,
+    );
+    const nextDraft: TurnDraft = {
+      ...activeDraft,
+      updatedAt: new Date().toISOString(),
+      checkedAt: errors.length === 0 ? new Date().toISOString() : null,
+      validationErrors: errors,
+    };
+    const nextDrafts = [nextDraft, ...collections.turn_drafts.slice(1)];
+    setCollections((prev) => ({ ...prev, turn_drafts: nextDrafts }));
+    const storage = resolveStorage();
+    if (storage) {
+      try {
+        storage.setItem(STORAGE_KEYS.turn_drafts, JSON.stringify(nextDrafts));
+      } catch {
+        // Handled on commit
+      }
+    }
+    return { ok: errors.length === 0, errors };
+  }, [
+    activeDraft,
+    collections.player_character_state,
+    collections.turn_drafts,
+    collections.world_state,
+    resolveStorage,
+  ]);
+
+  const commitTurnDraft: ObsidianStoreValue["commitTurnDraft"] = useCallback(
+    (explicitConfirmation) => {
+      const ws = collections.world_state;
+      const pc = collections.player_character_state;
+      if (!ws.setup.confirmed) {
+        return {
+          ok: false,
+          error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.",
+          report: lastIntegrityReport,
+        };
+      }
+      if (!activeDraft.checkedAt) {
+        return {
+          ok: false,
+          error: "Сначала выполните этап проверки черновика хода.",
+          report: lastIntegrityReport,
+        };
+      }
+      if (!explicitConfirmation) {
+        return {
+          ok: false,
+          error: "Требуется явное подтверждение игрока для фиксации хода (commit).",
+          report: lastIntegrityReport,
+        };
+      }
+      const errors = validateTurnDraft(activeDraft, ws, pc);
+      if (errors.length > 0) {
+        return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
+      }
+
+      const now = new Date().toISOString();
+      const nextTurnNumber = collections.session_log.lastTurnNumber + 1;
+      const nextWorldVersion = ws.stateVersion + 1;
+      const nextCharacterVersion = pc.stateVersion + 1;
+      const nextDate = activeDraft.newInGameDate.trim() || ws.currentInGameDate;
+      const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;
+      const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);
+
+      const nextFacts =
+        activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()
+          ? [
+              {
+                id: makeId("fact"),
+                title: activeDraft.newFactTitle.trim(),
+                statement: activeDraft.newFactStatement.trim(),
+                rationale:
+                  activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,
+                layer: activeDraft.newFactLayer,
+                subjectNpcId: null,
+                certainty: activeDraft.newFactCertainty,
+                sourceId: activeDraft.newFactSourceId,
+                acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,
+                inGameDate: nextDate,
+                scope: "LOCATION" as const,
+                locked: true,
+                createdAt: now,
+                version: 1,
+                history: [],
+              },
+              ...collections.canon_facts,
+            ]
+          : collections.canon_facts;
+
+      const nextConsequences = activeDraft.consequenceText.trim()
+        ? [
+            {
+              id: makeId("csq"),
+              summary: activeDraft.consequenceText.trim(),
+              inGameDate: nextDate,
+              turnNumber: nextTurnNumber,
+              certainty: "KNOWN" as const,
+              sourceId: "MANUAL_GM_ENTRY",
+            },
+            ...ws.consequences,
+          ]
+        : ws.consequences;
+
+      const nextWorld: WorldState = {
+        ...ws,
+        stateVersion: nextWorldVersion,
+        updatedAt: now,
+        currentInGameDate: nextDate,
+        elapsedMinutes: ws.elapsedMinutes + activeDraft.timeDeltaMinutes,
+        currentLocationId: nextLocationId,
+        consequences: nextConsequences,
+      };
+
+      const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;
+      const nextCharacter: PlayerCharacterState = {
+        ...pc,
+        stateVersion: nextCharacterVersion,
+        updatedAt: now,
+        hpCurrent: nextHp,
+        currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,
+      };
+
+      const baseTurnPayload = {
+        id: makeId("turn"),
+        entryType: "GAME_TURN" as const,
+        turnNumber: nextTurnNumber,
+        committedAt: now,
+        inGameDateBefore: ws.currentInGameDate,
+        inGameDateAfter: nextDate,
+        timeDeltaMinutes: activeDraft.timeDeltaMinutes,
+        summary: activeDraft.summary.trim(),
+        playerIntent: activeDraft.playerIntent.trim(),
+        worldOutcome: activeDraft.worldOutcome.trim(),
+        locationIdAfter: nextLocationId,
+        hpDelta: activeDraft.hpDelta,
+        rolls: activeDraft.rolls,
+        affectedCampaignVersion: nextWorldVersion,
+        affectedCharacterVersion: nextCharacterVersion,
+      };
+
+      const turnEntry: GameTurnEntry = {
+        ...baseTurnPayload,
+        entryChecksum: computeChecksum(baseTurnPayload),
+      };
+
+      const nextSessionLog: SessionLogState = {
+        ...collections.session_log,
+        lastTurnNumber: nextTurnNumber,
+        entries: [...collections.session_log.entries, turnEntry],
+      };
+
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "TURN_COMMITTED",
+        "OK",
+        `Зафиксирован ход №${nextTurnNumber}: ${turnEntry.summary} (+${turnEntry.timeDeltaMinutes} мин).`,
+        nextWorld,
+        nextCharacter,
+        nextTurnNumber,
+      );
+
+      return commitCollections(
+        {
+          ...collections,
+          canon_facts: nextFacts,
+          world_state: nextWorld,
+          player_character_state: nextCharacter,
+          turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
+          session_log: nextSessionLog,
+          audit_log: nextAudit,
+        },
+        nextTurnNumber,
+      );
+    },
+    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const addTechnicalMessage: ObsidianStoreValue["addTechnicalMessage"] = useCallback(
+    (text) => {
+      const trimmed = text.trim();
+      if (!trimmed) {
+        return {
+          ok: false,
+          error: "Введите текст технического сообщения.",
+          report: lastIntegrityReport,
+        };
+      }
+      const note: TechnicalMessageEntry = {
+        id: makeId("tech"),
+        entryType: "TECHNICAL_NOTE",
+        recordedAt: new Date().toISOString(),
+        inGameDateSnapshot: collections.world_state.currentInGameDate,
+        text: trimmed,
+        advancesTime: false,
+      };
+      const nextSessionLog: SessionLogState = {
+        ...collections.session_log,
+        entries: [...collections.session_log.entries, note],
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "TECHNICAL_NOTE_ADDED",
+        "OK",
+        "Добавлено техническое сообщение (не игровой ход, время не сдвинуто).",
+        collections.world_state,
+        collections.player_character_state,
+        null,
+      );
+      return commitCollections({
+        ...collections,
+        session_log: nextSessionLog,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const runAuditNow = useCallback(() => {
+    const storage = resolveStorage();
+    const loaded = loadAllCollections(storage);
+    const report = runIntegrityAudit(loaded);
+    setLastIntegrityReport(report);
+    return report;
+  }, [resolveStorage]);
+
+  const exportBackupJson = useCallback(() => {
+    return buildBackupEnvelope(collections);
+  }, [collections]);
+
+  const importBackupJson: ObsidianStoreValue["importBackupJson"] = useCallback(
+    (rawJson) => {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(rawJson);
+      } catch {
+        return {
+          ok: false,
+          error: "Некорректный JSON-файл резервной копии.",
+          report: lastIntegrityReport,
+        };
+      }
+      const validated = validateBackupEnvelope(parsed);
+      if (!validated.ok) {
+        return { ok: false, error: validated.error, report: lastIntegrityReport };
+      }
+      const c = validated.envelope.collections;
+      const nextAudit = appendAudit(
+        c.audit_log,
+        "BACKUP_IMPORTED",
+        "OK",
+        `Импортирована резервная копия от ${validated.envelope.exportedAt}.`,
+        c.world_state,
+        c.player_character_state,
+        c.session_log.lastTurnNumber || null,
+      );
+      return commitCollections({
+        ...c,
+        turn_drafts: c.turn_drafts.length > 0 ? c.turn_drafts : [createEmptyTurnDraft()],
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, commitCollections, lastIntegrityReport],
+  );
+
+  const value = useMemo<ObsidianStoreValue>(
+    () => ({
+      hydrated,
+      collections,
+      sources: collections.sources,
+      canonFacts: collections.canon_facts,
+      worldState: collections.world_state,
+      character: collections.player_character_state,
+      npcs: collections.npcs,
+      factions: collections.factions,
+      locations: collections.locations,
+      timelineEvents: collections.timeline_events,
+      turnDrafts: collections.turn_drafts,
+      turnDraft: activeDraft,
+      sessionLog: collections.session_log,
+      auditLog: collections.audit_log,
+      lastIntegrityReport,
+      lastStorageError,
+      attachSourceContent,
+      addSupplementalSource,
+      addFact,
+      amendFact,
+      toggleFactLock,
+      addNpc,
+      amendNpc,
+      addNpcKnowledge,
+      addFaction,
+      amendFaction,
+      addLocation,
+      addTravelRoute,
+      addDelayedEvent,
+      updateDelayedEventStatus,
+      addWorldConsequence,
+      updatePlayerCharacter,
+      addCharacterResource,
+      updateCharacterResource,
+      addInventoryItem,
+      removeInventoryItem,
+      updateCampaignParameters,
+      confirmCampaignSetup,
+      updateTurnDraft,
+      saveTurnDraftExplicit,
+      checkTurnDraft,
+      commitTurnDraft,
+      addTechnicalMessage,
+      runAuditNow,
+      exportBackupJson,
+      importBackupJson,
+    }),
+    [
+      hydrated,
+      collections,
+      activeDraft,
+      lastIntegrityReport,
+      lastStorageError,
+      attachSourceContent,
+      addSupplementalSource,
+      addFact,
+      amendFact,
+      toggleFactLock,
+      addNpc,
+      amendNpc,
+      addNpcKnowledge,
+      addFaction,
+      amendFaction,
+      addLocation,
+      addTravelRoute,
+      addDelayedEvent,
+      updateDelayedEventStatus,
+      addWorldConsequence,
+      updatePlayerCharacter,
+      addCharacterResource,
+      updateCharacterResource,
+      addInventoryItem,
+      removeInventoryItem,
+      updateCampaignParameters,
+      confirmCampaignSetup,
+      updateTurnDraft,
+      saveTurnDraftExplicit,
+      checkTurnDraft,
+      commitTurnDraft,
+      addTechnicalMessage,
+      runAuditNow,
+      exportBackupJson,
+      importBackupJson,
+    ],
+  );
+
+  return <ObsidianStoreContext.Provider value={value}>{children}</ObsidianStoreContext.Provider>;
+}
+
+export function useObsidianStore(): ObsidianStoreValue {
+  const ctx = useContext(ObsidianStoreContext);
+  if (!ctx) throw new Error("useObsidianStore must be used within ObsidianStoreProvider");
+  return ctx;
+}

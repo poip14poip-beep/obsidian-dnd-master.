@@ -1,1 +1,157 @@
-{"text":"import { QueryClient, QueryClientProvider } from \"@tanstack/react-query\";\nimport {\n  Outlet,\n  Link,\n  createRootRouteWithContext,\n  useRouter,\n  HeadContent,\n  Scripts,\n  type ErrorComponentProps,\n} from \"@tanstack/react-router\";\nimport { useEffect, type ReactNode } from \"react\";\n\nimport appCss from \"../styles.css?url\";\nimport { reportLovableError } from \"../lib/lovable-error-reporting\";\nimport { AuthProvider } from \"@/auth/auth-context\";\nimport { AppShell } from \"@/components/AppShell\";\nimport { AuthGate } from \"@/components/AuthGate\";\nimport { Toaster } from \"@/components/ui/sonner\";\nimport { ObsidianStoreProvider } from \"@/store/obsidian-store\";\n\nfunction NotFoundComponent() {\n  return (\n    <div className=\"flex min-h-screen items-center justify-center bg-background px-4\">\n      <div className=\"max-w-md text-center\">\n        <h1 className=\"text-7xl font-bold text-foreground\">404</h1>\n        <h2 className=\"mt-4 text-xl font-semibold text-foreground\">Page not found</h2>\n        <p className=\"mt-2 text-sm text-muted-foreground\">\n          The page you're looking for doesn't exist or has been moved.\n        </p>\n        <div className=\"mt-6\">\n          <Link\n            to=\"/\"\n            className=\"inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90\"\n          >\n            Go home\n          </Link>\n        </div>\n      </div>\n    </div>\n  );\n}\n\nfunction ErrorComponent({ error, reset }: ErrorComponentProps) {\n  console.error(error);\n  const router = useRouter();\n  useEffect(() => {\n    reportLovableError(error, { boundary: \"tanstack_root_error_component\" });\n  }, [error]);\n\n  return (\n    <div className=\"flex min-h-screen items-center justify-center bg-background px-4\">\n      <div className=\"max-w-md text-center\">\n        <h1 className=\"text-xl font-semibold tracking-tight text-foreground\">\n          This page didn't load\n        </h1>\n        <p className=\"mt-2 text-sm text-muted-foreground\">\n          Something went wrong on our end. You can try refreshing or head back home.\n        </p>\n        <div className=\"mt-6 flex flex-wrap justify-center gap-2\">\n          <button\n            onClick={() => {\n              router.invalidate();\n              reset();\n            }}\n            className=\"inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90\"\n          >\n            Try again\n          </button>\n          <a\n            href=\"/\"\n            className=\"inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent\"\n          >\n            Go home\n          </a>\n        </div>\n      </div>\n    </div>\n  );\n}\n\nexport const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({\n  head: () => ({\n    meta: [\n      { charSet: \"utf-8\" },\n      { name: \"viewport\", content: \"width=device-width, initial-scale=1\" },\n      { title: \"Obsidian Control\" },\n      {\n        name: \"description\",\n        content: \"Android-first управление долгосрочной кампанией D&D 5e (2024) по ОБСИДИАН 4.1.\",\n      },\n      { property: \"og:title\", content: \"Obsidian Control\" },\n      {\n        property: \"og:description\",\n        content: \"Android-first управление долгосрочной кампанией D&D 5e (2024) по ОБСИДИАН 4.1.\",\n      },\n      { property: \"og:type\", content: \"website\" },\n      { name: \"twitter:card\", content: \"summary\" },\n    ],\n    links: [\n      { rel: \"preconnect\", href: \"https://fonts.googleapis.com\" },\n      {\n        rel: \"preconnect\",\n        href: \"https://fonts.gstatic.com\",\n        crossOrigin: \"anonymous\",\n      },\n      {\n        rel: \"stylesheet\",\n        href: \"https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap\",\n      },\n      {\n        rel: \"stylesheet\",\n        href: appCss,\n      },\n      { rel: \"icon\", href: \"/favicon.ico\", type: \"image/x-icon\" },\n    ],\n  }),\n  shellComponent: RootShell,\n  component: RootComponent,\n  notFoundComponent: NotFoundComponent,\n  errorComponent: ErrorComponent,\n});\n\nfunction RootShell({ children }: { children: ReactNode }) {\n  return (\n    <html lang=\"ru\">\n      <head>\n        <HeadContent />\n      </head>\n      <body>\n        {children}\n        <Scripts />\n      </body>\n    </html>\n  );\n}\n\nfunction RootComponent() {\n  const { queryClient } = Route.useRouteContext();\n\n  return (\n    <QueryClientProvider client={queryClient}>\n      <AuthProvider>\n        <ObsidianStoreProvider>\n          <AuthGate\n            publicChildren={<Outlet />}\n            protectedChildren={\n              <AppShell>\n                <Outlet />\n              </AppShell>\n            }\n          />\n        </ObsidianStoreProvider>\n        <Toaster theme=\"dark\" position=\"top-center\" />\n      </AuthProvider>\n    </QueryClientProvider>\n  );\n}"}
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  Outlet,
+  Link,
+  createRootRouteWithContext,
+  useRouter,
+  HeadContent,
+  Scripts,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
+import { useEffect, type ReactNode } from "react";
+
+import appCss from "../styles.css?url";
+import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider } from "@/auth/auth-context";
+import { AppShell } from "@/components/AppShell";
+import { AuthGate } from "@/components/AuthGate";
+import { Toaster } from "@/components/ui/sonner";
+import { ObsidianStoreProvider } from "@/store/obsidian-store";
+
+function NotFoundComponent() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-7xl font-bold text-foreground">404</h1>
+        <h2 className="mt-4 text-xl font-semibold text-foreground">Page not found</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          The page you're looking for doesn't exist or has been moved.
+        </p>
+        <div className="mt-6">
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Go home
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ErrorComponent({ error, reset }: ErrorComponentProps) {
+  console.error(error);
+  const router = useRouter();
+  useEffect(() => {
+    reportLovableError(error, { boundary: "tanstack_root_error_component" });
+  }, [error]);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">
+          This page didn't load
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Something went wrong on our end. You can try refreshing or head back home.
+        </p>
+        <div className="mt-6 flex flex-wrap justify-center gap-2">
+          <button
+            onClick={() => {
+              router.invalidate();
+              reset();
+            }}
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Try again
+          </button>
+          <a
+            href="/"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          >
+            Go home
+          </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
+  head: () => ({
+    meta: [
+      { charSet: "utf-8" },
+      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { title: "Obsidian Control" },
+      {
+        name: "description",
+        content: "Android-first управление долгосрочной кампанией D&D 5e (2024) по ОБСИДИАН 4.1.",
+      },
+      { property: "og:title", content: "Obsidian Control" },
+      {
+        property: "og:description",
+        content: "Android-first управление долгосрочной кампанией D&D 5e (2024) по ОБСИДИАН 4.1.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+    links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      {
+        rel: "preconnect",
+        href: "https://fonts.gstatic.com",
+        crossOrigin: "anonymous",
+      },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Onest:wght@400;500;600;700&display=swap",
+      },
+      {
+        rel: "stylesheet",
+        href: appCss,
+      },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+    ],
+  }),
+  shellComponent: RootShell,
+  component: RootComponent,
+  notFoundComponent: NotFoundComponent,
+  errorComponent: ErrorComponent,
+});
+
+function RootShell({ children }: { children: ReactNode }) {
+  return (
+    <html lang="ru">
+      <head>
+        <HeadContent />
+      </head>
+      <body>
+        {children}
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <ObsidianStoreProvider>
+          <AuthGate
+            publicChildren={<Outlet />}
+            protectedChildren={
+              <AppShell>
+                <Outlet />
+              </AppShell>
+            }
+          />
+        </ObsidianStoreProvider>
+        <Toaster theme="dark" position="top-center" />
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}

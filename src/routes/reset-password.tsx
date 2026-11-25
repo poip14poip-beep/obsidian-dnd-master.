@@ -1,1 +1,164 @@
-{"text":"import { Link, createFileRoute, useNavigate } from \"@tanstack/react-router\";\nimport { AlertTriangle, CheckCircle2, KeyRound } from \"lucide-react\";\nimport { useEffect, useState, type FormEvent } from \"react\";\nimport { toast } from \"sonner\";\n\nimport { useAuth } from \"@/auth/auth-context\";\nimport { Button } from \"@/components/ui/button\";\nimport { Input } from \"@/components/ui/input\";\nimport { Label } from \"@/components/ui/label\";\n\nexport const Route = createFileRoute(\"/reset-password\")({\n  head: () => ({\n    meta: [\n      { title: \"Восстановление пароля — Obsidian Control\" },\n      {\n        name: \"description\",\n        content: \"Установка нового пароля после перехода по ссылке восстановления Supabase Auth.\",\n      },\n      { property: \"og:title\", content: \"Восстановление пароля — Obsidian Control\" },\n      {\n        property: \"og:description\",\n        content: \"Установка нового пароля после перехода по ссылке восстановления Supabase Auth.\",\n      },\n      { property: \"og:type\", content: \"website\" },\n      { name: \"twitter:card\", content: \"summary\" },\n    ],\n  }),\n  component: ResetPasswordPage,\n});\n\nfunction ResetPasswordPage() {\n  const { isRecoverySession, updateRecoveredPassword } = useAuth();\n  const navigate = useNavigate();\n\n  const [hasRecoveryHash, setHasRecoveryHash] = useState(false);\n  const [newPassword, setNewPassword] = useState(\"\");\n  const [confirmPassword, setConfirmPassword] = useState(\"\");\n  const [submitting, setSubmitting] = useState(false);\n  const [errorMsg, setErrorMsg] = useState<string | null>(null);\n  const [done, setDone] = useState(false);\n\n  useEffect(() => {\n    if (typeof window !== \"undefined\") {\n      setHasRecoveryHash(\n        window.location.hash.includes(\"type=recovery\") ||\n          window.location.search.includes(\"type=recovery\"),\n      );\n    }\n  }, []);\n\n  const canReset = isRecoverySession || hasRecoveryHash;\n\n  async function handleSubmit(e: FormEvent) {\n    e.preventDefault();\n    setErrorMsg(null);\n    if (newPassword.length < 6) {\n      setErrorMsg(\"Новый пароль должен содержать не менее 6 символов.\");\n      return;\n    }\n    if (newPassword !== confirmPassword) {\n      setErrorMsg(\"Пароли не совпадают.\");\n      return;\n    }\n    setSubmitting(true);\n    try {\n      const res = await updateRecoveredPassword(newPassword);\n      if (!res.ok) {\n        setErrorMsg(res.error ?? \"Не удалось обновить пароль.\");\n        return;\n      }\n      setDone(true);\n      toast.success(\"Пароль успешно обновлён.\");\n      await navigate({ to: \"/\", replace: true });\n    } finally {\n      setSubmitting(false);\n    }\n  }\n\n  return (\n    <div className=\"flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8\">\n      <div className=\"panel-surface w-full max-w-md space-y-4 p-5\">\n        <div className=\"space-y-1\">\n          <p className=\"mono-code text-xs uppercase text-primary\">Obsidian Control</p>\n          <h1 className=\"text-lg font-bold text-foreground\">Установка нового пароля</h1>\n          <p className=\"text-xs text-muted-foreground\">\n            Введите новый пароль для вашей учётной записи Supabase Auth.\n          </p>\n        </div>\n\n        {!canReset && !done && (\n          <div\n            role=\"alert\"\n            className=\"flex items-start gap-2.5 rounded-md border border-status-approx/60 bg-status-approx-bg/40 p-3 text-xs text-status-approx\"\n          >\n            <AlertTriangle className=\"mt-0.5 h-4 w-4 shrink-0\" />\n            <span>\n              Не обнаружена активная ссылка восстановления (`type=recovery`). Запросите новую ссылку\n              на странице входа.\n            </span>\n          </div>\n        )}\n\n        {errorMsg && (\n          <div\n            role=\"alert\"\n            className=\"rounded-md border border-status-danger/60 bg-status-danger-bg/50 p-3 text-xs text-status-danger\"\n          >\n            {errorMsg}\n          </div>\n        )}\n\n        {done ? (\n          <div className=\"flex items-center gap-2 rounded-md border border-status-verified/50 bg-status-verified-bg/40 p-3 text-xs text-status-verified\">\n            <CheckCircle2 className=\"h-4 w-4 shrink-0\" />\n            <span>Пароль обновлён. Переходим в приложение...</span>\n          </div>\n        ) : (\n          <form onSubmit={handleSubmit} className=\"space-y-3\">\n            <div className=\"space-y-1.5\">\n              <Label htmlFor=\"reset-pwd\">Новый пароль</Label>\n              <Input\n                id=\"reset-pwd\"\n                type=\"password\"\n                autoComplete=\"new-password\"\n                disabled={!canReset || submitting}\n                value={newPassword}\n                onChange={(e) => setNewPassword(e.target.value)}\n                placeholder=\"Минимум 6 символов\"\n                className=\"touch-target\"\n              />\n            </div>\n            <div className=\"space-y-1.5\">\n              <Label htmlFor=\"reset-confirm\">Повторите пароль</Label>\n              <Input\n                id=\"reset-confirm\"\n                type=\"password\"\n                autoComplete=\"new-password\"\n                disabled={!canReset || submitting}\n                value={confirmPassword}\n                onChange={(e) => setConfirmPassword(e.target.value)}\n                placeholder=\"Повторите новый пароль\"\n                className=\"touch-target\"\n              />\n            </div>\n            <Button\n              type=\"submit\"\n              disabled={!canReset || submitting}\n              className=\"touch-target w-full\"\n            >\n              <KeyRound className=\"mr-2 h-4 w-4\" />\n              {submitting ? \"Сохранение...\" : \"Сохранить новый пароль\"}\n            </Button>\n          </form>\n        )}\n\n        <div className=\"text-center\">\n          <Link to=\"/auth\" className=\"text-xs text-primary underline\">\n            Вернуться ко входу\n          </Link>\n        </div>\n      </div>\n    </div>\n  );\n}"}
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router";
+import { AlertTriangle, CheckCircle2, KeyRound } from "lucide-react";
+import { useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
+
+import { useAuth } from "@/auth/auth-context";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+export const Route = createFileRoute("/reset-password")({
+  head: () => ({
+    meta: [
+      { title: "Восстановление пароля — Obsidian Control" },
+      {
+        name: "description",
+        content: "Установка нового пароля после перехода по ссылке восстановления Supabase Auth.",
+      },
+      { property: "og:title", content: "Восстановление пароля — Obsidian Control" },
+      {
+        property: "og:description",
+        content: "Установка нового пароля после перехода по ссылке восстановления Supabase Auth.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: ResetPasswordPage,
+});
+
+function ResetPasswordPage() {
+  const { isRecoverySession, updateRecoveredPassword } = useAuth();
+  const navigate = useNavigate();
+
+  const [hasRecoveryHash, setHasRecoveryHash] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setHasRecoveryHash(
+        window.location.hash.includes("type=recovery") ||
+          window.location.search.includes("type=recovery"),
+      );
+    }
+  }, []);
+
+  const canReset = isRecoverySession || hasRecoveryHash;
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    if (newPassword.length < 6) {
+      setErrorMsg("Новый пароль должен содержать не менее 6 символов.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMsg("Пароли не совпадают.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await updateRecoveredPassword(newPassword);
+      if (!res.ok) {
+        setErrorMsg(res.error ?? "Не удалось обновить пароль.");
+        return;
+      }
+      setDone(true);
+      toast.success("Пароль успешно обновлён.");
+      await navigate({ to: "/", replace: true });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8">
+      <div className="panel-surface w-full max-w-md space-y-4 p-5">
+        <div className="space-y-1">
+          <p className="mono-code text-xs uppercase text-primary">Obsidian Control</p>
+          <h1 className="text-lg font-bold text-foreground">Установка нового пароля</h1>
+          <p className="text-xs text-muted-foreground">
+            Введите новый пароль для вашей учётной записи Supabase Auth.
+          </p>
+        </div>
+
+        {!canReset && !done && (
+          <div
+            role="alert"
+            className="flex items-start gap-2.5 rounded-md border border-status-approx/60 bg-status-approx-bg/40 p-3 text-xs text-status-approx"
+          >
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              Не обнаружена активная ссылка восстановления (`type=recovery`). Запросите новую ссылку
+              на странице входа.
+            </span>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div
+            role="alert"
+            className="rounded-md border border-status-danger/60 bg-status-danger-bg/50 p-3 text-xs text-status-danger"
+          >
+            {errorMsg}
+          </div>
+        )}
+
+        {done ? (
+          <div className="flex items-center gap-2 rounded-md border border-status-verified/50 bg-status-verified-bg/40 p-3 text-xs text-status-verified">
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <span>Пароль обновлён. Переходим в приложение...</span>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-pwd">Новый пароль</Label>
+              <Input
+                id="reset-pwd"
+                type="password"
+                autoComplete="new-password"
+                disabled={!canReset || submitting}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Минимум 6 символов"
+                className="touch-target"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reset-confirm">Повторите пароль</Label>
+              <Input
+                id="reset-confirm"
+                type="password"
+                autoComplete="new-password"
+                disabled={!canReset || submitting}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Повторите новый пароль"
+                className="touch-target"
+              />
+            </div>
+            <Button
+              type="submit"
+              disabled={!canReset || submitting}
+              className="touch-target w-full"
+            >
+              <KeyRound className="mr-2 h-4 w-4" />
+              {submitting ? "Сохранение..." : "Сохранить новый пароль"}
+            </Button>
+          </form>
+        )}
+
+        <div className="text-center">
+          <Link to="/auth" className="text-xs text-primary underline">
+            Вернуться ко входу
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

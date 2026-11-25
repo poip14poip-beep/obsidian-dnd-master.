@@ -1,1 +1,396 @@
-{"text":"import { createFileRoute } from \"@tanstack/react-router\";\nimport { Clock, MapPin, Plus, Route as RouteIcon } from \"lucide-react\";\nimport { useState, type FormEvent } from \"react\";\nimport { toast } from \"sonner\";\n\nimport { CertaintyBadge } from \"@/components/StatusPill\";\nimport { Button } from \"@/components/ui/button\";\nimport { Input } from \"@/components/ui/input\";\nimport { Label } from \"@/components/ui/label\";\nimport { DEFAULT_SOURCE_IDS } from \"@/domain/defaults\";\nimport type { CertaintyStatus } from \"@/domain/types\";\nimport { useObsidianStore } from \"@/store/obsidian-store\";\n\nexport const Route = createFileRoute(\"/time-map\")({\n  head: () => ({\n    meta: [\n      { title: \"Время и карта — Obsidian Control\" },\n      {\n        name: \"description\",\n        content: \"Хронология, отложенные события, реестр локаций и маршруты перемещения.\",\n      },\n      { property: \"og:title\", content: \"Время и карта — Obsidian Control\" },\n      {\n        property: \"og:description\",\n        content: \"Хронология, отложенные события, реестр локаций и маршруты перемещения.\",\n      },\n      { property: \"og:type\", content: \"website\" },\n      { name: \"twitter:card\", content: \"summary\" },\n    ],\n  }),\n  component: TimeMapPage,\n});\n\nfunction TimeMapPage() {\n  const {\n    worldState,\n    locations,\n    timelineEvents,\n    addLocation,\n    addTravelRoute,\n    addDelayedEvent,\n    updateDelayedEventStatus,\n  } = useObsidianStore();\n\n  const [locName, setLocName] = useState(\"\");\n  const [locRegion, setLocRegion] = useState(\"UNKNOWN\");\n  const [locDesc, setLocDesc] = useState(\"\");\n  const [locCert, setLocCert] = useState<CertaintyStatus>(\"KNOWN\");\n\n  const [fromId, setFromId] = useState(\"\");\n  const [toId, setToId] = useState(\"\");\n  const [distLabel, setDistLabel] = useState(\"\");\n  const [hoursStr, setHoursStr] = useState(\"\");\n  const [routeCert, setRouteCert] = useState<CertaintyStatus>(\"APPROXIMATE\");\n\n  const [evTitle, setEvTitle] = useState(\"\");\n  const [evDate, setEvDate] = useState(\"\");\n  const [evConsequence, setEvConsequence] = useState(\"\");\n  const [evCert, setEvCert] = useState<CertaintyStatus>(\"APPROXIMATE\");\n\n  function handleAddLocation(e: FormEvent) {\n    e.preventDefault();\n    if (!locName.trim()) {\n      toast.error(\"Укажите название локации.\");\n      return;\n    }\n    const res = addLocation({\n      name: locName.trim(),\n      region: locRegion.trim() || \"UNKNOWN\",\n      description: locDesc.trim(),\n      certainty: locCert,\n      sourceId: DEFAULT_SOURCE_IDS.CANON,\n    });\n    if (res.ok) {\n      toast.success(\"Локация добавлена в карту мира.\");\n      setLocName(\"\");\n      setLocDesc(\"\");\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  function handleAddRoute(e: FormEvent) {\n    e.preventDefault();\n    if (!fromId || !toId || fromId === toId) {\n      toast.error(\"Выберите две разные локации для маршрута.\");\n      return;\n    }\n    const hours = hoursStr.trim() ? Number(hoursStr) : null;\n    if (hours !== null && (!Number.isFinite(hours) || hours < 0)) {\n      toast.error(\"Время пути в часах не может быть отрицательным.\");\n      return;\n    }\n    const res = addTravelRoute({\n      fromLocationId: fromId,\n      toLocationId: toId,\n      distanceLabel: distLabel.trim() || \"UNKNOWN\",\n      travelTimeHours: hours,\n      certainty: routeCert,\n      notes: \"\",\n    });\n    if (res.ok) {\n      toast.success(\"Маршрут перемещения сохранён.\");\n      setDistLabel(\"\");\n      setHoursStr(\"\");\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  function handleAddEvent(e: FormEvent) {\n    e.preventDefault();\n    if (!evTitle.trim() || !evDate.trim()) {\n      toast.error(\"Укажите название и дату срабатывания отложенного события.\");\n      return;\n    }\n    const res = addDelayedEvent({\n      title: evTitle.trim(),\n      triggerInGameDate: evDate.trim(),\n      consequence: evConsequence.trim() || \"UNKNOWN\",\n      status: \"SCHEDULED\",\n      certainty: evCert,\n      sourceId: \"MANUAL_GM_ENTRY\",\n    });\n    if (res.ok) {\n      toast.success(\"Отложенное событие добавлено в хронологию.\");\n      setEvTitle(\"\");\n      setEvDate(\"\");\n      setEvConsequence(\"\");\n    } else {\n      toast.error(res.error);\n    }\n  }\n\n  const nameOf = (id: string) => locations.find((l) => l.id === id)?.name ?? \"UNKNOWN\";\n\n  return (\n    <div className=\"space-y-4\">\n      <header className=\"space-y-1\">\n        <h1 className=\"text-xl font-bold text-foreground\">Время и карта</h1>\n        <p className=\"text-xs text-muted-foreground\">\n          Хронология, отложенные события, локации и расстояния/время переходов. Игровое время\n          сдвигается только при commit игрового хода.\n        </p>\n      </header>\n\n      <section className=\"panel-surface grid grid-cols-1 gap-3 p-4 sm:grid-cols-3\">\n        <div>\n          <p className=\"text-xs text-muted-foreground\">Текущая дата мира</p>\n          <p className=\"mono-code mt-0.5 text-sm font-semibold text-primary\">\n            {worldState.currentInGameDate}\n          </p>\n        </div>\n        <div>\n          <p className=\"text-xs text-muted-foreground\">Прошло с момента старта</p>\n          <p className=\"mono-code mt-0.5 text-sm font-semibold text-foreground\">\n            {Math.floor(worldState.elapsedMinutes / 60)} ч {worldState.elapsedMinutes % 60} мин\n          </p>\n        </div>\n        <div>\n          <p className=\"text-xs text-muted-foreground\">Календарь</p>\n          <p className=\"mono-code mt-0.5 text-sm font-medium text-foreground\">\n            {worldState.calendarSystem}\n          </p>\n        </div>\n      </section>\n\n      {/* Delayed Events */}\n      <section className=\"panel-surface space-y-3 p-4\">\n        <div className=\"flex items-center gap-2\">\n          <Clock className=\"h-4 w-4 text-primary\" />\n          <h2 className=\"text-sm font-semibold text-foreground\">\n            Отложенные события · timeline_events ({timelineEvents.length})\n          </h2>\n        </div>\n        <form onSubmit={handleAddEvent} className=\"grid grid-cols-1 gap-2 sm:grid-cols-2\">\n          <Input\n            value={evTitle}\n            onChange={(e) => setEvTitle(e.target.value)}\n            placeholder=\"Событие\"\n            className=\"touch-target\"\n          />\n          <Input\n            value={evDate}\n            onChange={(e) => setEvDate(e.target.value)}\n            placeholder=\"Дата/срок срабатывания\"\n            className=\"touch-target\"\n          />\n          <Input\n            value={evConsequence}\n            onChange={(e) => setEvConsequence(e.target.value)}\n            placeholder=\"Ожидаемое последствие\"\n            className=\"touch-target\"\n          />\n          <div className=\"flex gap-2\">\n            <select\n              value={evCert}\n              onChange={(e) => setEvCert(e.target.value as CertaintyStatus)}\n              className=\"touch-target flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n            >\n              <option value=\"KNOWN\">KNOWN</option>\n              <option value=\"APPROXIMATE\">APPROXIMATE</option>\n              <option value=\"UNKNOWN\">UNKNOWN</option>\n            </select>\n            <Button type=\"submit\" variant=\"secondary\" className=\"touch-target\">\n              <Plus className=\"h-4 w-4\" />\n            </Button>\n          </div>\n        </form>\n        {timelineEvents.map((ev) => (\n          <div\n            key={ev.id}\n            className=\"flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs\"\n          >\n            <div>\n              <p className=\"font-medium text-foreground\">{ev.title}</p>\n              <p className=\"text-muted-foreground\">\n                Срок: <span className=\"mono-code\">{ev.triggerInGameDate}</span> · {ev.consequence}\n              </p>\n            </div>\n            <div className=\"flex items-center gap-1.5\">\n              <CertaintyBadge status={ev.certainty} />\n              <select\n                aria-label={`Статус события ${ev.title}`}\n                value={ev.status}\n                onChange={(e) =>\n                  updateDelayedEventStatus(\n                    ev.id,\n                    e.target.value as \"SCHEDULED\" | \"TRIGGERED\" | \"RESOLVED\",\n                  )\n                }\n                className=\"touch-target rounded border border-input bg-background px-2 text-xs text-foreground\"\n              >\n                <option value=\"SCHEDULED\">Запланировано</option>\n                <option value=\"TRIGGERED\">Сработало</option>\n                <option value=\"RESOLVED\">Закрыто</option>\n              </select>\n            </div>\n          </div>\n        ))}\n      </section>\n\n      {/* Locations */}\n      <section className=\"panel-surface space-y-3 p-4\">\n        <div className=\"flex items-center gap-2\">\n          <MapPin className=\"h-4 w-4 text-primary\" />\n          <h2 className=\"text-sm font-semibold text-foreground\">\n            Локации · locations ({locations.length})\n          </h2>\n        </div>\n        <form onSubmit={handleAddLocation} className=\"grid grid-cols-1 gap-2 sm:grid-cols-2\">\n          <Input\n            value={locName}\n            onChange={(e) => setLocName(e.target.value)}\n            placeholder=\"Название локации\"\n            className=\"touch-target\"\n          />\n          <Input\n            value={locRegion}\n            onChange={(e) => setLocRegion(e.target.value)}\n            placeholder=\"Регион (или UNKNOWN)\"\n            className=\"touch-target\"\n          />\n          <Input\n            value={locDesc}\n            onChange={(e) => setLocDesc(e.target.value)}\n            placeholder=\"Краткое описание из канона\"\n            className=\"touch-target\"\n          />\n          <div className=\"flex gap-2\">\n            <select\n              value={locCert}\n              onChange={(e) => setLocCert(e.target.value as CertaintyStatus)}\n              className=\"touch-target flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n            >\n              <option value=\"KNOWN\">KNOWN</option>\n              <option value=\"APPROXIMATE\">APPROXIMATE</option>\n              <option value=\"UNKNOWN\">UNKNOWN</option>\n            </select>\n            <Button type=\"submit\" variant=\"secondary\" className=\"touch-target\">\n              <Plus className=\"mr-1 h-4 w-4\" />\n              Локация\n            </Button>\n          </div>\n        </form>\n        <div className=\"space-y-2\">\n          {locations.map((loc) => (\n            <div\n              key={loc.id}\n              className=\"flex items-start justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs\"\n            >\n              <div>\n                <p className=\"font-semibold text-foreground\">\n                  {loc.name}{\" \"}\n                  {worldState.currentLocationId === loc.id && (\n                    <span className=\"mono-code ml-1 text-primary\">[ТЕКУЩАЯ]</span>\n                  )}\n                </p>\n                <p className=\"text-muted-foreground\">\n                  Регион: {loc.region} {loc.description ? `· ${loc.description}` : \"\"}\n                </p>\n              </div>\n              <CertaintyBadge status={loc.certainty} />\n            </div>\n          ))}\n        </div>\n      </section>\n\n      {/* Travel routes */}\n      <section className=\"panel-surface space-y-3 p-4\">\n        <div className=\"flex items-center gap-2\">\n          <RouteIcon className=\"h-4 w-4 text-primary\" />\n          <h2 className=\"text-sm font-semibold text-foreground\">\n            Расстояния и переходы ({worldState.routes.length})\n          </h2>\n        </div>\n        <form onSubmit={handleAddRoute} className=\"grid grid-cols-1 gap-2 sm:grid-cols-2\">\n          <div className=\"space-y-1\">\n            <Label htmlFor=\"rt-from\">Откуда</Label>\n            <select\n              id=\"rt-from\"\n              value={fromId}\n              onChange={(e) => setFromId(e.target.value)}\n              className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n            >\n              <option value=\"\">Выберите локацию</option>\n              {locations.map((l) => (\n                <option key={l.id} value={l.id}>\n                  {l.name}\n                </option>\n              ))}\n            </select>\n          </div>\n          <div className=\"space-y-1\">\n            <Label htmlFor=\"rt-to\">Куда</Label>\n            <select\n              id=\"rt-to\"\n              value={toId}\n              onChange={(e) => setToId(e.target.value)}\n              className=\"touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground\"\n            >\n              <option value=\"\">Выберите локацию</option>\n              {locations.map((l) => (\n                <option key={l.id} value={l.id}>\n                  {l.name}\n                </option>\n              ))}\n            </select>\n          </div>\n          <Input\n            value={distLabel}\n            onChange={(e) => setDistLabel(e.target.value)}\n            placeholder=\"Дистанция (напр. 18 миль / UNKNOWN)\"\n            className=\"touch-target\"\n          />\n          <div className=\"flex gap-2\">\n            <Input\n              inputMode=\"decimal\"\n              value={hoursStr}\n              onChange={(e) => setHoursStr(e.target.value)}\n              placeholder=\"Часов в пути\"\n              className=\"touch-target mono-code\"\n            />\n            <select\n              value={routeCert}\n              onChange={(e) => setRouteCert(e.target.value as CertaintyStatus)}\n              className=\"touch-target rounded-md border border-input bg-background px-2 text-xs text-foreground\"\n            >\n              <option value=\"KNOWN\">KNOWN</option>\n              <option value=\"APPROXIMATE\">APPROX</option>\n              <option value=\"UNKNOWN\">UNKNOWN</option>\n            </select>\n            <Button type=\"submit\" variant=\"secondary\" className=\"touch-target\">\n              <Plus className=\"h-4 w-4\" />\n            </Button>\n          </div>\n        </form>\n        {worldState.routes.map((rt) => (\n          <div\n            key={rt.id}\n            className=\"flex items-center justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs\"\n          >\n            <span>\n              <strong>{nameOf(rt.fromLocationId)}</strong> →{\" \"}\n              <strong>{nameOf(rt.toLocationId)}</strong> · {rt.distanceLabel} ·{\" \"}\n              <span className=\"mono-code\">\n                {rt.travelTimeHours !== null ? `${rt.travelTimeHours} ч` : \"UNKNOWN\"}\n              </span>\n            </span>\n            <CertaintyBadge status={rt.certainty} />\n          </div>\n        ))}\n      </section>\n    </div>\n  );\n}"}
+import { createFileRoute } from "@tanstack/react-router";
+import { Clock, MapPin, Plus, Route as RouteIcon } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+
+import { CertaintyBadge } from "@/components/StatusPill";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { DEFAULT_SOURCE_IDS } from "@/domain/defaults";
+import type { CertaintyStatus } from "@/domain/types";
+import { useObsidianStore } from "@/store/obsidian-store";
+
+export const Route = createFileRoute("/time-map")({
+  head: () => ({
+    meta: [
+      { title: "Время и карта — Obsidian Control" },
+      {
+        name: "description",
+        content: "Хронология, отложенные события, реестр локаций и маршруты перемещения.",
+      },
+      { property: "og:title", content: "Время и карта — Obsidian Control" },
+      {
+        property: "og:description",
+        content: "Хронология, отложенные события, реестр локаций и маршруты перемещения.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: TimeMapPage,
+});
+
+function TimeMapPage() {
+  const {
+    worldState,
+    locations,
+    timelineEvents,
+    addLocation,
+    addTravelRoute,
+    addDelayedEvent,
+    updateDelayedEventStatus,
+  } = useObsidianStore();
+
+  const [locName, setLocName] = useState("");
+  const [locRegion, setLocRegion] = useState("UNKNOWN");
+  const [locDesc, setLocDesc] = useState("");
+  const [locCert, setLocCert] = useState<CertaintyStatus>("KNOWN");
+
+  const [fromId, setFromId] = useState("");
+  const [toId, setToId] = useState("");
+  const [distLabel, setDistLabel] = useState("");
+  const [hoursStr, setHoursStr] = useState("");
+  const [routeCert, setRouteCert] = useState<CertaintyStatus>("APPROXIMATE");
+
+  const [evTitle, setEvTitle] = useState("");
+  const [evDate, setEvDate] = useState("");
+  const [evConsequence, setEvConsequence] = useState("");
+  const [evCert, setEvCert] = useState<CertaintyStatus>("APPROXIMATE");
+
+  function handleAddLocation(e: FormEvent) {
+    e.preventDefault();
+    if (!locName.trim()) {
+      toast.error("Укажите название локации.");
+      return;
+    }
+    const res = addLocation({
+      name: locName.trim(),
+      region: locRegion.trim() || "UNKNOWN",
+      description: locDesc.trim(),
+      certainty: locCert,
+      sourceId: DEFAULT_SOURCE_IDS.CANON,
+    });
+    if (res.ok) {
+      toast.success("Локация добавлена в карту мира.");
+      setLocName("");
+      setLocDesc("");
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  function handleAddRoute(e: FormEvent) {
+    e.preventDefault();
+    if (!fromId || !toId || fromId === toId) {
+      toast.error("Выберите две разные локации для маршрута.");
+      return;
+    }
+    const hours = hoursStr.trim() ? Number(hoursStr) : null;
+    if (hours !== null && (!Number.isFinite(hours) || hours < 0)) {
+      toast.error("Время пути в часах не может быть отрицательным.");
+      return;
+    }
+    const res = addTravelRoute({
+      fromLocationId: fromId,
+      toLocationId: toId,
+      distanceLabel: distLabel.trim() || "UNKNOWN",
+      travelTimeHours: hours,
+      certainty: routeCert,
+      notes: "",
+    });
+    if (res.ok) {
+      toast.success("Маршрут перемещения сохранён.");
+      setDistLabel("");
+      setHoursStr("");
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  function handleAddEvent(e: FormEvent) {
+    e.preventDefault();
+    if (!evTitle.trim() || !evDate.trim()) {
+      toast.error("Укажите название и дату срабатывания отложенного события.");
+      return;
+    }
+    const res = addDelayedEvent({
+      title: evTitle.trim(),
+      triggerInGameDate: evDate.trim(),
+      consequence: evConsequence.trim() || "UNKNOWN",
+      status: "SCHEDULED",
+      certainty: evCert,
+      sourceId: "MANUAL_GM_ENTRY",
+    });
+    if (res.ok) {
+      toast.success("Отложенное событие добавлено в хронологию.");
+      setEvTitle("");
+      setEvDate("");
+      setEvConsequence("");
+    } else {
+      toast.error(res.error);
+    }
+  }
+
+  const nameOf = (id: string) => locations.find((l) => l.id === id)?.name ?? "UNKNOWN";
+
+  return (
+    <div className="space-y-4">
+      <header className="space-y-1">
+        <h1 className="text-xl font-bold text-foreground">Время и карта</h1>
+        <p className="text-xs text-muted-foreground">
+          Хронология, отложенные события, локации и расстояния/время переходов. Игровое время
+          сдвигается только при commit игрового хода.
+        </p>
+      </header>
+
+      <section className="panel-surface grid grid-cols-1 gap-3 p-4 sm:grid-cols-3">
+        <div>
+          <p className="text-xs text-muted-foreground">Текущая дата мира</p>
+          <p className="mono-code mt-0.5 text-sm font-semibold text-primary">
+            {worldState.currentInGameDate}
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Прошло с момента старта</p>
+          <p className="mono-code mt-0.5 text-sm font-semibold text-foreground">
+            {Math.floor(worldState.elapsedMinutes / 60)} ч {worldState.elapsedMinutes % 60} мин
+          </p>
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">Календарь</p>
+          <p className="mono-code mt-0.5 text-sm font-medium text-foreground">
+            {worldState.calendarSystem}
+          </p>
+        </div>
+      </section>
+
+      {/* Delayed Events */}
+      <section className="panel-surface space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <Clock className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold text-foreground">
+            Отложенные события · timeline_events ({timelineEvents.length})
+          </h2>
+        </div>
+        <form onSubmit={handleAddEvent} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Input
+            value={evTitle}
+            onChange={(e) => setEvTitle(e.target.value)}
+            placeholder="Событие"
+            className="touch-target"
+          />
+          <Input
+            value={evDate}
+            onChange={(e) => setEvDate(e.target.value)}
+            placeholder="Дата/срок срабатывания"
+            className="touch-target"
+          />
+          <Input
+            value={evConsequence}
+            onChange={(e) => setEvConsequence(e.target.value)}
+            placeholder="Ожидаемое последствие"
+            className="touch-target"
+          />
+          <div className="flex gap-2">
+            <select
+              value={evCert}
+              onChange={(e) => setEvCert(e.target.value as CertaintyStatus)}
+              className="touch-target flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            >
+              <option value="KNOWN">KNOWN</option>
+              <option value="APPROXIMATE">APPROXIMATE</option>
+              <option value="UNKNOWN">UNKNOWN</option>
+            </select>
+            <Button type="submit" variant="secondary" className="touch-target">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+        {timelineEvents.map((ev) => (
+          <div
+            key={ev.id}
+            className="flex flex-wrap items-center justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs"
+          >
+            <div>
+              <p className="font-medium text-foreground">{ev.title}</p>
+              <p className="text-muted-foreground">
+                Срок: <span className="mono-code">{ev.triggerInGameDate}</span> · {ev.consequence}
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CertaintyBadge status={ev.certainty} />
+              <select
+                aria-label={`Статус события ${ev.title}`}
+                value={ev.status}
+                onChange={(e) =>
+                  updateDelayedEventStatus(
+                    ev.id,
+                    e.target.value as "SCHEDULED" | "TRIGGERED" | "RESOLVED",
+                  )
+                }
+                className="touch-target rounded border border-input bg-background px-2 text-xs text-foreground"
+              >
+                <option value="SCHEDULED">Запланировано</option>
+                <option value="TRIGGERED">Сработало</option>
+                <option value="RESOLVED">Закрыто</option>
+              </select>
+            </div>
+          </div>
+        ))}
+      </section>
+
+      {/* Locations */}
+      <section className="panel-surface space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <MapPin className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold text-foreground">
+            Локации · locations ({locations.length})
+          </h2>
+        </div>
+        <form onSubmit={handleAddLocation} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Input
+            value={locName}
+            onChange={(e) => setLocName(e.target.value)}
+            placeholder="Название локации"
+            className="touch-target"
+          />
+          <Input
+            value={locRegion}
+            onChange={(e) => setLocRegion(e.target.value)}
+            placeholder="Регион (или UNKNOWN)"
+            className="touch-target"
+          />
+          <Input
+            value={locDesc}
+            onChange={(e) => setLocDesc(e.target.value)}
+            placeholder="Краткое описание из канона"
+            className="touch-target"
+          />
+          <div className="flex gap-2">
+            <select
+              value={locCert}
+              onChange={(e) => setLocCert(e.target.value as CertaintyStatus)}
+              className="touch-target flex-1 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            >
+              <option value="KNOWN">KNOWN</option>
+              <option value="APPROXIMATE">APPROXIMATE</option>
+              <option value="UNKNOWN">UNKNOWN</option>
+            </select>
+            <Button type="submit" variant="secondary" className="touch-target">
+              <Plus className="mr-1 h-4 w-4" />
+              Локация
+            </Button>
+          </div>
+        </form>
+        <div className="space-y-2">
+          {locations.map((loc) => (
+            <div
+              key={loc.id}
+              className="flex items-start justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs"
+            >
+              <div>
+                <p className="font-semibold text-foreground">
+                  {loc.name}{" "}
+                  {worldState.currentLocationId === loc.id && (
+                    <span className="mono-code ml-1 text-primary">[ТЕКУЩАЯ]</span>
+                  )}
+                </p>
+                <p className="text-muted-foreground">
+                  Регион: {loc.region} {loc.description ? `· ${loc.description}` : ""}
+                </p>
+              </div>
+              <CertaintyBadge status={loc.certainty} />
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Travel routes */}
+      <section className="panel-surface space-y-3 p-4">
+        <div className="flex items-center gap-2">
+          <RouteIcon className="h-4 w-4 text-primary" />
+          <h2 className="text-sm font-semibold text-foreground">
+            Расстояния и переходы ({worldState.routes.length})
+          </h2>
+        </div>
+        <form onSubmit={handleAddRoute} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label htmlFor="rt-from">Откуда</Label>
+            <select
+              id="rt-from"
+              value={fromId}
+              onChange={(e) => setFromId(e.target.value)}
+              className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            >
+              <option value="">Выберите локацию</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="rt-to">Куда</Label>
+            <select
+              id="rt-to"
+              value={toId}
+              onChange={(e) => setToId(e.target.value)}
+              className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            >
+              <option value="">Выберите локацию</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Input
+            value={distLabel}
+            onChange={(e) => setDistLabel(e.target.value)}
+            placeholder="Дистанция (напр. 18 миль / UNKNOWN)"
+            className="touch-target"
+          />
+          <div className="flex gap-2">
+            <Input
+              inputMode="decimal"
+              value={hoursStr}
+              onChange={(e) => setHoursStr(e.target.value)}
+              placeholder="Часов в пути"
+              className="touch-target mono-code"
+            />
+            <select
+              value={routeCert}
+              onChange={(e) => setRouteCert(e.target.value as CertaintyStatus)}
+              className="touch-target rounded-md border border-input bg-background px-2 text-xs text-foreground"
+            >
+              <option value="KNOWN">KNOWN</option>
+              <option value="APPROXIMATE">APPROX</option>
+              <option value="UNKNOWN">UNKNOWN</option>
+            </select>
+            <Button type="submit" variant="secondary" className="touch-target">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </form>
+        {worldState.routes.map((rt) => (
+          <div
+            key={rt.id}
+            className="flex items-center justify-between gap-2 rounded border border-border bg-background/60 p-2.5 text-xs"
+          >
+            <span>
+              <strong>{nameOf(rt.fromLocationId)}</strong> →{" "}
+              <strong>{nameOf(rt.toLocationId)}</strong> · {rt.distanceLabel} ·{" "}
+              <span className="mono-code">
+                {rt.travelTimeHours !== null ? `${rt.travelTimeHours} ч` : "UNKNOWN"}
+              </span>
+            </span>
+            <CertaintyBadge status={rt.certainty} />
+          </div>
+        ))}
+      </section>
+    </div>
+  );
+}

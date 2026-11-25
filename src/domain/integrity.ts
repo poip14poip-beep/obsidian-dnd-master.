@@ -1,1 +1,308 @@
-{"text":"import type {\n  BackupEnvelope,\n  CollectionName,\n  GameTurnEntry,\n  IntegrityCheckItem,\n  IntegrityReport,\n  ObsidianCollections,\n  PlayerCharacterState,\n  TurnDraft,\n  WorldState,\n} from \"./types\";\n\nexport const COLLECTION_NAMES: ReadonlyArray<CollectionName> = [\n  \"sources\",\n  \"canon_facts\",\n  \"world_state\",\n  \"player_character_state\",\n  \"npcs\",\n  \"factions\",\n  \"locations\",\n  \"timeline_events\",\n  \"turn_drafts\",\n  \"session_log\",\n  \"audit_log\",\n];\n\n/**\n * Deterministic canonical serialization for checksum verification.\n */\nexport function canonicalStringify(value: unknown): string {\n  if (value === null || typeof value !== \"object\") {\n    return JSON.stringify(value);\n  }\n  if (Array.isArray(value)) {\n    return `[${value.map((item) => canonicalStringify(item)).join(\",\")}]`;\n  }\n  const entries = Object.entries(value as Record<string, unknown>)\n    .filter(([, v]) => v !== undefined)\n    .sort(([a], [b]) => a.localeCompare(b));\n  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalStringify(v)}`).join(\",\")}}`;\n}\n\n/**\n * Synchronous 64-bit dual FNV-1a hex digest for client-side integrity read-back checks.\n */\nexport function computeChecksum(input: unknown): string {\n  const str = typeof input === \"string\" ? input : canonicalStringify(input);\n  let h1 = 0x811c9dc5;\n  let h2 = 0x01000193;\n  for (let i = 0; i < str.length; i++) {\n    const code = str.charCodeAt(i);\n    h1 ^= code;\n    h1 = Math.imul(h1, 0x01000193);\n    h2 ^= code + (i & 0xff);\n    h2 = Math.imul(h2, 0x85ebca6b);\n  }\n  const p1 = (h1 >>> 0).toString(16).padStart(8, \"0\");\n  const p2 = (h2 >>> 0).toString(16).padStart(8, \"0\");\n  return `${p1}${p2}`;\n}\n\nconst FORBIDDEN_PC_KEYS = new Set([\n  \"playerCharacter\",\n  \"playerCharacterState\",\n  \"PLAYER_CHARACTER_STATE\",\n  \"player_character_state\",\n  \"characterSheet\",\n  \"pcState\",\n]);\n\nexport function detectNestedPlayerState(obj: unknown, path = \"world_state\"): string | null {\n  if (!obj || typeof obj !== \"object\") return null;\n  if (Array.isArray(obj)) {\n    for (let i = 0; i < obj.length; i++) {\n      const found = detectNestedPlayerState(obj[i], `${path}[${i}]`);\n      if (found) return found;\n    }\n    return null;\n  }\n  for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {\n    if (FORBIDDEN_PC_KEYS.has(key)) {\n      return `${path}.${key}`;\n    }\n    const nested = detectNestedPlayerState(val, `${path}.${key}`);\n    if (nested) return nested;\n  }\n  return null;\n}\n\nexport function computeCollectionChecksums(\n  collections: ObsidianCollections,\n): Record<CollectionName, string> {\n  return {\n    sources: computeChecksum(collections.sources),\n    canon_facts: computeChecksum(collections.canon_facts),\n    world_state: computeChecksum(collections.world_state),\n    player_character_state: computeChecksum(collections.player_character_state),\n    npcs: computeChecksum(collections.npcs),\n    factions: computeChecksum(collections.factions),\n    locations: computeChecksum(collections.locations),\n    timeline_events: computeChecksum(collections.timeline_events),\n    turn_drafts: computeChecksum(collections.turn_drafts),\n    session_log: computeChecksum(collections.session_log),\n    audit_log: computeChecksum(collections.audit_log),\n  };\n}\n\nexport function validateTurnDraft(\n  draft: TurnDraft,\n  worldState: WorldState,\n  character: PlayerCharacterState,\n): string[] {\n  const errors: string[] = [];\n  if (!worldState.setup.confirmed) {\n    errors.push(\"Игра заблокирована: завершите Мастер подготовки кампании в Настройках.\");\n  }\n  if (!draft.summary.trim()) {\n    errors.push(\"Укажите краткое содержание хода.\");\n  }\n  if (!draft.worldOutcome.trim()) {\n    errors.push(\"Укажите зафиксированный результат/исход в мире.\");\n  }\n  if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {\n    errors.push(\"Изменение игрового времени не может быть отрицательным.\");\n  }\n  if (\n    draft.hpDelta !== 0 &&\n    character.hpCurrent !== null &&\n    character.hpCurrent + draft.hpDelta < 0\n  ) {\n    errors.push(\"Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).\");\n  }\n  if (draft.newFactTitle.trim() && !draft.newFactStatement.trim()) {\n    errors.push(\"Для нового факта заполните формулировку утверждения.\");\n  }\n  if (draft.newFactStatement.trim() && !draft.newFactTitle.trim()) {\n    errors.push(\"Для нового факта укажите заголовок.\");\n  }\n  if (draft.newFactStatement.trim() && !draft.newFactSourceId.trim()) {\n    errors.push(\"Для нового факта обязательно укажите источник происхождения.\");\n  }\n  for (const roll of draft.rolls) {\n    if (!roll.label.trim() || !roll.result.trim()) {\n      errors.push(\"У каждого броска должны быть заполнены название и результат.\");\n      break;\n    }\n  }\n  return errors;\n}\n\nexport function runIntegrityAudit(collections: ObsidianCollections): IntegrityReport {\n  const { sources, canon_facts, world_state, npcs, session_log } = collections;\n  const checks: IntegrityCheckItem[] = [];\n\n  // 1. Strict separation of player_character_state from world_state\n  const nestedPath = detectNestedPlayerState(world_state, \"world_state\");\n  checks.push({\n    id: \"partition-isolation\",\n    label: \"Изоляция player_character_state от world_state\",\n    passed: nestedPath === null,\n    details:\n      nestedPath === null\n        ? \"Контуры разделены: player_character_state хранится отдельно от world_state.\"\n        : `Обнаружено недопустимое вложение player_character_state внутри world_state: ${nestedPath}`,\n  });\n\n  // 2. Append-only sequential game turns & technical note isolation\n  const gameTurns = session_log.entries.filter(\n    (entry): entry is GameTurnEntry => entry.entryType === \"GAME_TURN\",\n  );\n  let sequenceOk = true;\n  let sequenceDetails = `Проверено игровых ходов: ${gameTurns.length}. Нумерация последовательна.`;\n  const seenNumbers = new Set<number>();\n  for (let i = 0; i < gameTurns.length; i++) {\n    const turn = gameTurns[i];\n    if (!turn) continue;\n    const expected = i + 1;\n    if (turn.turnNumber !== expected || seenNumbers.has(turn.turnNumber)) {\n      sequenceOk = false;\n      sequenceDetails = `Нарушена последовательность ходов: ожидался №${expected}, найден №${turn.turnNumber}.`;\n      break;\n    }\n    seenNumbers.add(turn.turnNumber);\n  }\n  if (sequenceOk && session_log.lastTurnNumber !== gameTurns.length) {\n    sequenceOk = false;\n    sequenceDetails = `Счётчик lastTurnNumber (${session_log.lastTurnNumber}) не совпадает с числом ходов (${gameTurns.length}).`;\n  }\n  checks.push({\n    id: \"turn-sequence\",\n    label: \"Последовательность append-only session_log\",\n    passed: sequenceOk,\n    details: sequenceDetails,\n  });\n\n  // 3. Setup gate enforcement\n  const setupGateOk = world_state.setup.confirmed || gameTurns.length === 0;\n  checks.push({\n    id: \"setup-gate\",\n    label: \"Блокировка игры до подтверждения мастера настройки\",\n    passed: setupGateOk,\n    details: setupGateOk\n      ? world_state.setup.confirmed\n        ? `Подготовка подтверждена (${world_state.setup.confirmedAt ?? \"дата не указана\"}).`\n        : \"Подготовка не завершена; игровых ходов 0 (блокировка соблюдена).\"\n      : \"Найдены игровые ходы при неподтверждённой подготовке кампании.\",\n  });\n\n  // 4. Fact & NPC knowledge provenance\n  const sourceIds = new Set(sources.map((s) => s.id));\n  const factsWithoutSource = canon_facts.filter(\n    (f) => !f.sourceId || (!sourceIds.has(f.sourceId) && f.sourceId !== \"MANUAL_GM_ENTRY\"),\n  );\n  const npcKnowledgeMissingPath = npcs.flatMap((npc) =>\n    npc.knowledge\n      .filter((k) => !k.acquisitionPath.trim() || !k.sourceId.trim())\n      .map((k) => `${npc.name}: ${k.factSummary}`),\n  );\n  const provenanceOk = factsWithoutSource.length === 0 && npcKnowledgeMissingPath.length === 0;\n  checks.push({\n    id: \"provenance\",\n    label: \"Происхождение фактов и путей знания NPC\",\n    passed: provenanceOk,\n    details: provenanceOk\n      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC: ${npcs.reduce((acc, n) => acc + n.knowledge.length, 0)}.`\n      : `Фактов без источника: ${factsWithoutSource.length}; знаний NPC без пути получения: ${npcKnowledgeMissingPath.length}.`,\n  });\n\n  // 5. Sources separation check (3 distinct roles)\n  const hasGoverning = sources.some((s) => s.type === \"GOVERNING_DOC\");\n  const hasCanon = sources.some((s) => s.type === \"WORLD_CANON\");\n  const hasDossier = sources.some((s) => s.type === \"PLAYER_DOSSIER\");\n  const sourcesOk = hasGoverning && hasCanon && hasDossier;\n  checks.push({\n    id: \"source-types\",\n    label: \"Раздельные типы источников (ОБСИДИАН 4.1 / Хроника / Досье)\",\n    passed: sourcesOk,\n    details: sourcesOk\n      ? \"Все три типа источников зарегистрированы раздельно.\"\n      : \"Отсутствует один из обязательных типов источников.\",\n  });\n\n  return {\n    checkedAt: new Date().toISOString(),\n    ok: checks.every((c) => c.passed),\n    checks,\n    checksums: computeCollectionChecksums(collections),\n  };\n}\n\nexport function buildBackupEnvelope(collections: ObsidianCollections): BackupEnvelope {\n  return {\n    app: \"Obsidian Control\",\n    backupVersion: 2,\n    exportedAt: new Date().toISOString(),\n    storageDisclaimer:\n      \"Локальная резервная копия браузера (localStorage, 11 отдельных коллекций). Облачное сохранение и серверные ACID-транзакции не подключены.\",\n    collections,\n    checksums: computeCollectionChecksums(collections),\n  };\n}\n\nexport function validateBackupEnvelope(\n  raw: unknown,\n): { ok: true; envelope: BackupEnvelope } | { ok: false; error: string } {\n  if (!raw || typeof raw !== \"object\") {\n    return { ok: false, error: \"Файл резервной копии не является JSON-объектом.\" };\n  }\n  const data = raw as Partial<BackupEnvelope>;\n  if (data.app !== \"Obsidian Control\" || data.backupVersion !== 2) {\n    return { ok: false, error: \"Неподдерживаемый формат или версия резервной копии.\" };\n  }\n  if (!data.collections || typeof data.collections !== \"object\") {\n    return { ok: false, error: \"Отсутствует блок collections с 11 раздельными коллекциями.\" };\n  }\n  for (const name of COLLECTION_NAMES) {\n    if (!(name in data.collections) || data.collections[name] === undefined) {\n      return { ok: false, error: `В резервной копии отсутствует коллекция «${name}».` };\n    }\n  }\n  const nested = detectNestedPlayerState(data.collections.world_state, \"world_state\");\n  if (nested) {\n    return {\n      ok: false,\n      error: `Резервная копия отклонена: player_character_state вложен в world_state (${nested}).`,\n    };\n  }\n  if (data.checksums) {\n    const computed = computeCollectionChecksums(data.collections);\n    for (const name of COLLECTION_NAMES) {\n      if (computed[name] !== data.checksums[name]) {\n        return {\n          ok: false,\n          error: `Контрольная сумма коллекции «${name}» не совпадает с содержимым (файл повреждён или изменён).`,\n        };\n      }\n    }\n  }\n  const audit = runIntegrityAudit(data.collections);\n  if (!audit.ok) {\n    const failed = audit.checks\n      .filter((c) => !c.passed)\n      .map((c) => c.details)\n      .join(\" \");\n    return { ok: false, error: `Нарушена целостность данных в резервной копии: ${failed}` };\n  }\n  return { ok: true, envelope: data as BackupEnvelope };\n}"}
+import type {
+  BackupEnvelope,
+  CollectionName,
+  GameTurnEntry,
+  IntegrityCheckItem,
+  IntegrityReport,
+  ObsidianCollections,
+  PlayerCharacterState,
+  TurnDraft,
+  WorldState,
+} from "./types";
+
+export const COLLECTION_NAMES: ReadonlyArray<CollectionName> = [
+  "sources",
+  "canon_facts",
+  "world_state",
+  "player_character_state",
+  "npcs",
+  "factions",
+  "locations",
+  "timeline_events",
+  "turn_drafts",
+  "session_log",
+  "audit_log",
+];
+
+/**
+ * Deterministic canonical serialization for checksum verification.
+ */
+export function canonicalStringify(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalStringify(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, v]) => v !== undefined)
+    .sort(([a], [b]) => a.localeCompare(b));
+  return `{${entries.map(([k, v]) => `${JSON.stringify(k)}:${canonicalStringify(v)}`).join(",")}}`;
+}
+
+/**
+ * Synchronous 64-bit dual FNV-1a hex digest for client-side integrity read-back checks.
+ */
+export function computeChecksum(input: unknown): string {
+  const str = typeof input === "string" ? input : canonicalStringify(input);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x01000193;
+  for (let i = 0; i < str.length; i++) {
+    const code = str.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= code + (i & 0xff);
+    h2 = Math.imul(h2, 0x85ebca6b);
+  }
+  const p1 = (h1 >>> 0).toString(16).padStart(8, "0");
+  const p2 = (h2 >>> 0).toString(16).padStart(8, "0");
+  return `${p1}${p2}`;
+}
+
+const FORBIDDEN_PC_KEYS = new Set([
+  "playerCharacter",
+  "playerCharacterState",
+  "PLAYER_CHARACTER_STATE",
+  "player_character_state",
+  "characterSheet",
+  "pcState",
+]);
+
+export function detectNestedPlayerState(obj: unknown, path = "world_state"): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      const found = detectNestedPlayerState(obj[i], `${path}[${i}]`);
+      if (found) return found;
+    }
+    return null;
+  }
+  for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
+    if (FORBIDDEN_PC_KEYS.has(key)) {
+      return `${path}.${key}`;
+    }
+    const nested = detectNestedPlayerState(val, `${path}.${key}`);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+export function computeCollectionChecksums(
+  collections: ObsidianCollections,
+): Record<CollectionName, string> {
+  return {
+    sources: computeChecksum(collections.sources),
+    canon_facts: computeChecksum(collections.canon_facts),
+    world_state: computeChecksum(collections.world_state),
+    player_character_state: computeChecksum(collections.player_character_state),
+    npcs: computeChecksum(collections.npcs),
+    factions: computeChecksum(collections.factions),
+    locations: computeChecksum(collections.locations),
+    timeline_events: computeChecksum(collections.timeline_events),
+    turn_drafts: computeChecksum(collections.turn_drafts),
+    session_log: computeChecksum(collections.session_log),
+    audit_log: computeChecksum(collections.audit_log),
+  };
+}
+
+export function validateTurnDraft(
+  draft: TurnDraft,
+  worldState: WorldState,
+  character: PlayerCharacterState,
+): string[] {
+  const errors: string[] = [];
+  if (!worldState.setup.confirmed) {
+    errors.push("Игра заблокирована: завершите Мастер подготовки кампании в Настройках.");
+  }
+  if (!draft.summary.trim()) {
+    errors.push("Укажите краткое содержание хода.");
+  }
+  if (!draft.worldOutcome.trim()) {
+    errors.push("Укажите зафиксированный результат/исход в мире.");
+  }
+  if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {
+    errors.push("Изменение игрового времени не может быть отрицательным.");
+  }
+  if (
+    draft.hpDelta !== 0 &&
+    character.hpCurrent !== null &&
+    character.hpCurrent + draft.hpDelta < 0
+  ) {
+    errors.push("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
+  }
+  if (draft.newFactTitle.trim() && !draft.newFactStatement.trim()) {
+    errors.push("Для нового факта заполните формулировку утверждения.");
+  }
+  if (draft.newFactStatement.trim() && !draft.newFactTitle.trim()) {
+    errors.push("Для нового факта укажите заголовок.");
+  }
+  if (draft.newFactStatement.trim() && !draft.newFactSourceId.trim()) {
+    errors.push("Для нового факта обязательно укажите источник происхождения.");
+  }
+  for (const roll of draft.rolls) {
+    if (!roll.label.trim() || !roll.result.trim()) {
+      errors.push("У каждого броска должны быть заполнены название и результат.");
+      break;
+    }
+  }
+  return errors;
+}
+
+export function runIntegrityAudit(collections: ObsidianCollections): IntegrityReport {
+  const { sources, canon_facts, world_state, npcs, session_log } = collections;
+  const checks: IntegrityCheckItem[] = [];
+
+  // 1. Strict separation of player_character_state from world_state
+  const nestedPath = detectNestedPlayerState(world_state, "world_state");
+  checks.push({
+    id: "partition-isolation",
+    label: "Изоляция player_character_state от world_state",
+    passed: nestedPath === null,
+    details:
+      nestedPath === null
+        ? "Контуры разделены: player_character_state хранится отдельно от world_state."
+        : `Обнаружено недопустимое вложение player_character_state внутри world_state: ${nestedPath}`,
+  });
+
+  // 2. Append-only sequential game turns & technical note isolation
+  const gameTurns = session_log.entries.filter(
+    (entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN",
+  );
+  let sequenceOk = true;
+  let sequenceDetails = `Проверено игровых ходов: ${gameTurns.length}. Нумерация последовательна.`;
+  const seenNumbers = new Set<number>();
+  for (let i = 0; i < gameTurns.length; i++) {
+    const turn = gameTurns[i];
+    if (!turn) continue;
+    const expected = i + 1;
+    if (turn.turnNumber !== expected || seenNumbers.has(turn.turnNumber)) {
+      sequenceOk = false;
+      sequenceDetails = `Нарушена последовательность ходов: ожидался №${expected}, найден №${turn.turnNumber}.`;
+      break;
+    }
+    seenNumbers.add(turn.turnNumber);
+  }
+  if (sequenceOk && session_log.lastTurnNumber !== gameTurns.length) {
+    sequenceOk = false;
+    sequenceDetails = `Счётчик lastTurnNumber (${session_log.lastTurnNumber}) не совпадает с числом ходов (${gameTurns.length}).`;
+  }
+  checks.push({
+    id: "turn-sequence",
+    label: "Последовательность append-only session_log",
+    passed: sequenceOk,
+    details: sequenceDetails,
+  });
+
+  // 3. Setup gate enforcement
+  const setupGateOk = world_state.setup.confirmed || gameTurns.length === 0;
+  checks.push({
+    id: "setup-gate",
+    label: "Блокировка игры до подтверждения мастера настройки",
+    passed: setupGateOk,
+    details: setupGateOk
+      ? world_state.setup.confirmed
+        ? `Подготовка подтверждена (${world_state.setup.confirmedAt ?? "дата не указана"}).`
+        : "Подготовка не завершена; игровых ходов 0 (блокировка соблюдена)."
+      : "Найдены игровые ходы при неподтверждённой подготовке кампании.",
+  });
+
+  // 4. Fact & NPC knowledge provenance
+  const sourceIds = new Set(sources.map((s) => s.id));
+  const factsWithoutSource = canon_facts.filter(
+    (f) => !f.sourceId || (!sourceIds.has(f.sourceId) && f.sourceId !== "MANUAL_GM_ENTRY"),
+  );
+  const npcKnowledgeMissingPath = npcs.flatMap((npc) =>
+    npc.knowledge
+      .filter((k) => !k.acquisitionPath.trim() || !k.sourceId.trim())
+      .map((k) => `${npc.name}: ${k.factSummary}`),
+  );
+  const provenanceOk = factsWithoutSource.length === 0 && npcKnowledgeMissingPath.length === 0;
+  checks.push({
+    id: "provenance",
+    label: "Происхождение фактов и путей знания NPC",
+    passed: provenanceOk,
+    details: provenanceOk
+      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC: ${npcs.reduce((acc, n) => acc + n.knowledge.length, 0)}.`
+      : `Фактов без источника: ${factsWithoutSource.length}; знаний NPC без пути получения: ${npcKnowledgeMissingPath.length}.`,
+  });
+
+  // 5. Sources separation check (3 distinct roles)
+  const hasGoverning = sources.some((s) => s.type === "GOVERNING_DOC");
+  const hasCanon = sources.some((s) => s.type === "WORLD_CANON");
+  const hasDossier = sources.some((s) => s.type === "PLAYER_DOSSIER");
+  const sourcesOk = hasGoverning && hasCanon && hasDossier;
+  checks.push({
+    id: "source-types",
+    label: "Раздельные типы источников (ОБСИДИАН 4.1 / Хроника / Досье)",
+    passed: sourcesOk,
+    details: sourcesOk
+      ? "Все три типа источников зарегистрированы раздельно."
+      : "Отсутствует один из обязательных типов источников.",
+  });
+
+  return {
+    checkedAt: new Date().toISOString(),
+    ok: checks.every((c) => c.passed),
+    checks,
+    checksums: computeCollectionChecksums(collections),
+  };
+}
+
+export function buildBackupEnvelope(collections: ObsidianCollections): BackupEnvelope {
+  return {
+    app: "Obsidian Control",
+    backupVersion: 2,
+    exportedAt: new Date().toISOString(),
+    storageDisclaimer:
+      "Локальная резервная копия браузера (localStorage, 11 отдельных коллекций). Облачное сохранение и серверные ACID-транзакции не подключены.",
+    collections,
+    checksums: computeCollectionChecksums(collections),
+  };
+}
+
+export function validateBackupEnvelope(
+  raw: unknown,
+): { ok: true; envelope: BackupEnvelope } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, error: "Файл резервной копии не является JSON-объектом." };
+  }
+  const data = raw as Partial<BackupEnvelope>;
+  if (data.app !== "Obsidian Control" || data.backupVersion !== 2) {
+    return { ok: false, error: "Неподдерживаемый формат или версия резервной копии." };
+  }
+  if (!data.collections || typeof data.collections !== "object") {
+    return { ok: false, error: "Отсутствует блок collections с 11 раздельными коллекциями." };
+  }
+  for (const name of COLLECTION_NAMES) {
+    if (!(name in data.collections) || data.collections[name] === undefined) {
+      return { ok: false, error: `В резервной копии отсутствует коллекция «${name}».` };
+    }
+  }
+  const nested = detectNestedPlayerState(data.collections.world_state, "world_state");
+  if (nested) {
+    return {
+      ok: false,
+      error: `Резервная копия отклонена: player_character_state вложен в world_state (${nested}).`,
+    };
+  }
+  if (data.checksums) {
+    const computed = computeCollectionChecksums(data.collections);
+    for (const name of COLLECTION_NAMES) {
+      if (computed[name] !== data.checksums[name]) {
+        return {
+          ok: false,
+          error: `Контрольная сумма коллекции «${name}» не совпадает с содержимым (файл повреждён или изменён).`,
+        };
+      }
+    }
+  }
+  const audit = runIntegrityAudit(data.collections);
+  if (!audit.ok) {
+    const failed = audit.checks
+      .filter((c) => !c.passed)
+      .map((c) => c.details)
+      .join(" ");
+    return { ok: false, error: `Нарушена целостность данных в резервной копии: ${failed}` };
+  }
+  return { ok: true, envelope: data as BackupEnvelope };
+}

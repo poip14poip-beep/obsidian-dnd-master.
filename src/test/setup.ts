@@ -1,1 +1,20 @@
-{"text":"import \"@testing-library/jest-dom/vitest\";\n\nObject.defineProperty(window, \"scrollTo\", {\n  writable: true,\n  value: () => {},\n});\n\nObject.defineProperty(window, \"matchMedia\", {\n  writable: true,\n  value: (query: string) => ({\n    matches: false,\n    media: query,\n    onchange: null,\n    addListener: () => {},\n    removeListener: () => {},\n    addEventListener: () => {},\n    removeEventListener: () => {},\n    dispatchEvent: () => {},\n  }),\n});"}
+import "@testing-library/jest-dom/vitest";
+
+Object.defineProperty(window, "scrollTo", {
+  writable: true,
+  value: () => {},
+});
+
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => {},
+  }),
+});

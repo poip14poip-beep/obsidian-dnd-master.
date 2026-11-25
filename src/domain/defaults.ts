@@ -1,1 +1,171 @@
-{"text":"import type {\n  AuditLogState,\n  ObsidianCollections,\n  PlayerCharacterState,\n  SessionLogState,\n  SourceDocument,\n  TurnDraft,\n  WorldState,\n} from \"./types\";\n\nexport const DEFAULT_SOURCE_IDS = {\n  GOVERNING: \"src-obsidian-41\",\n  CANON: \"src-ekdrasil-chronicle\",\n  DOSSIER: \"src-lia-vein-dossier\",\n} as const;\n\nexport function createInitialSources(): SourceDocument[] {\n  return [\n    {\n      id: DEFAULT_SOURCE_IDS.GOVERNING,\n      title: \"ОБСИДИАН 4.1\",\n      type: \"GOVERNING_DOC\",\n      targetPartition: \"SYSTEM_RULES\",\n      originLabel: \"Управляющий документ правил (файл не прикреплён)\",\n      contentStatus: \"NOT_ATTACHED\",\n      certainty: \"UNKNOWN\",\n      fileName: null,\n      content: \"\",\n      checksum: \"EMPTY\",\n      attachedAt: null,\n      notes:\n        \"Управляющий документ симуляции D&D 5e (2024) по ОБСИДИАН 4.1. Загрузите оригинал в разделе «Источники»; содержимое не додумывается.\",\n    },\n    {\n      id: DEFAULT_SOURCE_IDS.CANON,\n      title: \"Хроника Экдрасиля\",\n      type: \"WORLD_CANON\",\n      targetPartition: \"CAMPAIGN_STATE\",\n      originLabel: \"Источник канона мира (файл не прикреплён)\",\n      contentStatus: \"NOT_ATTACHED\",\n      certainty: \"UNKNOWN\",\n      fileName: null,\n      content: \"\",\n      checksum: \"EMPTY\",\n      attachedAt: null,\n      notes:\n        \"Канонический источник сведений о мире. Наличие файла не означает старт кампании и не импортирует старые ходы или локации автоматически.\",\n    },\n    {\n      id: DEFAULT_SOURCE_IDS.DOSSIER,\n      title: \"Досье Лии Вейн\",\n      type: \"PLAYER_DOSSIER\",\n      targetPartition: \"PLAYER_CHARACTER_STATE\",\n      originLabel: \"Отдельный лист персонажа игрока (файл не прикреплён)\",\n      contentStatus: \"NOT_ATTACHED\",\n      certainty: \"UNKNOWN\",\n      fileName: null,\n      content: \"\",\n      checksum: \"EMPTY\",\n      attachedAt: null,\n      notes:\n        \"Изолированный источник для PLAYER_CHARACTER_STATE. Никогда не вкладывается в CAMPAIGN_STATE.\",\n    },\n  ];\n}\n\nexport function createInitialWorldState(): WorldState {\n  return {\n    schemaVersion: 1,\n    stateVersion: 1,\n    campaignName: \"\",\n    ruleset: \"D&D 5e (2024) · ОБСИДИАН 4.1\",\n    calendarSystem: \"UNKNOWN\",\n    startInGameDate: \"UNKNOWN\",\n    currentInGameDate: \"UNKNOWN\",\n    elapsedMinutes: 0,\n    startLocationName: \"UNKNOWN\",\n    currentLocationId: null,\n    setup: {\n      sourcesConfirmed: false,\n      parametersConfirmed: false,\n      startPointConfirmed: false,\n      characterConfirmed: false,\n      noAutoImportAcknowledged: false,\n      confirmed: false,\n      confirmedAt: null,\n    },\n    routes: [],\n    consequences: [],\n    updatedAt: \"1970-01-01T00:00:00.000Z\",\n  };\n}\n\nexport function createInitialPlayerCharacterState(): PlayerCharacterState {\n  return {\n    schemaVersion: 1,\n    stateVersion: 1,\n    sourceDossierId: DEFAULT_SOURCE_IDS.DOSSIER,\n    name: \"UNKNOWN\",\n    nameCertainty: \"UNKNOWN\",\n    speciesAndClass: \"UNKNOWN\",\n    level: null,\n    hpCurrent: null,\n    hpMax: null,\n    hpTemp: null,\n    armorClass: null,\n    statsCertainty: \"UNKNOWN\",\n    currentLocationLabel: \"UNKNOWN\",\n    conditions: [],\n    resources: [],\n    inventory: [],\n    notes: \"\",\n    updatedAt: \"1970-01-01T00:00:00.000Z\",\n  };\n}\n\nexport function createInitialSessionLogState(): SessionLogState {\n  return {\n    schemaVersion: 1,\n    lastTurnNumber: 0,\n    entries: [],\n  };\n}\n\nexport function createInitialAuditLogState(): AuditLogState {\n  return {\n    schemaVersion: 1,\n    entries: [],\n  };\n}\n\nexport function createEmptyTurnDraft(id = \"draft-active\"): TurnDraft {\n  return {\n    id,\n    createdAt: \"1970-01-01T00:00:00.000Z\",\n    updatedAt: \"1970-01-01T00:00:00.000Z\",\n    summary: \"\",\n    playerIntent: \"\",\n    worldOutcome: \"\",\n    timeDeltaMinutes: 0,\n    newInGameDate: \"\",\n    newLocationId: \"\",\n    hpDelta: 0,\n    consequenceText: \"\",\n    newFactTitle: \"\",\n    newFactStatement: \"\",\n    newFactRationale: \"\",\n    newFactLayer: \"OBJECTIVE_TRUTH\",\n    newFactCertainty: \"KNOWN\",\n    newFactSourceId: DEFAULT_SOURCE_IDS.CANON,\n    rolls: [],\n    checkedAt: null,\n    validationErrors: [],\n  };\n}\n\nexport function createInitialCollections(): ObsidianCollections {\n  return {\n    sources: createInitialSources(),\n    canon_facts: [],\n    world_state: createInitialWorldState(),\n    player_character_state: createInitialPlayerCharacterState(),\n    npcs: [],\n    factions: [],\n    locations: [],\n    timeline_events: [],\n    turn_drafts: [createEmptyTurnDraft()],\n    session_log: createInitialSessionLogState(),\n    audit_log: createInitialAuditLogState(),\n  };\n}"}
+import type {
+  AuditLogState,
+  ObsidianCollections,
+  PlayerCharacterState,
+  SessionLogState,
+  SourceDocument,
+  TurnDraft,
+  WorldState,
+} from "./types";
+
+export const DEFAULT_SOURCE_IDS = {
+  GOVERNING: "src-obsidian-41",
+  CANON: "src-ekdrasil-chronicle",
+  DOSSIER: "src-lia-vein-dossier",
+} as const;
+
+export function createInitialSources(): SourceDocument[] {
+  return [
+    {
+      id: DEFAULT_SOURCE_IDS.GOVERNING,
+      title: "ОБСИДИАН 4.1",
+      type: "GOVERNING_DOC",
+      targetPartition: "SYSTEM_RULES",
+      originLabel: "Управляющий документ правил (файл не прикреплён)",
+      contentStatus: "NOT_ATTACHED",
+      certainty: "UNKNOWN",
+      fileName: null,
+      content: "",
+      checksum: "EMPTY",
+      attachedAt: null,
+      notes:
+        "Управляющий документ симуляции D&D 5e (2024) по ОБСИДИАН 4.1. Загрузите оригинал в разделе «Источники»; содержимое не додумывается.",
+    },
+    {
+      id: DEFAULT_SOURCE_IDS.CANON,
+      title: "Хроника Экдрасиля",
+      type: "WORLD_CANON",
+      targetPartition: "CAMPAIGN_STATE",
+      originLabel: "Источник канона мира (файл не прикреплён)",
+      contentStatus: "NOT_ATTACHED",
+      certainty: "UNKNOWN",
+      fileName: null,
+      content: "",
+      checksum: "EMPTY",
+      attachedAt: null,
+      notes:
+        "Канонический источник сведений о мире. Наличие файла не означает старт кампании и не импортирует старые ходы или локации автоматически.",
+    },
+    {
+      id: DEFAULT_SOURCE_IDS.DOSSIER,
+      title: "Досье Лии Вейн",
+      type: "PLAYER_DOSSIER",
+      targetPartition: "PLAYER_CHARACTER_STATE",
+      originLabel: "Отдельный лист персонажа игрока (файл не прикреплён)",
+      contentStatus: "NOT_ATTACHED",
+      certainty: "UNKNOWN",
+      fileName: null,
+      content: "",
+      checksum: "EMPTY",
+      attachedAt: null,
+      notes:
+        "Изолированный источник для PLAYER_CHARACTER_STATE. Никогда не вкладывается в CAMPAIGN_STATE.",
+    },
+  ];
+}
+
+export function createInitialWorldState(): WorldState {
+  return {
+    schemaVersion: 1,
+    stateVersion: 1,
+    campaignName: "",
+    ruleset: "D&D 5e (2024) · ОБСИДИАН 4.1",
+    calendarSystem: "UNKNOWN",
+    startInGameDate: "UNKNOWN",
+    currentInGameDate: "UNKNOWN",
+    elapsedMinutes: 0,
+    startLocationName: "UNKNOWN",
+    currentLocationId: null,
+    setup: {
+      sourcesConfirmed: false,
+      parametersConfirmed: false,
+      startPointConfirmed: false,
+      characterConfirmed: false,
+      noAutoImportAcknowledged: false,
+      confirmed: false,
+      confirmedAt: null,
+    },
+    routes: [],
+    consequences: [],
+    updatedAt: "1970-01-01T00:00:00.000Z",
+  };
+}
+
+export function createInitialPlayerCharacterState(): PlayerCharacterState {
+  return {
+    schemaVersion: 1,
+    stateVersion: 1,
+    sourceDossierId: DEFAULT_SOURCE_IDS.DOSSIER,
+    name: "UNKNOWN",
+    nameCertainty: "UNKNOWN",
+    speciesAndClass: "UNKNOWN",
+    level: null,
+    hpCurrent: null,
+    hpMax: null,
+    hpTemp: null,
+    armorClass: null,
+    statsCertainty: "UNKNOWN",
+    currentLocationLabel: "UNKNOWN",
+    conditions: [],
+    resources: [],
+    inventory: [],
+    notes: "",
+    updatedAt: "1970-01-01T00:00:00.000Z",
+  };
+}
+
+export function createInitialSessionLogState(): SessionLogState {
+  return {
+    schemaVersion: 1,
+    lastTurnNumber: 0,
+    entries: [],
+  };
+}
+
+export function createInitialAuditLogState(): AuditLogState {
+  return {
+    schemaVersion: 1,
+    entries: [],
+  };
+}
+
+export function createEmptyTurnDraft(id = "draft-active"): TurnDraft {
+  return {
+    id,
+    createdAt: "1970-01-01T00:00:00.000Z",
+    updatedAt: "1970-01-01T00:00:00.000Z",
+    summary: "",
+    playerIntent: "",
+    worldOutcome: "",
+    timeDeltaMinutes: 0,
+    newInGameDate: "",
+    newLocationId: "",
+    hpDelta: 0,
+    consequenceText: "",
+    newFactTitle: "",
+    newFactStatement: "",
+    newFactRationale: "",
+    newFactLayer: "OBJECTIVE_TRUTH",
+    newFactCertainty: "KNOWN",
+    newFactSourceId: DEFAULT_SOURCE_IDS.CANON,
+    rolls: [],
+    checkedAt: null,
+    validationErrors: [],
+  };
+}
+
+export function createInitialCollections(): ObsidianCollections {
+  return {
+    sources: createInitialSources(),
+    canon_facts: [],
+    world_state: createInitialWorldState(),
+    player_character_state: createInitialPlayerCharacterState(),
+    npcs: [],
+    factions: [],
+    locations: [],
+    timeline_events: [],
+    turn_drafts: [createEmptyTurnDraft()],
+    session_log: createInitialSessionLogState(),
+    audit_log: createInitialAuditLogState(),
+  };
+}

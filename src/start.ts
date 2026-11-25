@@ -1,1 +1,35 @@
-{"text":"import { createStart, createCsrfMiddleware, createMiddleware } from \"@tanstack/react-start\";\n\nimport { renderErrorPage } from \"./lib/error-page\";\n\nconst errorMiddleware = createMiddleware().server(async ({ next }) => {\n  try {\n    return await next();\n  } catch (error) {\n    if (error != null && typeof error === \"object\" && \"statusCode\" in error) {\n      throw error;\n    }\n    console.error(error);\n    return new Response(renderErrorPage(), {\n      status: 500,\n      headers: { \"content-type\": \"text/html; charset=utf-8\" },\n    });\n  }\n});\n\n// Start installs this automatically when src/start.ts is absent; defining the\n// file opts out, so re-add it explicitly to keep server functions protected\n// from cross-site requests.\nconst csrfMiddleware = createCsrfMiddleware({\n  filter: (ctx) => ctx.handlerType === \"serverFn\",\n});\n\n// requestMiddleware runs on every request; functionMiddleware only on server functions, where\n// client sendContext is unvalidated input. Append to these arrays, never replace them.\n// Enabling Lovable Cloud adds functionMiddleware: [attachSupabaseAuth], the bearer token that\n// requireSupabaseAuth server functions need. Add it by hand only if Lovable Cloud or a\n// user-managed Supabase project is connected, no middleware here sets Authorization, and the\n// project did not intentionally replace it.\nexport const startInstance = createStart(() => ({\n  requestMiddleware: [errorMiddleware, csrfMiddleware],\n}));"}
+import { createStart, createCsrfMiddleware, createMiddleware } from "@tanstack/react-start";
+
+import { renderErrorPage } from "./lib/error-page";
+
+const errorMiddleware = createMiddleware().server(async ({ next }) => {
+  try {
+    return await next();
+  } catch (error) {
+    if (error != null && typeof error === "object" && "statusCode" in error) {
+      throw error;
+    }
+    console.error(error);
+    return new Response(renderErrorPage(), {
+      status: 500,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+});
+
+// Start installs this automatically when src/start.ts is absent; defining the
+// file opts out, so re-add it explicitly to keep server functions protected
+// from cross-site requests.
+const csrfMiddleware = createCsrfMiddleware({
+  filter: (ctx) => ctx.handlerType === "serverFn",
+});
+
+// requestMiddleware runs on every request; functionMiddleware only on server functions, where
+// client sendContext is unvalidated input. Append to these arrays, never replace them.
+// Enabling Lovable Cloud adds functionMiddleware: [attachSupabaseAuth], the bearer token that
+// requireSupabaseAuth server functions need. Add it by hand only if Lovable Cloud or a
+// user-managed Supabase project is connected, no middleware here sets Authorization, and the
+// project did not intentionally replace it.
+export const startInstance = createStart(() => ({
+  requestMiddleware: [errorMiddleware, csrfMiddleware],
+}));

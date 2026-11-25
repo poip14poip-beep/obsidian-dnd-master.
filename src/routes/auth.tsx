@@ -1,1 +1,277 @@
-{"text":"import { createFileRoute, useNavigate } from \"@tanstack/react-router\";\nimport { CheckCircle2, KeyRound, Lock, LogIn, UserPlus } from \"lucide-react\";\nimport { useState, type FormEvent } from \"react\";\nimport { toast } from \"sonner\";\nimport { z } from \"zod\";\n\nimport { useAuth } from \"@/auth/auth-context\";\nimport { sanitizeRedirectPath } from \"@/auth/auth-guard\";\nimport { Button } from \"@/components/ui/button\";\nimport { Input } from \"@/components/ui/input\";\nimport { Label } from \"@/components/ui/label\";\n\nconst authSearchSchema = z.object({\n  redirect: z.string().optional(),\n});\n\nexport const Route = createFileRoute(\"/auth\")({\n  validateSearch: (search) => authSearchSchema.parse(search),\n  head: () => ({\n    meta: [\n      { title: \"Вход — Obsidian Control\" },\n      {\n        name: \"description\",\n        content:\n          \"Вход, регистрация и восстановление пароля через Supabase Auth для Obsidian Control.\",\n      },\n      { property: \"og:title\", content: \"Вход — Obsidian Control\" },\n      {\n        property: \"og:description\",\n        content:\n          \"Вход, регистрация и восстановление пароля через Supabase Auth для Obsidian Control.\",\n      },\n      { property: \"og:type\", content: \"website\" },\n      { name: \"twitter:card\", content: \"summary\" },\n    ],\n  }),\n  component: AuthPage,\n});\n\ntype AuthMode = \"signin\" | \"signup\" | \"forgot\";\n\nfunction AuthPage() {\n  const { redirect } = Route.useSearch();\n  const navigate = useNavigate();\n  const { signIn, signUp, requestPasswordReset } = useAuth();\n\n  const [mode, setMode] = useState<AuthMode>(\"signin\");\n  const [email, setEmail] = useState(\"\");\n  const [password, setPassword] = useState(\"\");\n  const [confirmPassword, setConfirmPassword] = useState(\"\");\n  const [submitting, setSubmitting] = useState(false);\n  const [errorMsg, setErrorMsg] = useState<string | null>(null);\n  const [infoMsg, setInfoMsg] = useState<string | null>(null);\n\n  function switchMode(next: AuthMode) {\n    setMode(next);\n    setErrorMsg(null);\n    setInfoMsg(null);\n  }\n\n  async function handleSubmit(e: FormEvent) {\n    e.preventDefault();\n    setErrorMsg(null);\n    setInfoMsg(null);\n\n    const cleanEmail = email.trim();\n    if (!cleanEmail || !cleanEmail.includes(\"@\")) {\n      setErrorMsg(\"Введите корректный email.\");\n      return;\n    }\n\n    if (mode !== \"forgot\") {\n      if (password.length < 6) {\n        setErrorMsg(\"Пароль должен содержать не менее 6 символов.\");\n        return;\n      }\n      if (mode === \"signup\" && password !== confirmPassword) {\n        setErrorMsg(\"Пароли не совпадают.\");\n        return;\n      }\n    }\n\n    setSubmitting(true);\n    try {\n      if (mode === \"signin\") {\n        const res = await signIn(cleanEmail, password);\n        if (!res.ok) {\n          setErrorMsg(res.error ?? \"Не удалось войти.\");\n          return;\n        }\n        toast.success(\"Вход выполнен.\");\n        const target = sanitizeRedirectPath(redirect);\n        await navigate({ to: target as \"/\", replace: true });\n        return;\n      }\n\n      if (mode === \"signup\") {\n        const res = await signUp(cleanEmail, password);\n        if (!res.ok) {\n          setErrorMsg(res.error ?? \"Не удалось зарегистрироваться.\");\n          return;\n        }\n        if (res.needsEmailConfirmation) {\n          setInfoMsg(\n            \"Аккаунт создан. Проверьте почту и перейдите по ссылке подтверждения, затем выполните вход.\",\n          );\n          toast.info(\"Проверьте почту для подтверждения email.\");\n        } else {\n          toast.success(\"Регистрация и вход выполнены.\");\n          const target = sanitizeRedirectPath(redirect);\n          await navigate({ to: target as \"/\", replace: true });\n        }\n        return;\n      }\n\n      const res = await requestPasswordReset(cleanEmail);\n      if (!res.ok) {\n        setErrorMsg(res.error ?? \"Не удалось отправить письмо для сброса пароля.\");\n        return;\n      }\n      setInfoMsg(\n        \"Если аккаунт с этим email существует, на него отправлена ссылка для восстановления пароля.\",\n      );\n      toast.success(\"Письмо для восстановления отправлено.\");\n    } finally {\n      setSubmitting(false);\n    }\n  }\n\n  return (\n    <div className=\"flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8\">\n      <div className=\"w-full max-w-md space-y-4\">\n        <header className=\"space-y-1 text-center\">\n          <p className=\"mono-code text-xs uppercase tracking-wider text-primary\">\n            ОБСИДИАН 4.1 · D&D 5e (2024)\n          </p>\n          <h1 className=\"text-2xl font-bold tracking-tight text-foreground\">Obsidian Control</h1>\n          <p className=\"text-xs text-muted-foreground\">\n            Авторизация через Supabase Auth (только учётная запись)\n          </p>\n        </header>\n\n        <div className=\"panel-surface space-y-4 p-5\">\n          <div className=\"grid grid-cols-3 gap-1.5 rounded-md border border-border bg-background/60 p-1\">\n            <button\n              type=\"button\"\n              onClick={() => switchMode(\"signin\")}\n              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${\n                mode === \"signin\"\n                  ? \"bg-primary text-primary-foreground\"\n                  : \"text-muted-foreground hover:text-foreground\"\n              }`}\n            >\n              Вход\n            </button>\n            <button\n              type=\"button\"\n              onClick={() => switchMode(\"signup\")}\n              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${\n                mode === \"signup\"\n                  ? \"bg-primary text-primary-foreground\"\n                  : \"text-muted-foreground hover:text-foreground\"\n              }`}\n            >\n              Регистрация\n            </button>\n            <button\n              type=\"button\"\n              onClick={() => switchMode(\"forgot\")}\n              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${\n                mode === \"forgot\"\n                  ? \"bg-primary text-primary-foreground\"\n                  : \"text-muted-foreground hover:text-foreground\"\n              }`}\n            >\n              Сброс\n            </button>\n          </div>\n\n          {errorMsg && (\n            <div\n              role=\"alert\"\n              className=\"rounded-md border border-status-danger/60 bg-status-danger-bg/50 p-3 text-xs text-status-danger\"\n            >\n              {errorMsg}\n            </div>\n          )}\n\n          {infoMsg && (\n            <div className=\"flex items-start gap-2 rounded-md border border-status-verified/50 bg-status-verified-bg/40 p-3 text-xs text-status-verified\">\n              <CheckCircle2 className=\"mt-0.5 h-4 w-4 shrink-0\" />\n              <span>{infoMsg}</span>\n            </div>\n          )}\n\n          <form onSubmit={handleSubmit} className=\"space-y-3\">\n            <div className=\"space-y-1.5\">\n              <Label htmlFor=\"auth-email\">Email</Label>\n              <Input\n                id=\"auth-email\"\n                type=\"email\"\n                autoComplete=\"email\"\n                required\n                value={email}\n                onChange={(e) => setEmail(e.target.value)}\n                placeholder=\"you@example.com\"\n                className=\"touch-target\"\n              />\n            </div>\n\n            {mode !== \"forgot\" && (\n              <div className=\"space-y-1.5\">\n                <Label htmlFor=\"auth-password\">Пароль</Label>\n                <Input\n                  id=\"auth-password\"\n                  type=\"password\"\n                  autoComplete={mode === \"signin\" ? \"current-password\" : \"new-password\"}\n                  required\n                  value={password}\n                  onChange={(e) => setPassword(e.target.value)}\n                  placeholder=\"Минимум 6 символов\"\n                  className=\"touch-target\"\n                />\n              </div>\n            )}\n\n            {mode === \"signup\" && (\n              <div className=\"space-y-1.5\">\n                <Label htmlFor=\"auth-confirm\">Повторите пароль</Label>\n                <Input\n                  id=\"auth-confirm\"\n                  type=\"password\"\n                  autoComplete=\"new-password\"\n                  required\n                  value={confirmPassword}\n                  onChange={(e) => setConfirmPassword(e.target.value)}\n                  placeholder=\"Повторите пароль\"\n                  className=\"touch-target\"\n                />\n              </div>\n            )}\n\n            <Button type=\"submit\" disabled={submitting} className=\"touch-target w-full\">\n              {mode === \"signin\" && (\n                <>\n                  <LogIn className=\"mr-2 h-4 w-4\" />\n                  {submitting ? \"Вход...\" : \"Войти\"}\n                </>\n              )}\n              {mode === \"signup\" && (\n                <>\n                  <UserPlus className=\"mr-2 h-4 w-4\" />\n                  {submitting ? \"Создание...\" : \"Зарегистрироваться\"}\n                </>\n              )}\n              {mode === \"forgot\" && (\n                <>\n                  <KeyRound className=\"mr-2 h-4 w-4\" />\n                  {submitting ? \"Отправка...\" : \"Отправить ссылку сброса\"}\n                </>\n              )}\n            </Button>\n          </form>\n        </div>\n\n        <div className=\"panel-surface flex items-start gap-2.5 border-border/70 bg-surface-elevated/50 p-3 text-xs text-muted-foreground\">\n          <Lock className=\"mt-0.5 h-4 w-4 shrink-0 text-status-approx\" />\n          <p>\n            Доступ к разделам кампании закрыт до входа. Данные кампании на текущем этапе хранятся{\" \"}\n            <strong className=\"text-foreground\">только локально в браузере</strong> — облачная\n            синхронизация пока не подключена.\n          </p>\n        </div>\n      </div>\n    </div>\n  );\n}"}
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { CheckCircle2, KeyRound, Lock, LogIn, UserPlus } from "lucide-react";
+import { useState, type FormEvent } from "react";
+import { toast } from "sonner";
+import { z } from "zod";
+
+import { useAuth } from "@/auth/auth-context";
+import { sanitizeRedirectPath } from "@/auth/auth-guard";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+
+const authSearchSchema = z.object({
+  redirect: z.string().optional(),
+});
+
+export const Route = createFileRoute("/auth")({
+  validateSearch: (search) => authSearchSchema.parse(search),
+  head: () => ({
+    meta: [
+      { title: "Вход — Obsidian Control" },
+      {
+        name: "description",
+        content:
+          "Вход, регистрация и восстановление пароля через Supabase Auth для Obsidian Control.",
+      },
+      { property: "og:title", content: "Вход — Obsidian Control" },
+      {
+        property: "og:description",
+        content:
+          "Вход, регистрация и восстановление пароля через Supabase Auth для Obsidian Control.",
+      },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
+  component: AuthPage,
+});
+
+type AuthMode = "signin" | "signup" | "forgot";
+
+function AuthPage() {
+  const { redirect } = Route.useSearch();
+  const navigate = useNavigate();
+  const { signIn, signUp, requestPasswordReset } = useAuth();
+
+  const [mode, setMode] = useState<AuthMode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [infoMsg, setInfoMsg] = useState<string | null>(null);
+
+  function switchMode(next: AuthMode) {
+    setMode(next);
+    setErrorMsg(null);
+    setInfoMsg(null);
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setErrorMsg(null);
+    setInfoMsg(null);
+
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      setErrorMsg("Введите корректный email.");
+      return;
+    }
+
+    if (mode !== "forgot") {
+      if (password.length < 6) {
+        setErrorMsg("Пароль должен содержать не менее 6 символов.");
+        return;
+      }
+      if (mode === "signup" && password !== confirmPassword) {
+        setErrorMsg("Пароли не совпадают.");
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      if (mode === "signin") {
+        const res = await signIn(cleanEmail, password);
+        if (!res.ok) {
+          setErrorMsg(res.error ?? "Не удалось войти.");
+          return;
+        }
+        toast.success("Вход выполнен.");
+        const target = sanitizeRedirectPath(redirect);
+        await navigate({ to: target as "/", replace: true });
+        return;
+      }
+
+      if (mode === "signup") {
+        const res = await signUp(cleanEmail, password);
+        if (!res.ok) {
+          setErrorMsg(res.error ?? "Не удалось зарегистрироваться.");
+          return;
+        }
+        if (res.needsEmailConfirmation) {
+          setInfoMsg(
+            "Аккаунт создан. Проверьте почту и перейдите по ссылке подтверждения, затем выполните вход.",
+          );
+          toast.info("Проверьте почту для подтверждения email.");
+        } else {
+          toast.success("Регистрация и вход выполнены.");
+          const target = sanitizeRedirectPath(redirect);
+          await navigate({ to: target as "/", replace: true });
+        }
+        return;
+      }
+
+      const res = await requestPasswordReset(cleanEmail);
+      if (!res.ok) {
+        setErrorMsg(res.error ?? "Не удалось отправить письмо для сброса пароля.");
+        return;
+      }
+      setInfoMsg(
+        "Если аккаунт с этим email существует, на него отправлена ссылка для восстановления пароля.",
+      );
+      toast.success("Письмо для восстановления отправлено.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4 py-8">
+      <div className="w-full max-w-md space-y-4">
+        <header className="space-y-1 text-center">
+          <p className="mono-code text-xs uppercase tracking-wider text-primary">
+            ОБСИДИАН 4.1 · D&D 5e (2024)
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Obsidian Control</h1>
+          <p className="text-xs text-muted-foreground">
+            Авторизация через Supabase Auth (только учётная запись)
+          </p>
+        </header>
+
+        <div className="panel-surface space-y-4 p-5">
+          <div className="grid grid-cols-3 gap-1.5 rounded-md border border-border bg-background/60 p-1">
+            <button
+              type="button"
+              onClick={() => switchMode("signin")}
+              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${
+                mode === "signin"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Вход
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("signup")}
+              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${
+                mode === "signup"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Регистрация
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("forgot")}
+              className={`touch-target rounded px-2 text-xs font-medium transition-colors ${
+                mode === "forgot"
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              Сброс
+            </button>
+          </div>
+
+          {errorMsg && (
+            <div
+              role="alert"
+              className="rounded-md border border-status-danger/60 bg-status-danger-bg/50 p-3 text-xs text-status-danger"
+            >
+              {errorMsg}
+            </div>
+          )}
+
+          {infoMsg && (
+            <div className="flex items-start gap-2 rounded-md border border-status-verified/50 bg-status-verified-bg/40 p-3 text-xs text-status-verified">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{infoMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="auth-email">Email</Label>
+              <Input
+                id="auth-email"
+                type="email"
+                autoComplete="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="touch-target"
+              />
+            </div>
+
+            {mode !== "forgot" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-password">Пароль</Label>
+                <Input
+                  id="auth-password"
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Минимум 6 символов"
+                  className="touch-target"
+                />
+              </div>
+            )}
+
+            {mode === "signup" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-confirm">Повторите пароль</Label>
+                <Input
+                  id="auth-confirm"
+                  type="password"
+                  autoComplete="new-password"
+                  required
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Повторите пароль"
+                  className="touch-target"
+                />
+              </div>
+            )}
+
+            <Button type="submit" disabled={submitting} className="touch-target w-full">
+              {mode === "signin" && (
+                <>
+                  <LogIn className="mr-2 h-4 w-4" />
+                  {submitting ? "Вход..." : "Войти"}
+                </>
+              )}
+              {mode === "signup" && (
+                <>
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  {submitting ? "Создание..." : "Зарегистрироваться"}
+                </>
+              )}
+              {mode === "forgot" && (
+                <>
+                  <KeyRound className="mr-2 h-4 w-4" />
+                  {submitting ? "Отправка..." : "Отправить ссылку сброса"}
+                </>
+              )}
+            </Button>
+          </form>
+        </div>
+
+        <div className="panel-surface flex items-start gap-2.5 border-border/70 bg-surface-elevated/50 p-3 text-xs text-muted-foreground">
+          <Lock className="mt-0.5 h-4 w-4 shrink-0 text-status-approx" />
+          <p>
+            Доступ к разделам кампании закрыт до входа. Данные кампании на текущем этапе хранятся{" "}
+            <strong className="text-foreground">только локально в браузере</strong> — облачная
+            синхронизация пока не подключена.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
