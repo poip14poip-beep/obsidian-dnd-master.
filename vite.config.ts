@@ -10,15 +10,18 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 const isGitHubPagesBuild = process.env.GITHUB_PAGES === "true";
+const isSupabaseStaticBuild = process.env.GITHUB_STATIC_SITE === "true";
 const githubPagesBase = "/obsidian-dnd-master./";
+const supabaseStaticBase = "/functions/v1/obsidian-app/";
+const appBase = isSupabaseStaticBuild ? supabaseStaticBase : githubPagesBase;
 
 export default defineConfig({
-  ...(isGitHubPagesBuild ? { vite: { base: githubPagesBase } } : {}),
+  ...(isGitHubPagesBuild || isSupabaseStaticBuild ? { vite: { base: appBase } } : {}),
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     server: { entry: "server" },
-    ...(isGitHubPagesBuild
-      ? { spa: { enabled: true }, router: { basepath: githubPagesBase.slice(0, -1) } }
+    ...(isGitHubPagesBuild || isSupabaseStaticBuild
+      ? { spa: { enabled: true }, router: { basepath: appBase.slice(0, -1) } }
       : {}),
   },
 });
