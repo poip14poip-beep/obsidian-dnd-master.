@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { CertaintyStatus } from "@/domain/types";
+import { extractDossierBasics } from "@/domain/dossier-parser";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/character")({
@@ -65,6 +66,7 @@ function CharacterPage() {
   );
   const [statsCertainty, setStatsCertainty] = useState<CertaintyStatus>(character.statsCertainty);
   const [notes, setNotes] = useState(character.notes);
+  const [dossierImportSummary, setDossierImportSummary] = useState<string[]>([]);
 
   const [resName, setResName] = useState("");
   const [resCur, setResCur] = useState("");
@@ -88,6 +90,26 @@ function CharacterPage() {
   }, [character]);
 
   const dossier = sources.find((s) => s.id === character.sourceDossierId);
+
+  function handleImportDossier() {
+    if (!dossier || dossier.contentStatus !== "ATTACHED") {
+      toast.error("Сначала загрузите досье персонажа в разделе «Источники».");
+      return;
+    }
+    const extracted = extractDossierBasics(dossier.content);
+    if (extracted.evidence.length === 0) {
+      toast.error("В досье не найдена распознаваемая сводка характеристик. Заполните лист вручную.");
+      return;
+    }
+    if (extracted.name) setName(extracted.name);
+    if (extracted.speciesAndClass) setSpeciesAndClass(extracted.speciesAndClass);
+    if (extracted.level !== null) setLevelStr(String(extracted.level));
+    if (extracted.hitPointMaximum !== null) setHpMaxStr(String(extracted.hitPointMaximum));
+    if (extracted.armorClass !== null) setAcStr(String(extracted.armorClass));
+    setStatsCertainty("KNOWN");
+    setDossierImportSummary(extracted.evidence);
+    toast.success("Подтянуты только явно найденные значения. Текущие HP, инвентарь и неизвестные поля не заполнены.");
+  }
 
   function handleSaveSheet(e: FormEvent) {
     e.preventDefault();
@@ -209,7 +231,7 @@ function CharacterPage() {
           <h2 className="text-sm font-semibold text-foreground">Основные параметры</h2>
           <CertaintyBadge status={character.statsCertainty} />
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {dossier?.contentStatus === "ATTACHED" && <div className="space-y-2 rounded border border-primary/30 bg-primary/5 p-3"><p className="text-xs text-muted-foreground">В досье обнаружены исходные данные. Импорт не меняет канон мира и не запускает кампанию.</p><Button type="button" variant="secondary" className="touch-target" onClick={handleImportDossier}>Извлечь данные из досье</Button>{dossierImportSummary.length > 0 && <ul className="space-y-1 text-xs text-muted-foreground">{dossierImportSummary.map((item) => <li key={item}>· {item}</li>)}</ul>}</div>}\n        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="pc-name">Имя персонажа</Label>
             <Input
@@ -229,7 +251,7 @@ function CharacterPage() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pc-lvl">Уровень (1–20, пусто = UNKNOWN)</Label>
+            <Label htmlFor="pc-lvl">Уровень (1–20; 21 только с эпическим домашним правилом)</Label>
             <Input
               id="pc-lvl"
               inputMode="numeric"
