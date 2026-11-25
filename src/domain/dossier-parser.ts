@@ -78,26 +78,26 @@ export function extractDossierBasics(text: string): DossierBasics {
   };
   const saveRows = section("9.2.", "9.3.");
   const saveValues = saveRows.map((line) => line.split("|").map((cell) => cell.trim()))
-    .find((cells) => cells.length >= 6 && cells.slice(0, 6).every((cell) => /^[+-]\\d+$/.test(cell)));
+    .find((cells) => cells.length >= 6 && cells.slice(0, 6).every((cell) => /^[+-]\d+$/.test(cell)));
   const savingThrowBonuses = saveValues ? {
     strength: Number(saveValues[0]), dexterity: Number(saveValues[1]), constitution: Number(saveValues[2]),
     intelligence: Number(saveValues[3]), wisdom: Number(saveValues[4]), charisma: Number(saveValues[5]),
   } : null;
   const skillBonuses = section("9.3.", "9.4.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 3 || !cells[0] || !/^[+-]\\d+$/.test(cells[1])) return [];
+    if (cells.length < 3 || !cells[0] || !/^[+-]\d+$/.test(cells[1])) return [];
     if (/^навык$/i.test(cells[0])) return [];
     return [{ name: cells[0], bonus: Number(cells[1]), basis: cells.slice(2).join(" | ") }];
   });
   const classFeaturesByLevel = section("9.4.", "9.5.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 2 || !/^\\d{1,2}$/.test(cells[0])) return [];
+    if (cells.length < 2 || !/^\d{1,2}$/.test(cells[0])) return [];
     const level = Number(cells[0]);
     return level >= 1 && level <= 20 && cells[1] ? [{ level, features: cells.slice(1).join(" | ") }] : [];
   });
   const weaponAttacks = section("9.5.", "10.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 4 || !/^[+-]\\d+$/.test(cells[1]) || /^оружие$/i.test(cells[0])) return [];
+    if (cells.length < 4 || !/^[+-]\d+$/.test(cells[1]) || /^оружие$/i.test(cells[0])) return [];
     return [{ weapon: cells[0], attackBonus: Number(cells[1]), damage: cells[2], mastery: cells[3] }];
   });
   const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
