@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange } from "./types";
 
 export interface GameMasterContext {
   action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -9,6 +9,7 @@ export interface GameMasterTurn {
   narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   rolls: Array<{ label: string; formula: string; result: string }>;
+  npcChanges: NpcTurnChange[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
     resources: Array<{ name: string; current: number | null; max: number | null; recovery: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -89,12 +90,12 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
       source, ...paragraph,
       score: terms.reduce((score, term) => score + (paragraph.text.toLocaleLowerCase().includes(term) ? 1 : 0), 0),
     }));
-  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+  }).filter((item) => item["score"] > 0).sort((a, b) => b.score - a.score).slice(0, 8);
   const factText = facts.filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
     .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\n");
   return [
     ranked.length ? ranked.map((item) =>
-      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; строки ${item.startLine}–${item.endLine}]\n${item.text}`,
+      `[ИСТОЧНИК: ${item["source"].title}; sourceId=${item["source"].id}; строки ${item["startLine"]}–${item["endLine"]}]\n${item["text"]}`,
     ).join("\n\n") : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
     factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : "",
   ].filter(Boolean).join("\n\n");
@@ -118,11 +119,11 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
   if (strings.some((key) => typeof turn[key] !== "string") || !Number.isInteger(turn["timeDeltaMinutes"]) ||
-    (turn.timeDeltaMinutes as number) < 0 || !Number.isInteger(turn["hpDelta"]) || (turn["newLocationId"] !== null && typeof turn.newLocationId !== "string") || typeof turn["needsClarification"] !== "boolean" ||
+    (turn["timeDeltaMinutes"] as number) < 0 || !Number.isInteger(turn["hpDelta"]) || (turn["newLocationId"] !== null && typeof turn["newLocationId"] !== "string") || typeof turn["needsClarification"] !== "boolean" ||
     !Array.isArray(turn["rolls"]) || !Array.isArray(turn["stateNotes"]))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
   if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
-  for (const npc of turn.npcChanges as Array<Record<string, unknown>>) {
+  for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc.action)) || typeof npc.name !== "string" || !npc.name.trim() ||
         typeof npc.role !== "string" || typeof npc.goals !== "string" || typeof npc.attitudeToPlayer !== "string" ||
         (npc.locationName !== null && typeof npc.locationName !== "string") ||
@@ -139,7 +140,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
       }
     }
   }
-  if (typeof turn.newLocationId === "string" && !knownLocations.some((location) => location.id === turn.newLocationId)) {
+  if (typeof turn["newLocationId"] === "string" && !knownLocations.some((location) => location.id === turn["newLocationId"])) {
     throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");
   }
   const changes = turn["characterChanges"] as Record<string, unknown> | undefined;
@@ -148,20 +149,20 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
     throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
   }
   for (const item of changes.inventory as Array<Record<string, unknown>>) {
-    if (!["ADD", "REMOVE", "SET"].includes(String(item.action)) || typeof item.name !== "string" ||
-        !item.name.trim() || !Number.isInteger(item.quantity) ||
-        (item.action === "SET" ? (item.quantity as number) < 0 : (item.quantity as number) < 1) ||
-        typeof item.notes !== "string" || !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(item.certainty))) {
+    if (!["ADD", "REMOVE", "SET"].includes(String(item["action"])) || typeof item["name"] !== "string" ||
+        !item["name"].trim() || !Number.isInteger(item["quantity"]) ||
+        (item["action"] === "SET" ? (item["quantity"] as number) < 0 : (item["quantity"] as number) < 1) ||
+        typeof item["notes"] !== "string" || !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(item["certainty"]))) {
       throw new GameMasterError("Некорректное изменение инвентаря в ответе мастера.", "INVALID_INVENTORY_CHANGE");
     }
   }
   for (const resource of changes.resources as Array<Record<string, unknown>>) {
-    if (typeof resource.name !== "string" || !resource.name.trim() ||
-        (resource.current !== null && (!Number.isInteger(resource.current) || (resource.current as number) < 0)) ||
-        (resource.max !== null && (!Number.isInteger(resource.max) || (resource.max as number) < 0)) ||
-        (resource.current !== null && resource.max !== null && (resource.current as number) > (resource.max as number)) ||
-        typeof resource.recovery !== "string" ||
-        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(resource.certainty))) {
+    if (typeof resource["name"] !== "string" || !resource["name"].trim() ||
+        (resource["current"] !== null && (!Number.isInteger(resource["current"]) || (resource["current"] as number) < 0)) ||
+        (resource["max"] !== null && (!Number.isInteger(resource["max"]) || (resource["max"] as number) < 0)) ||
+        (resource["current"] !== null && resource["max"] !== null && (resource["current"] as number) > (resource["max"] as number)) ||
+        typeof resource["recovery"] !== "string" ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(resource["certainty"]))) {
       throw new GameMasterError("Некорректное изменение ресурса в ответе мастера.", "INVALID_RESOURCE_CHANGE");
     }
   }
@@ -170,18 +171,18 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
     if (!Number.isInteger(currency[coin])) throw new GameMasterError("Некорректное изменение валюты.", "INVALID_CURRENCY_CHANGE");
   }
   for (const condition of changes.conditions as Array<Record<string, unknown>>) {
-    if (!["ADD", "REMOVE"].includes(String(condition.action)) || typeof condition.name !== "string" || !condition.name.trim()) {
+    if (!["ADD", "REMOVE"].includes(String(condition["action"])) || typeof condition["name"] !== "string" || !condition["name"].trim()) {
       throw new GameMasterError("Некорректное изменение состояния персонажа.", "INVALID_CONDITION_CHANGE");
     }
   }
-  for (const roll of turn.rolls as Array<Record<string, unknown>>) {
-    if (typeof roll.label !== "string" || typeof roll.formula !== "string" ||
-        roll.result !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+  for (const roll of turn["rolls"] as Array<Record<string, unknown>>) {
+    if (typeof roll["label"] !== "string" || typeof roll["formula"] !== "string" ||
+        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
     }
   }
-  const hasPendingRoll = (turn.rolls as Array<Record<string, unknown>>).length > 0;
-  if ((turn.needsClarification || hasPendingRoll) && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0 ||
+  const hasPendingRoll = (turn["rolls"] as Array<Record<string, unknown>>).length > 0;
+  if ((turn["needsClarification"] || hasPendingRoll) && ((turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
       (changes.inventory as unknown[]).length > 0 || (changes.resources as unknown[]).length > 0 ||
       (changes.conditions as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
     throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
@@ -234,8 +235,8 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   } catch { throw new GameMasterError("Не удалось подключиться к API модели. Проверь интернет-соединение.", "NETWORK_ERROR"); }
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
-    const err = payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : null;
-    const detail = err && typeof err === "object" && typeof (err as Record<string, unknown>).message === "string"
+    const err = payload && typeof payload === "object" ? (payload as Record<string, unknown>)["error"] : null;
+    const detail = err && typeof err === "object" && typeof (err as Record<string, unknown>)["message"] === "string"
       ? (err as { message: string }).message : "API отклонил запрос.";
     throw new GameMasterError(detail, "MODEL_API_ERROR");
   }
@@ -243,6 +244,6 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   try { parsed = JSON.parse(extractOutputText(payload)); }
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
-  const usage = record["usage"] && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
+  const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   return { turn: validateTurn(parsed, context.locations), model, ...(usage ? { usage } : {}) };
 }

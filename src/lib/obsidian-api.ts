@@ -47,8 +47,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function errorFromUnknown(value: unknown, fallback: string): ObsidianApiError {
   if (isRecord(value)) {
-    const code = typeof value["error"] === "string" ? value.error : "API_ERROR";
-    const detail = typeof value["detail"] === "string" ? value.detail : undefined;
+    const code = typeof value["error"] === "string" ? value["error"] : "API_ERROR";
+    const detail = typeof value["detail"] === "string" ? value["detail"] : undefined;
     return {
       code,
       message: detail || code || fallback,
