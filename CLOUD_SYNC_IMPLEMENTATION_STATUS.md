@@ -95,10 +95,10 @@ Updated: 2026-11-25 12:16 UTC
   - `src/components/AppShell.tsx`: visible guest-mode labeling and local-storage warning.
   - `src/auth/auth-guard.ts`: an unconfigured visitor is routed to `/auth`; protected routes are not silently unlocked before the player opts into guest mode.
   - `src/auth/auth-guard.test.ts`: tests for explicit guest entry and protected-route behavior.
-- These guest-entry commits have been read back from GitHub, but a new CI run for them has not yet been observed. Do not mark this change set verified until CI passes.
+- The guest-entry change set passed GitHub Actions run `45613859962` on code commit `549ceee9bb07023d1c57851cbbd5783e7253b786`: `bun run test`, `bunx tsc --noEmit`, and `bun run build` all succeeded. The later documentation-only status commit does not change application code.
 - Branches `main` and `cloud-api-client` are diverged (20 commits on main not in this branch; 86 commits on this branch not in main at comparison time). No merge or force-push was performed.
 - The existing Lovable project is still `needs_attention / out_of_credits`; no replacement project was created.
 - Supabase currently lists only the active `obsidian-api` Edge Function. The newer static-site branch references `/functions/v1/obsidian-app`, but that function is not deployed. Its current `index.html` is an SSR configuration-error shell (“Supabase Auth не настроен”), not a verified playable deployment. Do not give that branch to the player as a live game.
 - The current GM still requires a user-supplied OpenAI API key in the browser. No server-side OpenAI proxy/secret has been configured; this is a runtime prerequisite and potential cost to the user.
 - The app remains NOT READY for play until the full source import, character review, setup gate, actual AI action/roll/commit cycle, durable save/restore, Android acceptance, and a working access URL have all been verified.
-- First CI attempt for the guest-entry change exposed one stale regression expectation in `src/test/auth-guard.test.tsx` (it expected unconfigured protected routes to be silently allowed). The assertion has been corrected to require redirect to explicit guest consent. The corrective commit is `549ceee9bb07023d1c57851cbbd5783e7253b786`; CI for the updated HEAD is pending.
+- First CI attempt exposed one stale regression expectation in `src/test/auth-guard.test.tsx`; it was corrected to require explicit guest consent. The corrective code commit `549ceee9bb07023d1c57851cbbd5783e7253b786` passed run `45613859962` with tests, typecheck, and build green.
