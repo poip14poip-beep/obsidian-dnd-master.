@@ -40,6 +40,15 @@ describe("game master resolver", () => {
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
+  it("does not send a verified but context-disabled world source to the model", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    const sources = context.sources.map((item) => item.type === "WORLD_CANON"
+      ? { ...item, contextEnabled: false }
+      : item);
+    await resolvePlayerAction("sk-test", { ...context, sources }, { fetcher: fetcher as unknown as typeof fetch });
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    expect(request.input).not.toContain("Каменная дверь у старого города");
+  });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
