@@ -55,14 +55,14 @@ export function extractDossierBasics(text: string): DossierBasics {
     else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
     if (!inventoryLocation || !line.includes("|")) continue;
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]!) || /^(?:предмет|оружие)$/i.test(cells[1]!)) continue;
-    const quantityText = cells[0]!;
+    if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]!!) || /^(?:предмет|оружие)$/i.test(cells[1]!!)) continue;
+    const quantityText = cells[0]!!;
     const quantityMatch = quantityText.match(/^(\d+)(?!\s*[–—-])/);
     if (!quantityMatch || /[–—-]/.test(quantityText) || /дня|дней|недел/i.test(quantityText)) continue;
     if (!quantityMatch) continue;
     const quantity = Number(quantityMatch[1]!);
     if (!Number.isInteger(quantity) || quantity < 1) continue;
-    const name = cells[1]!.replace(/^["«]|["»]$/g, "").trim();
+    const name = cells[1]!!.replace(/^["«]|["»]$/g, "").trim();
     if (!name) continue;
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
@@ -85,20 +85,20 @@ export function extractDossierBasics(text: string): DossierBasics {
   } : null;
   const skillBonuses = section("9.3.", "9.4.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 3 || !cells[0] || !/^[+-]\d+$/.test(cells[1])) return [];
-    if (/^навык$/i.test(cells[0])) return [];
-    return [{ name: cells[0], bonus: Number(cells[1]!), basis: cells.slice(2).join(" | ") }];
+    if (cells.length < 3 || !cells[0]! || !/^[+-]\d+$/.test(cells[1]!)) return [];
+    if (/^навык$/i.test(cells[0]!)) return [];
+    return [{ name: cells[0]!, bonus: Number(cells[1]!!), basis: cells.slice(2).join(" | ") }];
   });
   const classFeaturesByLevel = section("9.4.", "9.5.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 2 || !/^\d{1,2}$/.test(cells[0])) return [];
-    const level = Number(cells[0]!);
-    return level >= 1 && level <= 20 && cells[1] ? [{ level, features: cells.slice(1).join(" | ") }] : [];
+    if (cells.length < 2 || !/^\d{1,2}$/.test(cells[0]!)) return [];
+    const level = Number(cells[0]!!);
+    return level >= 1 && level <= 20 && cells[1]! ? [{ level, features: cells.slice(1).join(" | ") }] : [];
   });
   const weaponAttacks = section("9.5.", "10.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
-    if (cells.length < 4 || !/^[+-]\d+$/.test(cells[1]) || /^оружие$/i.test(cells[0])) return [];
-    return [{ weapon: cells[0], attackBonus: Number(cells[1]), damage: cells[2], mastery: cells[3] }];
+    if (cells.length < 4 || !/^[+-]\d+$/.test(cells[1]!) || /^оружие$/i.test(cells[0]!)) return [];
+    return [{ weapon: cells[0]!, attackBonus: Number(cells[1]!), damage: cells[2]!, mastery: cells[3]! }];
   });
   const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
   const resources: DossierResource[] = [];

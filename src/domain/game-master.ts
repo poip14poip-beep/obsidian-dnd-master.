@@ -106,11 +106,11 @@ function extractOutputText(payload: unknown): string {
   if (typeof record["output_text"] === "string") return record["output_text"] as string;
   for (const item of Array.isArray(record["output"]) ? record["output"] : []) {
     if (!item || typeof item !== "object") continue;
-    const content = (item as Record<string, unknown>).content;
+    const content = (item as Record<string, unknown>)["content"];
     if (!Array.isArray(content)) continue;
     for (const part of content) if (part && typeof part === "object" &&
-      (part as Record<string, unknown>).type === "output_text" && typeof (part as Record<string, unknown>).text === "string")
-      return (part as Record<string, unknown>).text as string;
+      (part as Record<string, unknown>)["type"] === "output_text" && typeof (part as Record<string, unknown>)["text"] === "string")
+      return (part as Record<string, unknown>)["text"] as string;
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
