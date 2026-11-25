@@ -28,7 +28,6 @@ function resolvePath(pathname: string): string | null {
   if (suffix.includes("\\") || suffix.split("/").includes("..")) return null;
   return suffix.replace(/^\/+/, "") || "index.html";
 }
-
 function contentType(path: string): string {
   if (path === "index.html" || path === "404.html") return "text/html; charset=utf-8";
   const leaf = path.split("/").pop() ?? "";
@@ -37,21 +36,18 @@ function contentType(path: string): string {
 }
 
 async function serveAsset(path: string): Promise<Response> {
-  const upstream = await fetch(`${STATIC_ROOT}/${path}`, {
-    headers: { "User-Agent": "Obsidian-Static-Host/1.3" },
-  });
+  const upstream = await fetch(`${STATIC_ROOT}/${path}`);
   if (!upstream.ok) return upstream;
   const type = contentType(path);
-  const body = type.startsWith("text/html")
-    ? new Blob([await upstream.text()], { type })
-    : new Blob([await upstream.arrayBuffer()], { type });
-  const headers = new Headers(COMMON);
-  headers.set("Content-Type", type);
-  headers.set("Content-Disposition", "inline");
-  headers.set("Cache-Control", path === "index.html" || path === "404.html"
+  const bytes = await upstream.arrayBuffer();
+  const response = new Response(bytes, { status: 200 });
+  response.headers.set("Content-Type", type);
+  response.headers.set("Content-Disposition", "inline");
+  response.headers.set("Cache-Control", path === "index.html" || path === "404.html"
     ? "no-store, no-cache, must-revalidate" : "public, max-age=3600");
-  headers.set("X-Obsidian-Static-Host", "v5");
-  return new Response(body, { status: 200, headers });
+  for (const [key, value] of Object.entries(COMMON)) response.headers.set(key, value);
+  response.headers.set("X-Obsidian-Static-Host", "v6");
+  return response;
 }
 
 Deno.serve(async (request: Request) => {
@@ -66,7 +62,8 @@ Deno.serve(async (request: Request) => {
     if (!response.ok && !path.includes(".")) response = await serveAsset("index.html");
     if (!response.ok) return new Response("Static asset not found", { status: 404, headers: { ...COMMON, "Cache-Control": "no-store" } });
     if (request.method === "HEAD") return new Response(null, { status: response.status, headers: response.headers });
-    return response;
+    // Re-wrap the body after all response headers are finalized.
+    return new Response(response.body, { status: response.status, headers: response.headers });
   } catch (error) {
     console.error("obsidian-app static host failed", error);
     return new Response("Static app temporarily unavailable", { status: 502, headers: { ...COMMON, "Cache-Control": "no-store" } });
