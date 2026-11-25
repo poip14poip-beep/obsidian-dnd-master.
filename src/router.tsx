@@ -8,9 +8,9 @@ export const getRouter = () => {
 
   const router = createRouter({
     routeTree,
-    ...(import.meta.env.VITE_GITHUB_STATIC_SITE === "true"
+    ...(import.meta.env["VITE_GITHUB_STATIC_SITE"] === "true"
       ? { basepath: "/functions/v1/obsidian-app" }
-      : import.meta.env.VITE_GITHUB_PAGES === "true"
+      : import.meta.env["VITE_GITHUB_PAGES"] === "true"
         ? { basepath: "/obsidian-dnd-master." }
         : {}),
     context: { queryClient },
