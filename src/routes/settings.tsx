@@ -343,7 +343,7 @@ function SettingsPage() {
                 disabled={s.confirmed}
                 className="touch-target"
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Конкретная точка старта UNKNOWN; выбери её сам.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Генератор выбирает новую стартовую точку; точный предыдущий маршрут и причина прибытия остаются UNKNOWN.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
@@ -379,9 +379,9 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             Персонаж: <strong className="text-foreground">{character.name}</strong> · Класс/вид:{" "}
             {character.speciesAndClass} · Статус параметров: {character.statsCertainty}. Контур
-            player_character_state изолирован от world_state. Перед стартом имя и базовые боевые параметры должны быть заполнены. Текущие HP досье не задаёт: их нужно указать вручную.
+            player_character_state изолирован от world_state. Перед стартом имя и базовые боевые параметры должны быть заполнены. Досье задаёт максимум 184 HP; текущее значение устанавливается генератором случайного старта.
           </p>
-          {character.hpCurrent === null && <p className="rounded border border-status-approx/40 bg-background/60 p-2 text-xs text-status-approx">Текущие HP: UNKNOWN. В досье указано только 184 максимальных HP. Введи текущее значение на странице персонажа перед стартом.</p>}
+          {character.hpCurrent === null && <p className="rounded border border-status-approx/40 bg-background/60 p-2 text-xs text-status-approx">Текущие HP: UNKNOWN. В досье указано только 184 максимальных HP. Сначала создай случайный старт — генератор установит текущее значение.</p>}
           <p className="text-[11px] text-muted-foreground">Готовность: HP {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"} · КД {character.armorClass ?? "UNKNOWN"} · PB {character.proficiencyBonus ?? "UNKNOWN"} · характеристики {character.abilityScores ? "есть" : "UNKNOWN"}.</p>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
             <Checkbox
