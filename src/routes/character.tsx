@@ -133,6 +133,10 @@ function CharacterPage() {
       ...(extracted.proficiencyBonus !== null ? { proficiencyBonus: extracted.proficiencyBonus } : {}),
       ...(extracted.speedFeet !== null ? { speedFeet: extracted.speedFeet } : {}),
       ...(extracted.hitDice ? { hitDice: extracted.hitDice } : {}),
+      ...(extracted.savingThrowBonuses ? { savingThrowBonuses: extracted.savingThrowBonuses } : {}),
+      ...(extracted.skillBonuses.length ? { skillBonuses: extracted.skillBonuses } : {}),
+      ...(extracted.classFeaturesByLevel.length ? { classFeaturesByLevel: extracted.classFeaturesByLevel } : {}),
+      ...(extracted.weaponAttacks.length ? { weaponAttacks: extracted.weaponAttacks } : {}),
       ...(importedInventory.length > 0 ? { inventory: importedInventory } : {}),
       ...(extracted.resources.length > 0 ? { resources: extracted.resources.map((resource, index) => ({ id: `dossier-resource-${index + 1}`, ...resource })) } : {}),
       statsCertainty: "KNOWN",
@@ -445,6 +449,32 @@ function CharacterPage() {
               ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma],
             ] as const).map(([label, value]) => <div key={label} className="rounded border border-border bg-background/60 p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code text-lg font-semibold">{value}</p><p className="mono-code text-xs text-muted-foreground">{value >= 10 ? "+" : ""}{Math.floor((value - 10) / 2)}</p></div>)}
           </div>
+        </section>
+      )}
+
+      {(character.savingThrowBonuses || character.skillBonuses?.length || character.classFeaturesByLevel?.length || character.weaponAttacks?.length) && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Подробности листа из досье</h2>
+          {character.savingThrowBonuses && <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Спасброски</p>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {([["СИЛ", character.savingThrowBonuses.strength], ["ЛОВ", character.savingThrowBonuses.dexterity], ["ТЕЛ", character.savingThrowBonuses.constitution], ["ИНТ", character.savingThrowBonuses.intelligence], ["МДР", character.savingThrowBonuses.wisdom], ["ХАР", character.savingThrowBonuses.charisma]] as const).map(([label, value]) => <div key={label} className="rounded border border-border p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code font-semibold">{value >= 0 ? "+" : ""}{value}</p></div>)}
+            </div>
+          </div>}
+          {character.skillBonuses && character.skillBonuses.length > 0 && <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Навыки</p>
+            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+              {character.skillBonuses.map((skill) => <div key={skill.name} className="flex justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><span>{skill.name}<span className="ml-1 text-muted-foreground">· {skill.basis}</span></span><strong className="mono-code">{skill.bonus >= 0 ? "+" : ""}{skill.bonus}</strong></div>)}
+            </div>
+          </div>}
+          {character.weaponAttacks && character.weaponAttacks.length > 0 && <div className="space-y-1">
+            <p className="text-xs font-medium text-muted-foreground">Оружие и Weapon Mastery</p>
+            {character.weaponAttacks.map((attack) => <div key={attack.weapon} className="flex flex-wrap justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><strong>{attack.weapon}</strong><span>Атака <span className="mono-code">{attack.attackBonus >= 0 ? "+" : ""}{attack.attackBonus}</span> · {attack.damage} · Mastery: {attack.mastery}</span></div>)}
+          </div>}
+          {character.classFeaturesByLevel && character.classFeaturesByLevel.length > 0 && <details className="rounded border border-border p-2">
+            <summary className="cursor-pointer text-xs font-medium">Особенности класса по уровням ({character.classFeaturesByLevel.length})</summary>
+            <div className="mt-2 space-y-1">{character.classFeaturesByLevel.map((feature) => <p key={feature.level} className="text-xs"><span className="mono-code text-muted-foreground">{feature.level} ур.</span> · {feature.features}</p>)}</div>
+          </details>}
         </section>
       )}
 
