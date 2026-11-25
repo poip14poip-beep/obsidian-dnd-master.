@@ -8,7 +8,11 @@ export const getRouter = () => {
 
   const router = createRouter({
     routeTree,
-    ...(import.meta.env.VITE_GITHUB_PAGES === "true" ? { basepath: "/obsidian-dnd-master." } : {}),
+    ...(import.meta.env.VITE_GITHUB_STATIC_SITE === "true"
+      ? { basepath: "/functions/v1/obsidian-app" }
+      : import.meta.env.VITE_GITHUB_PAGES === "true"
+        ? { basepath: "/obsidian-dnd-master." }
+        : {}),
     context: { queryClient },
     scrollRestoration: true,
     // Lets Query own freshness; set caching defaults on the QueryClient, not the router.
