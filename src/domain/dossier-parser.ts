@@ -18,7 +18,7 @@ export interface DossierBasics {
   resources: DossierResource[];
   evidence: string[];
 }
-/** Extracts only explicit summary values; current HP, inventory and origin are never inferred. */
+/** Extracts explicit sheet values and item rows; current HP, coin balance and origin are never inferred. */
 export function extractDossierBasics(text: string): DossierBasics {
   const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const name = lines.find((line) => /^[А-ЯЁ][А-ЯЁ\s-]{2,}$/u.test(line))?.replace(/\s+/g, " ") ?? null;
