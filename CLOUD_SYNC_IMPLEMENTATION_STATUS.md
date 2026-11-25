@@ -13,13 +13,13 @@ Updated: 2026-11-25 12:16 UTC
   - Лия dossier DOCX: `ed55f68735a7a32e1c0a03ca6b474de41bfae2d0f380330d3d51f92623f45ba2`
 - GitHub repository: `poip14poip-beep/obsidian-dnd-master.` (the trailing period is part of its name).
 - Continue only on `cloud-api-client`; do not force-push, rewrite history, merge into `main`, or publish without explicit approval.
-- Latest verified HEAD: `aa5df44132a03f25fdd0759ba7a502ff4bc474e0`.
+- Latest verified HEAD: `8b67cfdfb51cdf118b4b9b3b77d3311242ef0f2f`.
 
 ## Implemented in the existing application
 - Existing React/TypeScript mobile-first app, routes, local state, source ingestion, canon index, DOCX extraction, dossier parser, GM structured output, turn drafts, validation, local append-only journal, and Markdown/JSON exports remain the base. This work does not replace them.
 - `src/domain/cloud-mappers.ts`: typed mapping primitives for source metadata, campaign settings, separate world state, player-character state, NPCs, and NPC knowledge. Deterministic UUIDv8 IDs are scoped by campaign + collection + local ID. Missing source/location relationships fail explicitly.
 - `src/components/CloudCampaignPanel.tsx`: Settings integration for explicit cloud campaign creation and read-only bootstrap by UUID. It does not import into or overwrite local state.
-- `obsidian-api` Edge Function is ACTIVE v3 with `verify_jwt=true`. The actor is derived from verified JWT identity. The temporary `list_campaigns` action was removed because the private `obsidian` schema is intentionally not exposed through the Data API. Do not query that schema directly from the browser.
+- `obsidian-api` Edge Function is ACTIVE v3 with `verify_jwt=true`; its deployed source is now versioned at `supabase/functions/obsidian-api/index.ts`. The actor is derived from verified JWT identity. The temporary `list_campaigns` action was removed because the private `obsidian` schema is intentionally not exposed through the Data API. Do not query that schema directly from the browser.
 - Source trust lifecycle added:
   - attached content is `UNREVIEWED` and excluded from AI context by default;
   - processing and SHA-256 are separate from human verification;
@@ -43,8 +43,8 @@ Updated: 2026-11-25 12:16 UTC
 - No campaign, character, or game-turn records were created by this implementation work.
 
 ## CI verification
-- Latest verified HEAD: `aa5df44132a03f25fdd0759ba7a502ff4bc474e0`.
-- GitHub Actions run `45611990733`: SUCCESS.
+- Latest verified HEAD: `8b67cfdfb51cdf118b4b9b3b77d3311242ef0f2f`.
+- GitHub Actions run `45612165550`: SUCCESS.
 - `bun run test`, `bunx tsc --noEmit`, and `bun run build` all passed.
 - Earlier intermediate commits in this source-review change set had failing CI while the store context and types were being wired. The latest HEAD above passed all three required checks.
 
