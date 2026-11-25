@@ -9,6 +9,28 @@ describe("player dossier summary extraction", () => {
     expect(result.armorClass).toBe(20);
     expect(result.speciesAndClass).toContain("Fighter 20");
   });
+  it("extracts ability scores and inventory rows from DOCX table text", () => {
+    const result = extractDossierBasics([
+      "ЛИЯ ВЕЙН",
+      "Сила | Ловкость | Телосложение | Интеллект | Мудрость | Харизма",
+      "20 (+5) | 16 (+3) | 16 (+3) | 18 (+4) | 14 (+2) | 16 (+3)",
+      "Бонус мастерства | +6",
+      "Скорость | 30 футов",
+      "Кость хитов | 20d10",
+      "11.1. Надетые предметы",
+      "1 | Кожа Последнего Часа | Лёгкий доспех",
+      "1 | Cloak of Protection | +1 КБ",
+      "11.2. Оружие и обслуживание",
+      "1 | Катана в ножнах | Основное оружие",
+    ].join("\\n"));
+    expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
+    expect(result.proficiencyBonus).toBe(6);
+    expect(result.speedFeet).toBe(30);
+    expect(result.hitDice).toBe("20d10");
+    expect(result.inventory).toHaveLength(3);
+    expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN" });
+    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED" });
+  });
   it("does not invent missing values", () => {
     const result = extractDossierBasics("Персонаж\nБиография без игровых характеристик.");
     expect(result.hitPointMaximum).toBeNull();
