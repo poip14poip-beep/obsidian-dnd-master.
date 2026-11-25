@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { buildCampaignStateMarkdown, buildPlayerCharacterStateMarkdown, buildSessionLogMarkdown } from "@/domain/save-files";
+import { generateRandomStart } from "@/domain/random-start";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -38,6 +39,7 @@ function SettingsPage() {
     worldState,
     character,
     updateCampaignParameters,
+    applyGeneratedStart,
     confirmCampaignSetup,
     exportBackupJson,
     importBackupJson,
@@ -48,6 +50,7 @@ function SettingsPage() {
   const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode ?? "UNSET");
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
+  const [startNarrative, setStartNarrative] = useState(worldState.startNarrative ?? "");
   const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,7 +59,35 @@ function SettingsPage() {
     setEncumbranceMode(worldState.encumbranceMode ?? "UNSET");
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
+    setStartNarrative(worldState.startNarrative ?? "");
   }, [worldState]);
+
+  function handleGenerateRandomStart() {
+    try {
+      const generated = generateRandomStart();
+      const result = applyGeneratedStart({
+        city: generated.city,
+        date: generated.date,
+        narrative: generated.narrative,
+        locationDescription: generated.location.description,
+        generationRecord: generated.generationRecord,
+        characterPatch: generated.characterPatch,
+        inventory: generated.inventory,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setCampaignName("Экдрасиль — свободная кампания");
+      setCalendarSystem("Хронология Экдрасиля; точная календарная система UNKNOWN");
+      setStartInGameDate(generated.date);
+      setStartLocationName(generated.city.name);
+      setStartNarrative(generated.narrative);
+      toast.success(`Случайный старт создан: ${generated.city.name} · ${generated.hpCurrent}/184 HP. Задания не назначены.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать случайный старт.");
+    }
+  }
 
   function handleSaveParams() {
     const res = updateCampaignParameters({
@@ -257,7 +288,7 @@ function SettingsPage() {
                 placeholder="Единая письменная эра; год 0 — начало общей письменной эры"
                 className="touch-target"
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Конкретная точка старта UNKNOWN; выбери её сам.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Если не хочешь менять случайный результат, оставь город как сгенерирован. Досье не фиксирует предыдущий маршрут Лии в 2000 году.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
@@ -273,8 +304,22 @@ function SettingsPage() {
         {/* Step 3: Start point & date */}
         <div className="space-y-2.5 rounded-md border border-border bg-background/50 p-3">
           <h3 className="text-sm font-semibold text-foreground">
-            Шаг 3. Явная стартовая точка и дата
+            Шаг 3. Случайное начало свободной кампании
           </h3>
+          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение прежней биографии Лии.</p>
+          <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleGenerateRandomStart} disabled={s.confirmed || !sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED")}>
+            Сгенерировать случайную стартовую ситуацию
+          </Button>
+          {!sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED") && (
+            <p className="text-[11px] text-status-approx">Сначала прикрепи досье Лии в разделе «Источники», чтобы генератор не создавал лист персонажа без исходного документа.</p>
+          )}
+          {startNarrative && (
+            <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
+              <h4 className="text-sm font-semibold text-foreground">Сгенерированное начало</h4>
+              <p className="whitespace-pre-line text-xs leading-relaxed text-foreground">{startNarrative}</p>
+              <p className="text-[11px] text-muted-foreground">Проверь результат и отметь подтверждение стартовой точки и персонажа ниже. Повторная генерация заменит ещё не начатый старт.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="cfg-date">Стартовый год и точность даты</Label>
@@ -286,10 +331,10 @@ function SettingsPage() {
                 disabled={s.confirmed}
                 className="touch-target mono-code"
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">В досье Лии указан 2000 год, но точные день и время не установлены. Сохрани год как APPROXIMATE — не придумывай дату.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Год 2000 указан в досье. Точный день и время остаются UNKNOWN; генератор их не выдумывает.</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="cfg-loc">Стартовая локация (выбирается игроком)</Label>
+              <Label htmlFor="cfg-loc">Сгенерированная стартовая локация (можно изменить)</Label>
               <Input
                 id="cfg-loc"
                 value={startLocationName}
