@@ -1,9 +1,9 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent } from "./types";
 
 export interface GameMasterContext {
   action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
   canonFacts: CanonFact[]; npcs: NpcRecord[]; factions: FactionRecord[]; locations: LocationRecord[];
-  journal: Array<GameTurnEntry | TechnicalMessageEntry>;
+  journal: Array<GameTurnEntry | TechnicalMessageEntry>; timelineEvents: DelayedEvent[];
 }
 export interface GameMasterTurn {
   narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
@@ -206,7 +206,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     action: context.action, campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
-    knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations,
+    knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
     recentJournal: context.journal.slice(-12),
     requirements: [
       "Ответ narration должен соблюдать формат ОБСИДИАН 4.1 и быть на русском языке.",
@@ -215,6 +215,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "newInGameDate оставь текущей датой, если время не продвинулось.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
+      "Учитывай scheduledAndDelayedEvents: событие срабатывает только при пересечении его подтверждённого срока/условия. Не запускай его раньше и не игнорируй при пересечении. Если точный формат даты неизвестен, не угадывай — оставь событие ожидающим уточнения.",
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };
