@@ -124,7 +124,7 @@ function extractOutputText(payload: unknown): string {
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
-function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMasterTurn {
+function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[]): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
@@ -141,6 +141,22 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
         typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
+    }
+    const existingNpc = knownNpcs.find((item) => item.name.toLocaleLowerCase() === (npc["name"] as string).toLocaleLowerCase());
+    if (npc["action"] === "CREATE" && existingNpc) {
+      throw new GameMasterError("Мастер попытался создать дубликат NPC «" + npc["name"] + "». Для существующего персонажа используй UPDATE.", "DUPLICATE_NPC");
+    }
+    if (npc["action"] === "UPDATE" && !existingNpc) {
+      throw new GameMasterError("Мастер пытается обновить неизвестного NPC «" + npc["name"] + "».", "UNKNOWN_NPC_UPDATE");
+    }
+    if (npc["action"] === "UPDATE" && existingNpc?.locked) {
+      throw new GameMasterError("NPC «" + npc["name"] + "» закреплён и защищён от изменений. Сначала проверь его карточку и разблокируй вручную.", "LOCKED_NPC_CHANGE");
+    }
+    if (npc["locationName"] !== null && !knownLocations.some((item) => item.name.toLocaleLowerCase() === (npc["locationName"] as string).toLocaleLowerCase())) {
+      throw new GameMasterError("Для NPC «" + npc["name"] + "» указана неизвестная локация.", "UNKNOWN_NPC_LOCATION");
+    }
+    if (npc["factionName"] !== null && !knownFactions.some((item) => item.name.toLocaleLowerCase() === (npc["factionName"] as string).toLocaleLowerCase())) {
+      throw new GameMasterError("Для NPC «" + npc["name"] + "» указана неизвестная фракция.", "UNKNOWN_NPC_FACTION");
     }
     for (const knowledge of npc["knowledgeAdditions"] as Array<Record<string, unknown>>) {
       if (typeof knowledge["factSummary"] !== "string" || !knowledge["factSummary"].trim() ||
@@ -272,5 +288,5 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  return { turn: validateTurn(parsed, context.locations), model, ...(usage ? { usage } : {}) };
+  return { turn: validateTurn(parsed, context.locations, context.npcs, context.factions), model, ...(usage ? { usage } : {}) };
 }
