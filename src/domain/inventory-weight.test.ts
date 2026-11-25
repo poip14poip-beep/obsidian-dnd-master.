@@ -12,7 +12,7 @@ describe("player inventory weight", () => {
       { id: "c", name: "Книги", quantity: 2, notes: "", certainty: "KNOWN", location: "STORED", unitWeightLb: 5 },
       { id: "d", name: "Факел", quantity: 1, notes: "", certainty: "KNOWN", location: "DROPPED", unitWeightLb: 1 },
     ];
-    const result = calculatePlayerInventoryWeight(character);
+    const result = calculatePlayerInventoryWeight(character, "STANDARD");
     expect(result.knownCarriedWeightLb).toBe(16);
     expect(result.currencyWeightLb).toBe(1);
     expect(result.carryingCapacityLb).toBe(300);

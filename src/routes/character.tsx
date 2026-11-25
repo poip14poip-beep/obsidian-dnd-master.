@@ -44,6 +44,7 @@ function parseOptionalNonNegInt(raw: string): number | null | "INVALID" {
 function CharacterPage() {
   const {
     sources,
+    worldState,
     character,
     updatePlayerCharacter,
     addCharacterResource,
