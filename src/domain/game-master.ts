@@ -26,7 +26,8 @@ const turnSchema = {
   properties: {
     narration: { type: "string" }, summary: { type: "string" }, worldOutcome: { type: "string" },
     timeDeltaMinutes: { type: "integer" }, hpDelta: { type: "integer" }, newInGameDate: { type: "string" },
-    consequenceText: { type: "string" },\n    newLocationId: { type: ["string", "null"] },
+    consequenceText: { type: "string" },
+    newLocationId: { type: ["string", "null"] },
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
     }, required: ["label", "formula", "result"] } },
