@@ -31,6 +31,10 @@ export interface SourceDocument {
   targetPartition: "CAMPAIGN_STATE" | "PLAYER_CHARACTER_STATE" | "SYSTEM_RULES";
   originLabel: string;
   contentStatus: SourceContentStatus;
+  /** Explicit human review of the currently attached source content. */
+  reviewStatus?: SourceReviewStatus;
+  /** Only verified sources explicitly enabled here may enter the AI context. */
+  contextEnabled?: boolean;
   certainty: CertaintyStatus;
   fileName: string | null;
   content: string;
