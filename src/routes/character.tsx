@@ -218,17 +218,22 @@ function CharacterPage() {
       toast.error("Укажите название предмета и положительное количество.");
       return;
     }
+    const parsedWeight = invWeight.trim() ? Number(invWeight) : null;
+    if (parsedWeight !== null && (!Number.isFinite(parsedWeight) || parsedWeight < 0)) {
+      toast.error("Вес должен быть неотрицательным числом в фунтах.");
+      return;
+    }
     const res = addInventoryItem({
-      name: invName.trim(),
-      quantity: qty,
-      notes: invNotes.trim(),
-      certainty: "KNOWN",
+      name: invName.trim(), quantity: qty, notes: invNotes.trim(), certainty: "KNOWN",
+      location: invLocation, unitWeightLb: parsedWeight,
     });
     if (res.ok) {
       toast.success("Предмет добавлен в инвентарь.");
       setInvName("");
       setInvQty("1");
-      setInvNotes("");\n      setInvWeight("");\n      setInvLocation("CARRIED");
+      setInvNotes("");
+      setInvWeight("");
+      setInvLocation("CARRIED");
     } else {
       toast.error(res.error);
     }
