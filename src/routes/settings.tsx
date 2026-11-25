@@ -44,6 +44,7 @@ function SettingsPage() {
 
   const [campaignName, setCampaignName] = useState(worldState.campaignName);
   const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem);
+  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode);
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [importError, setImportError] = useState<string | null>(null);
@@ -51,6 +52,7 @@ function SettingsPage() {
   useEffect(() => {
     setCampaignName(worldState.campaignName);
     setCalendarSystem(worldState.calendarSystem);
+    setEncumbranceMode(worldState.encumbranceMode);
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
   }, [worldState]);
@@ -61,6 +63,7 @@ function SettingsPage() {
       calendarSystem: calendarSystem.trim() || "UNKNOWN",
       startInGameDate: startInGameDate.trim() || "UNKNOWN",
       startLocationName: startLocationName.trim() || "UNKNOWN",
+      encumbranceMode,
     });
     if (res.ok) {
       toast.success("Параметры подготовки сохранены.");
