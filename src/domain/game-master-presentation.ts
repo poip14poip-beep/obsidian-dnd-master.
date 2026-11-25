@@ -17,7 +17,7 @@ export function formatGameMasterAnswer(
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const region = known(location?.region);
   const date = known(world.currentInGameDate);
-  const timeMatch = date.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
+  const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
   const lines = [
     "════════════════════════════════════",
@@ -85,5 +85,5 @@ export function formatGameMasterAnswer(
     "────────────────────────────────────",
     turn.nextAction || "Что делает персонаж?",
   ];
-  return lines.join("\\n");
+  return lines.join("\n");
 }
