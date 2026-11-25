@@ -123,12 +123,13 @@ export function validateTurnDraft(
   if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {
     errors.push("Изменение игрового времени не может быть отрицательным.");
   }
-  if (
-    draft.hpDelta !== 0 &&
-    character.hpCurrent !== null &&
-    character.hpCurrent + draft.hpDelta < 0
-  ) {
+  if (draft.hpDelta !== 0 && character.hpCurrent === null) {
+    errors.push("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа.");
+  } else if (draft.hpDelta !== 0 && character.hpCurrent !== null && character.hpCurrent + draft.hpDelta < 0) {
     errors.push("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
+  } else if (draft.hpDelta > 0 && character.hpCurrent !== null && character.hpMax !== null &&
+    character.hpCurrent + draft.hpDelta > character.hpMax) {
+    errors.push("Итоговые HP не могут превышать максимум персонажа.");
   }
   if (draft.newFactTitle.trim() && !draft.newFactStatement.trim()) {
     errors.push("Для нового факта заполните формулировку утверждения.");
