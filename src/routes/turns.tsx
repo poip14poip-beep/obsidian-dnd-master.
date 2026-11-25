@@ -126,7 +126,16 @@ function TurnsPage() {
     }
   }
 
-  function handleSubmitPendingRoll() {\n    if (!gmTurn || !pendingRollResult.trim()) return;\n    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");\n    if (!pending) return;\n    const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;\n    setPlayerAction(action);\n    setPendingRollResult("");\n    void handleResolveAction(action);\n  }\n\n  function handleApplyClarification() {
+  function handleSubmitPendingRoll() {
+    if (!gmTurn || !pendingRollResult.trim()) return;
+    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+    if (!pending) return;
+    const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
+    setPlayerAction(action);
+    setPendingRollResult("");
+    void handleResolveAction(action);
+  }
+  function handleApplyClarification() {
     if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
     setPlayerAction(`${playerAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`);
     setClarificationAnswer("");
