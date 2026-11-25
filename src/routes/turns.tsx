@@ -223,7 +223,7 @@ function TurnsPage() {
         <div className="space-y-1.5">
           <Label htmlFor="gm-api-key">OpenAI API-ключ</Label>
           <Input id="gm-api-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" className="touch-target" />
-          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию или localStorage. Запрос отправляется напрямую в OpenAI API; использование API может тарифицироваться отдельно от ChatGPT.</p>
+          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию или localStorage. В OpenAI отправляются полный текст ОБСИДИАН 4.1, досье персонажа, релевантные фрагменты канона и состояние кампании. Запрос идёт напрямую в OpenAI API; использование тарифицируется отдельно от ChatGPT.</p>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
           <div className="space-y-1.5">
