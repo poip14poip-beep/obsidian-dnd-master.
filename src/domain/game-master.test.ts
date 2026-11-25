@@ -31,7 +31,7 @@ describe("game master resolver", () => {
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
       .rejects.toMatchObject({ code: "INVALID_TURN" });
   });
-  it("rejects model-invented dice results", async () => {
+  it("rejects a location ID that is not in the known location registry", async () => {\n    const unknownLocation = { ...validTurn, newLocationId: "not-registered" };\n    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(unknownLocation) }), { status: 200 }));\n    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))\n      .rejects.toMatchObject({ code: "UNKNOWN_LOCATION_ID" });\n  });\n  it("rejects model-invented dice results", async () => {
     const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))

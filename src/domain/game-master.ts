@@ -113,7 +113,7 @@ function extractOutputText(payload: unknown): string {
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
-function validateTurn(value: unknown): GameMasterTurn {
+function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
@@ -139,7 +139,7 @@ function validateTurn(value: unknown): GameMasterTurn {
       }
     }
   }
-  if (typeof turn.newLocationId === "string" && !context.locations.some((location) => location.id === turn.newLocationId)) {
+  if (typeof turn.newLocationId === "string" && !knownLocations.some((location) => location.id === turn.newLocationId)) {
     throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");
   }
   const changes = turn.characterChanges as Record<string, unknown> | undefined;
@@ -244,5 +244,5 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
-  return { turn: validateTurn(parsed), model, usage };
+  return { turn: validateTurn(parsed, context.locations), model, usage };
 }
