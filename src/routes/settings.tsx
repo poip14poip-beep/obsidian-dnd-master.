@@ -86,6 +86,7 @@ function SettingsPage() {
       calendarSystem: calendarSystem.trim() || worldState.calendarSystem,
       startInGameDate: startInGameDate.trim() || worldState.startInGameDate,
       startLocationName: startLocationName.trim() || worldState.startLocationName,
+      encumbranceMode,
       setupPatch: { [key]: checked },
     });
   }
@@ -97,6 +98,7 @@ function SettingsPage() {
       calendarSystem: calendarSystem.trim() || worldState.calendarSystem,
       startInGameDate: startInGameDate.trim() || worldState.startInGameDate,
       startLocationName: startLocationName.trim() || worldState.startLocationName,
+      encumbranceMode,
     });
     const res = confirmCampaignSetup();
     if (res.ok) {
