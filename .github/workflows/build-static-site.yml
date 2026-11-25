@@ -37,6 +37,34 @@ jobs:
           cp .output/public/_shell.html .output/public/index.html
           cp .output/public/_shell.html .output/public/404.html
           touch .output/public/.nojekyll
+      - name: Smoke test public app endpoint
+        env:
+          APP_URL: "https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app"
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/obsidian-smoke
+          for attempt in $(seq 1 12); do
+            if curl --fail --silent --show-error "$APP_URL/" -o /tmp/obsidian-smoke/index.html; then
+              break
+            fi
+            if [ "$attempt" -eq 12 ]; then
+              echo "Static app endpoint did not become available"
+              exit 1
+            fi
+            sleep 5
+          done
+          grep -q "Obsidian Control" /tmp/obsidian-smoke/index.html
+          CSS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.css' /tmp/obsidian-smoke/index.html | head -n 1)"
+          JS_PATH="$(grep -oE '/functions/v1/obsidian-app/assets/[^"]+\.js' /tmp/obsidian-smoke/index.html | head -n 1)"
+          test -n "$CSS_PATH"
+          test -n "$JS_PATH"
+          curl --fail --silent --show-error "https://dbchfgkdrqpjspptoezh.supabase.co$CSS_PATH" -o /tmp/obsidian-smoke/app.css
+          curl --fail --silent --show-error "https://dbchfgkdrqpjspptoezh.supabase.co$JS_PATH" -o /tmp/obsidian-smoke/app.js
+          test -s /tmp/obsidian-smoke/app.css
+          test -s /tmp/obsidian-smoke/app.js
+          curl --fail --silent --show-error "$APP_URL/auth" -o /tmp/obsidian-smoke/auth.html
+          grep -q "Obsidian Control" /tmp/obsidian-smoke/auth.html
+          echo "Static app, CSS, JS, and SPA auth route are reachable."
       - name: Publish static files to dedicated branch
         env:
           GITHUB_TOKEN: ${{ github.token }}
