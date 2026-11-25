@@ -829,7 +829,7 @@ export function ObsidianStoreProvider({
       };
     }
     if (
-      ws.encumbranceMode === "UNSET" ||
+      (!ws.encumbranceMode || ws.encumbranceMode === "UNSET") ||
       !ws.campaignName.trim() ||
       ws.startInGameDate.trim() === "" ||
       ws.startInGameDate === "UNKNOWN" ||

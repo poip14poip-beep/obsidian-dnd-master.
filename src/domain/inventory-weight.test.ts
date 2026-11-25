@@ -20,6 +20,16 @@ describe("player inventory weight", () => {
     expect(result.droppedWeightLb).toBe(1);
     expect(result.overCapacity).toBe(false);
   });
+  it("uses variant encumbrance thresholds when selected", () => {
+    const character = createInitialPlayerCharacterState();
+    character.abilityScores = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
+    character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    character.inventory = [{ id: "x", name: "Груз", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: 60 }];
+    const result = calculatePlayerInventoryWeight(character, "VARIANT");
+    expect(result.encumbranceStatus).toBe("HEAVILY_ENCUMBERED");
+    expect(result.encumberedAtLb).toBe(50);
+    expect(result.heavilyEncumberedAtLb).toBe(100);
+  });
   it("does not claim a definitive load while carried item weights are unknown", () => {
     const character = createInitialPlayerCharacterState();
     character.inventory = [{ id: "x", name: "Рюкзак", quantity: 1, notes: "", certainty: "UNKNOWN", location: "CARRIED", unitWeightLb: null }];

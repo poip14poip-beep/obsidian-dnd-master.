@@ -44,7 +44,7 @@ function SettingsPage() {
 
   const [campaignName, setCampaignName] = useState(worldState.campaignName);
   const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem);
-  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode);
+  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode ?? "UNSET");
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [importError, setImportError] = useState<string | null>(null);
@@ -52,7 +52,7 @@ function SettingsPage() {
   useEffect(() => {
     setCampaignName(worldState.campaignName);
     setCalendarSystem(worldState.calendarSystem);
-    setEncumbranceMode(worldState.encumbranceMode);
+    setEncumbranceMode(worldState.encumbranceMode ?? "UNSET");
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
   }, [worldState]);

@@ -7,6 +7,8 @@ export interface PlayerInventoryWeight {
   currencyWeightLb: number | null;
   totalKnownLoadLb: number;
   carryingCapacityLb: number | null;
+  encumberedAtLb: number | null;
+  heavilyEncumberedAtLb: number | null;
   overCapacity: boolean | null;
   encumbranceStatus: "UNKNOWN" | "ABSTRACT" | "UNENCUMBERED" | "ENCUMBERED" | "HEAVILY_ENCUMBERED" | "OVER_CAPACITY";
 }
@@ -34,6 +36,8 @@ export function calculatePlayerInventoryWeight(character: PlayerCharacterState, 
   const totalKnownLoadLb = knownCarriedWeightLb + (currencyWeightLb ?? 0);
   const strength = character.abilityScores?.strength;
   const carryingCapacityLb = (mode === "STANDARD" || mode === "VARIANT") && typeof strength === "number" ? strength * 15 : null;
+  const encumberedAtLb = mode === "VARIANT" && typeof strength === "number" ? strength * 5 : null;
+  const heavilyEncumberedAtLb = mode === "VARIANT" && typeof strength === "number" ? strength * 10 : null;
   const complete = typeof strength === "number" && currencyWeightLb !== null && unknownCarriedItems.length === 0;
   let encumbranceStatus: PlayerInventoryWeight["encumbranceStatus"] = "UNKNOWN";
   if (mode === "ABSTRACT") encumbranceStatus = "ABSTRACT";
@@ -45,5 +49,5 @@ export function calculatePlayerInventoryWeight(character: PlayerCharacterState, 
   }
   const overCapacity = encumbranceStatus === "UNKNOWN" || encumbranceStatus === "ABSTRACT" ? null : encumbranceStatus === "OVER_CAPACITY";
   return { knownCarriedWeightLb, unknownCarriedItems, storedWeightLb, droppedWeightLb,
-    currencyWeightLb, totalKnownLoadLb, carryingCapacityLb, overCapacity, encumbranceStatus };
+    currencyWeightLb, totalKnownLoadLb, carryingCapacityLb, encumberedAtLb, heavilyEncumberedAtLb, overCapacity, encumbranceStatus };
 }
