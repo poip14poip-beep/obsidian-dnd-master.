@@ -313,6 +313,12 @@ function CharacterPage() {
               placeholder="UNKNOWN"
               className="touch-target mono-code"
             />
+            {character.classLevel !== null && character.classLevel !== undefined && (character.epicCampaignLevels ?? 0) > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Стандартные классовые уровни: {character.classLevel}. Эпические уровни кампании: {character.epicCampaignLevels}.
+                Эпический уровень не добавляет классовые особенности D&D 2024 без отдельного согласованного правила.
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="pc-cert">Уверенность параметров</Label>
