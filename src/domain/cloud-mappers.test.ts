@@ -46,6 +46,8 @@ describe("cloud mapping primitives", () => {
     expect(mapped.rows[0]!.sha256).toBe("a".repeat(64));
     expect(mapped.rows[1]!.source_type).toBe("world_canon");
     expect(mapped.rows[1]!.content_status).toBe("metadata_only");
+    expect(mapped.rows[1]!.notes).toContain("[review-status:UNREVIEWED]");
+    expect(mapped.rows[1]!.notes).toContain("[context-enabled:false]");
     expect(mapped.rows[2]!.source_type).toBe("player_character");
     expect(mapped.rows.every((row) => row.content_status !== ("verified" as string))).toBe(true);
     expect(mapped.rows.every((row) => !("owner_id" in row))).toBe(true);
