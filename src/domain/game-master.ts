@@ -70,7 +70,7 @@ const turnSchema = {
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
-  const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED");
+  const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true);
   type RankedExcerpt = { source: SourceDocument; sectionId: string; headingPath: string[]; text: string; startLine: number; endLine: number; score: number };
   const ranked: RankedExcerpt[] = canon.flatMap((source) => {
     if (source.canonSections?.length) {
@@ -230,9 +230,22 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
   if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
   if (!context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
-  const governing = context.sources.find((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED");
-  if (!governing) throw new GameMasterError("Не загружен ОБСИДИАН 4.1. Игра заблокирована: мастер не должен работать по пересказу правил.", "GOVERNING_SOURCE_MISSING");
-  const dossier = context.sources.find((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED");
+  const governing = context.sources.find((source) =>
+    source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" &&
+    source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+  );
+  if (!governing) throw new GameMasterError(
+    "ОБСИДИАН 4.1 должен быть загружен, обработан, проверен пользователем и включён в контекст ИИ.",
+    "GOVERNING_SOURCE_NOT_READY",
+  );
+  const dossier = context.sources.find((source) =>
+    source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" &&
+    source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+  );
+  if (!dossier) throw new GameMasterError(
+    "Досье персонажа должно быть загружено, обработано, проверено пользователем и включено в контекст ИИ.",
+    "PLAYER_DOSSIER_NOT_READY",
+  );
   const system = [
     "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
     "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
