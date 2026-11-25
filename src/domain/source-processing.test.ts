@@ -8,7 +8,7 @@ describe("source processing", () => {
     }, "# История\nВ 851 году произошёл Великий разлом.\n\n## Последствия\nИзменился ход истории.", "2026-11-25T12:00:00.000Z");
     expect(result.processing.status).toBe("PROCESSED");
     expect(result.processing.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(result.processing.lineCount).toBe(4);
+    expect(result.processing.lineCount).toBe(5);
     expect(result.processing.sectionCount).toBe(2);
     expect(result.processing.dateCandidateCount).toBeGreaterThan(0);
     expect(result.dateMentions.every((mention) => mention.reviewStatus === "UNREVIEWED")).toBe(true);
