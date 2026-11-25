@@ -138,7 +138,10 @@ function validateTurn(value: unknown): GameMasterTurn {
       }
     }
   }
-  if (typeof turn.newLocationId === "string" && !context.locations.some((location) => location.id === turn.newLocationId)) {\n    throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");\n  }\n  const changes = turn.characterChanges as Record<string, unknown> | undefined;
+  if (typeof turn.newLocationId === "string" && !context.locations.some((location) => location.id === turn.newLocationId)) {
+    throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");
+  }
+  const changes = turn.characterChanges as Record<string, unknown> | undefined;
   if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
       !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
     throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
