@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { Cloud, Database, Download, Plus, RefreshCw } from "lucide-react";
+import { useState } from "react";
+import { Cloud, Database, Download, Plus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  createCloudCampaign,
-  listCloudCampaigns,
-  loadCloudCampaign,
-  type ObsidianCampaignRecord,
-} from "@/lib/obsidian-api";
+import { Input } from "@/components/ui/input";
+import { createCloudCampaign, loadCloudCampaign } from "@/lib/obsidian-api";
 import { mapCloudCampaignSettings } from "@/domain/cloud-mappers";
 import type { WorldState } from "@/domain/types";
 
@@ -30,43 +26,12 @@ const SNAPSHOT_COLLECTIONS = [
   ["audit_log", "Аудит"],
 ] as const;
 
-function formatUpdatedAt(value?: string): string {
-  if (!value) return "Дата обновления неизвестна";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? "Дата обновления неизвестна" : date.toLocaleString();
-}
-
 export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
-  const [campaigns, setCampaigns] = useState<ObsidianCampaignRecord[]>([]);
-  const [selectedCampaignId, setSelectedCampaignId] = useState("");
+  const [campaignId, setCampaignId] = useState("");
   const [snapshot, setSnapshot] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState<"list" | "create" | "bootstrap" | null>(null);
+  const [busy, setBusy] = useState<"create" | "bootstrap" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
-  const refreshCampaigns = useCallback(async () => {
-    setBusy("list");
-    setError(null);
-    const result = await listCloudCampaigns();
-    if (!result.ok) {
-      setError(result.error.message);
-      setBusy(null);
-      return;
-    }
-    setCampaigns(result.data.campaigns);
-    setSelectedCampaignId((current) =>
-      current && result.data.campaigns.some((campaign) => campaign.id === current)
-        ? current
-        : result.data.campaigns[0]?.id ?? "",
-    );
-    setBusy(null);
-  }, []);
-
-  useEffect(() => {
-    void refreshCampaigns();
-  }, [refreshCampaigns]);
-
-  const selectedCampaign = campaigns.find((campaign) => campaign.id === selectedCampaignId);
 
   async function handleCreateCampaign() {
     if (!worldState.campaignName.trim()) {
@@ -86,19 +51,21 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
       setBusy(null);
       return;
     }
-    setSelectedCampaignId(result.data.campaign.id);
-    setNotice("Облачная кампания создана. Локальные данные и игровые ходы не импортировались.");
-    const refreshed = await listCloudCampaigns();
-    if (refreshed.ok) setCampaigns(refreshed.data.campaigns);
+    setCampaignId(result.data.campaign.id);
+    setNotice("Облачная кампания создана. Её UUID заполнен ниже; локальные данные и игровые ходы не импортировались.");
     setBusy(null);
   }
 
   async function handleLoadSnapshot() {
-    if (!selectedCampaignId) return;
+    const selectedId = campaignId.trim();
+    if (!selectedId) {
+      setError("Введи UUID облачной кампании или сначала создай её.");
+      return;
+    }
     setBusy("bootstrap");
     setError(null);
     setNotice(null);
-    const result = await loadCloudCampaign(selectedCampaignId);
+    const result = await loadCloudCampaign(selectedId);
     if (!result.ok) {
       setError(result.error.message);
       setBusy(null);
@@ -116,27 +83,14 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
 
   return (
     <section className="panel-surface space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-2.5">
-          <Cloud className="mt-0.5 h-5 w-5 text-primary" />
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-foreground">Облачные кампании</h2>
-            <p className="text-xs text-muted-foreground">
-              Выбор существующей кампании и безопасная загрузка снимка. Синхронизация локальных данных пока отключена.
-            </p>
-          </div>
+      <div className="flex items-start gap-2.5">
+        <Cloud className="mt-0.5 h-5 w-5 text-primary" />
+        <div className="space-y-1">
+          <h2 className="text-base font-semibold text-foreground">Облачная кампания</h2>
+          <p className="text-xs text-muted-foreground">
+            Введи UUID существующей кампании или создай новую. Загрузка снимка работает только на чтение.
+          </p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className="touch-target"
-          onClick={() => void refreshCampaigns()}
-          disabled={busy !== null}
-        >
-          <RefreshCw className="mr-1.5 h-4 w-4" />
-          Обновить
-        </Button>
       </div>
 
       {error && (
@@ -150,42 +104,23 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
         </div>
       )}
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-medium text-foreground">Мои облачные кампании</h3>
-        {campaigns.length === 0 ? (
-          <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-            Кампаний не найдено. Создание облачной кампании не импортирует в неё локальные данные.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {campaigns.map((campaign) => (
-              <button
-                key={campaign.id}
-                type="button"
-                onClick={() => {
-                  setSelectedCampaignId(campaign.id);
-                  setSnapshot(null);
-                  setNotice(null);
-                }}
-                className={`touch-target w-full rounded-md border p-3 text-left transition-colors ${
-                  selectedCampaignId === campaign.id
-                    ? "border-primary bg-primary/5"
-                    : "border-border bg-background/50 hover:bg-accent/40"
-                }`}
-                aria-pressed={selectedCampaignId === campaign.id}
-              >
-                <span className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-foreground">{campaign.title}</span>
-                  <span className="mono-code text-[10px] text-muted-foreground">{campaign.status ?? "UNKNOWN"}</span>
-                </span>
-                <span className="mt-1 block text-[11px] text-muted-foreground">
-                  Ход №{campaign.last_confirmed_turn ?? 0} · {formatUpdatedAt(campaign.updated_at)}
-                </span>
-                <span className="mt-1 block break-all font-mono text-[10px] text-muted-foreground">{campaign.id}</span>
-              </button>
-            ))}
-          </div>
-        )}
+      <div className="space-y-1.5">
+        <label htmlFor="cloud-campaign-id" className="text-xs font-medium text-foreground">
+          UUID облачной кампании
+        </label>
+        <Input
+          id="cloud-campaign-id"
+          value={campaignId}
+          onChange={(event) => {
+            setCampaignId(event.target.value);
+            setSnapshot(null);
+            setNotice(null);
+          }}
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+          className="touch-target font-mono text-xs"
+          autoComplete="off"
+          spellCheck={false}
+        />
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">
@@ -193,7 +128,7 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
           type="button"
           className="touch-target"
           onClick={() => void handleLoadSnapshot()}
-          disabled={!selectedCampaignId || busy !== null}
+          disabled={!campaignId.trim() || busy !== null}
         >
           <Download className="mr-1.5 h-4 w-4" />
           Загрузить снимок (только чтение)
@@ -209,12 +144,6 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
           Создать облачную кампанию
         </Button>
       </div>
-
-      {selectedCampaign && (
-        <p className="text-[11px] text-muted-foreground">
-          Выбрана: <strong className="text-foreground">{selectedCampaign.title}</strong>. Создание новой кампании не меняет эту локальную кампанию.
-        </p>
-      )}
 
       {snapshot && (
         <div className="space-y-3 rounded-md border border-border bg-background/50 p-3">
