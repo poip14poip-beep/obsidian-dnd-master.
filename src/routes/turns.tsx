@@ -105,6 +105,7 @@ function TurnsPage() {
           summary: result.turn.summary,
           playerIntent: playerAction.trim(),
           worldOutcome: result.turn.worldOutcome,
+          gmNarration: result.turn.narration,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
           newInGameDate: result.turn.newInGameDate,
           hpDelta: result.turn.hpDelta,

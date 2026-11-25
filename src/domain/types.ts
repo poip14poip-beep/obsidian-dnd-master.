@@ -225,6 +225,7 @@ export interface TurnDraft {
   summary: string;
   playerIntent: string;
   worldOutcome: string;
+  gmNarration?: string;
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;

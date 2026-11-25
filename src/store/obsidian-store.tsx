@@ -1069,6 +1069,7 @@ export function ObsidianStoreProvider({
         summary: activeDraft.summary.trim(),
         playerIntent: activeDraft.playerIntent.trim(),
         worldOutcome: activeDraft.worldOutcome.trim(),
+        gmNarration: activeDraft.gmNarration?.trim() ?? "",
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,
