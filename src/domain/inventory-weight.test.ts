@@ -30,6 +30,16 @@ describe("player inventory weight", () => {
     expect(result.encumberedAtLb).toBe(50);
     expect(result.heavilyEncumberedAtLb).toBe(100);
   });
+  it("does not guess whether imported OTHER items are carried, worn or stored", () => {
+    const character = createInitialPlayerCharacterState();
+    character.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+    character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    character.inventory = [{ id: "unknown-location", name: "Комплект инструментов", quantity: 1, notes: "Категория из досье; точное место не указано", certainty: "KNOWN", location: "OTHER", unitWeightLb: 8 }];
+    const result = calculatePlayerInventoryWeight(character, "STANDARD");
+    expect(result.knownCarriedWeightLb).toBe(0);
+    expect(result.unknownCarriedItems).toEqual([]);
+    expect(result.encumbranceStatus).toBe("UNENCUMBERED");
+  });
   it("does not claim a definitive load while carried item weights are unknown", () => {
     const character = createInitialPlayerCharacterState();
     character.inventory = [{ id: "x", name: "Рюкзак", quantity: 1, notes: "", certainty: "UNKNOWN", location: "CARRIED", unitWeightLb: null }];
