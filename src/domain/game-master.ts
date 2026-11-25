@@ -271,6 +271,62 @@ function validateTurn(value: unknown): GameMasterTurn {
   }
   return turn as unknown as GameMasterTurn;
 }
+function validateReferences(turn: GameMasterTurn, context: GameMasterContext): void {
+  const existingNpcIds = new Set(context.npcs.map((npc) => npc.id));
+  const existingFactionIds = new Set(context.factions.map((faction) => faction.id));
+  const existingLocationIds = new Set(context.locations.map((location) => location.id));
+  const sourceIds = new Set(context.sources.map((source) => source.id));
+  sourceIds.add("MANUAL_GM_ENTRY");
+  const changes = turn.worldChanges;
+  const newNpcIds = new Set(changes.newNpcs.map((npc) => npc.tempId));
+  const newFactionIds = new Set(changes.newFactions.map((faction) => faction.tempId));
+  const newLocationIds = new Set(changes.newLocations.map((location) => location.tempId));
+  if (turn.newLocationId && !existingLocationIds.has(turn.newLocationId)) {
+    throw new GameMasterError("Мастер указал неизвестный ID существующей локации. Переход не сохранён.", "UNKNOWN_LOCATION_REFERENCE");
+  }
+  if (turn.newLocationKey && !newLocationIds.has(turn.newLocationKey)) {
+    throw new GameMasterError("Мастер указал newLocationKey без соответствующей новой локации. Переход не сохранён.", "UNKNOWN_NEW_LOCATION_REFERENCE");
+  }
+  if (turn.newLocationId && turn.newLocationKey) {
+    throw new GameMasterError("Мастер не может одновременно выбрать существующую и новую локацию.", "AMBIGUOUS_LOCATION_REFERENCE");
+  }
+  for (const location of changes.newLocations) {
+    if (!sourceIds.has(location.sourceId)) {
+      throw new GameMasterError(`Новая локация «${location.name}» ссылается на отсутствующий источник.`, "UNKNOWN_LOCATION_SOURCE");
+    }
+  }
+  for (const fact of changes.facts) {
+    if (fact.subjectNpcId && !existingNpcIds.has(fact.subjectNpcId) && !newNpcIds.has(fact.subjectNpcId)) {
+      throw new GameMasterError(`Факт «${fact.title}» ссылается на неизвестного NPC.`, "UNKNOWN_FACT_SUBJECT");
+    }
+  }
+  for (const update of changes.npcUpdates) {
+    if (!existingNpcIds.has(update.npcId)) throw new GameMasterError("Обновление ссылается на неизвестный NPC.", "UNKNOWN_NPC_REFERENCE");
+    if (update.locationId && !existingLocationIds.has(update.locationId) && !newLocationIds.has(update.locationId)) {
+      throw new GameMasterError("Обновление NPC ссылается на неизвестную локацию.", "UNKNOWN_NPC_LOCATION");
+    }
+    if (update.factionId && !existingFactionIds.has(update.factionId) && !newFactionIds.has(update.factionId)) {
+      throw new GameMasterError("Обновление NPC ссылается на неизвестную фракцию.", "UNKNOWN_NPC_FACTION");
+    }
+  }
+  for (const npc of changes.newNpcs) {
+    if (npc.locationId && !existingLocationIds.has(npc.locationId) && !newLocationIds.has(npc.locationId)) {
+      throw new GameMasterError(`Новый NPC «${npc.name}» ссылается на неизвестную локацию.`, "UNKNOWN_NEW_NPC_LOCATION");
+    }
+    if (npc.factionId && !existingFactionIds.has(npc.factionId) && !newFactionIds.has(npc.factionId)) {
+      throw new GameMasterError(`Новый NPC «${npc.name}» ссылается на неизвестную фракцию.`, "UNKNOWN_NEW_NPC_FACTION");
+    }
+  }
+  for (const knowledge of changes.npcKnowledgeAdditions) {
+    if (!existingNpcIds.has(knowledge.npcId) && !newNpcIds.has(knowledge.npcId)) {
+      throw new GameMasterError("Запись знаний ссылается на неизвестного NPC.", "UNKNOWN_NPC_KNOWLEDGE_SUBJECT");
+    }
+    if (!sourceIds.has(knowledge.sourceId)) throw new GameMasterError("Знание NPC ссылается на отсутствующий источник.", "UNKNOWN_NPC_KNOWLEDGE_SOURCE");
+  }
+  for (const update of changes.factionUpdates) {
+    if (!existingFactionIds.has(update.factionId)) throw new GameMasterError("Обновление ссылается на неизвестную фракцию.", "UNKNOWN_FACTION_REFERENCE");
+  }
+}
 export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
   if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
@@ -330,5 +386,5 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
-  return { turn: validateTurn(parsed), model, usage };
+  const turn = validateTurn(parsed);\n  validateReferences(turn, context);\n  return { turn, model, usage };
 }
