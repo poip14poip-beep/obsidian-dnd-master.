@@ -42,7 +42,7 @@ type AuthMode = "signin" | "signup" | "forgot";
 function AuthPage() {
   const { redirect } = Route.useSearch();
   const navigate = useNavigate();
-  const { signIn, signUp, requestPasswordReset } = useAuth();
+  const { signIn, signUp, requestPasswordReset, enterGuestMode } = useAuth();
 
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
@@ -261,12 +261,23 @@ function AuthPage() {
               )}
             </Button>
           </form>
+          <div className="border-t border-border pt-3">
+            <Button type="button" variant="outline" className="touch-target w-full" onClick={() => {
+              enterGuestMode();
+              toast.success("Открыт локальный режим. Данные кампании останутся в этом браузере.");
+              const target = sanitizeRedirectPath(redirect);
+              void navigate({ to: target as "/", replace: true });
+            }}>
+              Продолжить без аккаунта · локальный режим
+            </Button>
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">Локальный режим предназначен для пробной кампании: прогресс хранится только в localStorage этого браузера. Очистка данных сайта удалит кампанию; регулярно скачивай резервную копию. Облачной синхронизации и общего хранилища нет.</p>
+          </div>
         </div>
 
         <div className="panel-surface flex items-start gap-2.5 border-border/70 bg-surface-elevated/50 p-3 text-xs text-muted-foreground">
           <Lock className="mt-0.5 h-4 w-4 shrink-0 text-status-approx" />
           <p>
-            Доступ к разделам кампании закрыт до входа. Данные кампании на текущем этапе хранятся{" "}
+            Доступ к разделам кампании закрыт до входа или явного включения локального режима. Данные кампании на текущем этапе хранятся{" "}
             <strong className="text-foreground">только локально в браузере</strong> — облачная
             синхронизация пока не подключена.
           </p>

@@ -21,6 +21,8 @@ export interface AuthActionResult {
 
 export interface AuthContextValue {
   status: AuthStatus;
+  guestMode: boolean;
+  enterGuestMode: () => void;
   user: User | null;
   session: Session | null;
   configError: string | null;
@@ -64,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(() =>
     initialEnv.ok ? "loading" : "unconfigured",
   );
+  const [guestMode, setGuestMode] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [configError] = useState<string | null>(() => (initialEnv.ok ? null : initialEnv.error));
@@ -116,6 +119,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    try {
+      if (window.localStorage.getItem("obsidian:local-guest-mode") === "true") {
+        setGuestMode(true);
+        setUser(null);
+        setSession(null);
+        setStatus("authenticated");
+        return;
+      }
+    } catch {
+      // Browser storage may be disabled; normal Supabase auth remains available.
+    }
     const { client, envResult } = getSupabaseAuthClient();
     if (!envResult.ok || !client) {
       setStatus("unconfigured");
@@ -151,6 +165,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [hydrateSession]);
 
+  const enterGuestMode = useCallback(() => {
+    try {
+      window.localStorage.setItem("obsidian:local-guest-mode", "true");
+    } catch {
+      // Guest mode remains available until page reload when persistent storage is disabled.
+    }
+    setGuestMode(true);
+    setSession(null);
+    setUser(null);
+    setIsRecoverySession(false);
+    setAuthError(null);
+    setStatus("authenticated");
+  }, []);
+
   const signIn = useCallback(async (email: string, password: string): Promise<AuthActionResult> => {
     const { client, envResult } = getSupabaseAuthClient();
     if (!envResult.ok || !client) {
@@ -163,6 +191,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) {
       return { ok: false, error: mapSupabaseError(error.message) };
     }
+    try { window.localStorage.removeItem("obsidian:local-guest-mode"); } catch { /* ignore */ }
+    setGuestMode(false);
     setSession(data.session);
     setUser(data.user);
     setStatus("authenticated");
@@ -186,6 +216,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!data.session) {
       return { ok: true, needsEmailConfirmation: true };
     }
+    try { window.localStorage.removeItem("obsidian:local-guest-mode"); } catch { /* ignore */ }
+    setGuestMode(false);
     setSession(data.session);
     setUser(data.user);
     setStatus("authenticated");
@@ -232,6 +264,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (client) {
       await client.auth.signOut();
     }
+    try { window.localStorage.removeItem("obsidian:local-guest-mode"); } catch { /* ignore */ }
+    setGuestMode(false);
     setIsRecoverySession(false);
     setSession(null);
     setUser(null);
@@ -241,6 +275,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       status,
+      guestMode,
+      enterGuestMode,
       user,
       session,
       configError,
@@ -256,6 +292,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       status,
+      guestMode,
+      enterGuestMode,
       user,
       session,
       configError,
