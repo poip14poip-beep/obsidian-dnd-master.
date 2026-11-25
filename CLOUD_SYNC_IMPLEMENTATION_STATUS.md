@@ -85,3 +85,19 @@ Updated: 2026-11-25 12:16 UTC
 - Do not treat dossier biography as objective chronicle canon.
 - Do not auto-start a campaign or invent starting date, time, location, turn number, HP, money, or missing values.
 - Do not call the app playable until the complete Definition of Done in the master requirements is verified.
+
+## Progress update — 2026-11-25, local entry work
+
+- The last fully verified CI commit before this update is `65e2dbe9d7b66efdcda4730f7bda06a08572cd86`; workflow run `45612412913` passed tests, TypeScript, and build.
+- Added the existing local-only guest-entry flow from the newer `main` work into `cloud-api-client`, without merging branches or changing `main`:
+  - `src/auth/auth-context.tsx`: explicit guest-mode state persisted as a browser-local opt-in.
+  - `src/routes/auth.tsx`: “Продолжить без аккаунта · локальный режим” entry with an explicit warning that storage is limited to this browser.
+  - `src/components/AppShell.tsx`: visible guest-mode labeling and local-storage warning.
+  - `src/auth/auth-guard.ts`: an unconfigured visitor is routed to `/auth`; protected routes are not silently unlocked before the player opts into guest mode.
+  - `src/auth/auth-guard.test.ts`: tests for explicit guest entry and protected-route behavior.
+- These guest-entry commits have been read back from GitHub, but a new CI run for them has not yet been observed. Do not mark this change set verified until CI passes.
+- Branches `main` and `cloud-api-client` are diverged (20 commits on main not in this branch; 86 commits on this branch not in main at comparison time). No merge or force-push was performed.
+- The existing Lovable project is still `needs_attention / out_of_credits`; no replacement project was created.
+- Supabase currently lists only the active `obsidian-api` Edge Function. The newer static-site branch references `/functions/v1/obsidian-app`, but that function is not deployed. Its current `index.html` is an SSR configuration-error shell (“Supabase Auth не настроен”), not a verified playable deployment. Do not give that branch to the player as a live game.
+- The current GM still requires a user-supplied OpenAI API key in the browser. No server-side OpenAI proxy/secret has been configured; this is a runtime prerequisite and potential cost to the user.
+- The app remains NOT READY for play until the full source import, character review, setup gate, actual AI action/roll/commit cycle, durable save/restore, Android acceptance, and a working access URL have all been verified.
