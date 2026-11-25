@@ -71,7 +71,7 @@ describe("Supabase Auth env handling & auth guard invariants", () => {
     expect(jwtReject.ok).toBe(false);
   });
 
-  it("blocks unauthenticated routes but allows an explicit local-only prototype when Supabase is unconfigured", () => {
+  it("blocks protected routes until the player explicitly opts into local-only guest mode", () => {
     for (const pathname of ALL_PROTECTED_ROUTES) {
       expect(isPublicAuthRoute(pathname)).toBe(false);
       expect(evaluateAuthGuard({ pathname, status: "unauthenticated" })).toEqual({
@@ -85,7 +85,8 @@ describe("Supabase Auth env handling & auth guard invariants", () => {
         action: "render_error",
       });
       expect(evaluateAuthGuard({ pathname, status: "unconfigured" })).toEqual({
-        action: "allow_protected",
+        action: "redirect_to_auth",
+        redirectTo: pathname,
       });
       expect(evaluateAuthGuard({ pathname, status: "authenticated" })).toEqual({
         action: "allow_protected",
