@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { CertaintyBadge, SourceTypeBadge } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -36,7 +37,7 @@ export const Route = createFileRoute("/sources")({
 });
 
 function SourcesPage() {
-  const { sources, attachSourceContent, addSupplementalSource } = useObsidianStore();
+  const { sources, attachSourceContent, addSupplementalSource, verifySource, setSourceContextEnabled } = useObsidianStore();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftContent, setDraftContent] = useState("");
   const [draftOrigin, setDraftOrigin] = useState("");
@@ -248,6 +249,43 @@ function SourcesPage() {
                 <span>Обработка: <strong className="text-foreground">{src.processing?.status === "PROCESSED" ? "ПРОВЕРЕН" : "НЕ ОБРАБОТАН"}</strong></span>
                 {src.processing?.status === "PROCESSED" && <span>{src.processing.lineCount} строк · {src.processing.sectionCount} разделов · {src.processing.chunkCount} фрагментов</span>}
                 {src.processing?.dateCandidateCount ? <span>Кандидатов дат: {src.processing.dateCandidateCount} (не утверждены)</span> : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-background/50 p-3">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-xs font-medium text-foreground">
+                    Проверка содержимого: {src.reviewStatus === "VERIFIED" ? "ПОДТВЕРЖДЁН ПОЛЬЗОВАТЕЛЕМ" : "НЕ ПРОВЕРЕНО"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Загрузка и SHA-256 не означают, что содержимое сверено с оригиналом.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="touch-target"
+                  disabled={src.contentStatus !== "ATTACHED" || src.processing?.status !== "PROCESSED" || src.reviewStatus === "VERIFIED"}
+                  onClick={() => {
+                    const result = verifySource(src.id);
+                    if (result.ok) toast.success("Содержимое источника отмечено как проверенное.");
+                    else toast.error(result.error);
+                  }}
+                >
+                  Подтвердить содержимое
+                </Button>
+                <label className="flex min-h-11 items-center gap-2 text-xs text-foreground">
+                  <Checkbox
+                    checked={src.contextEnabled === true}
+                    disabled={src.contentStatus !== "ATTACHED" || src.processing?.status !== "PROCESSED" || src.reviewStatus !== "VERIFIED"}
+                    onCheckedChange={(checked) => {
+                      const result = setSourceContextEnabled(src.id, checked === true);
+                      if (result.ok) toast.success(checked ? "Источник включён в контекст ИИ." : "Источник исключён из контекста ИИ.");
+                      else toast.error(result.error);
+                    }}
+                  />
+                  Включить в контекст ИИ
+                </label>
               </div>
 
               {src.notes && <p className="text-xs text-muted-foreground">{src.notes}</p>}
