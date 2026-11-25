@@ -105,7 +105,7 @@ export async function ingestCanonSources(
           endLine: boundary.endLine, text: chunk, contentHash: await sha256(chunk),
           chunkIndex: chunkIndex + 1, chunkCount: chunks.length,
         });
-        const datePattern = /(?:^|\D)(\d{1,4})\s*(?:год(?:а|у|е)?|гг?\.?) (?=\s|$)|(?:^|\D)(\d{1,4})\s*[–—-]\s*(\d{1,4})(?:\D|$)/giu;
+        const datePattern = /(?:^|\D)(\d{1,4})\s*(?:год(?:а|у|е)?|гг?\.?)|(?:^|\D)(\d{1,4})\s*[–—-]\s*(\d{1,4})/giu;
         let match: RegExpExecArray | null;
         while ((match = datePattern.exec(chunk)) !== null) {
           const line = bodyStartIndex + 2 + body.slice(0, searchOffset + match.index).split("\n").length - 1;
