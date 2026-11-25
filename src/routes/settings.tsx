@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useObsidianStore } from "@/store/obsidian-store";
+import { buildCampaignStateMarkdown, buildPlayerCharacterStateMarkdown, buildSessionLogMarkdown } from "@/domain/save-files";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const {
     sources,
+    collections,
     worldState,
     character,
     updateCampaignParameters,
@@ -101,7 +103,7 @@ function SettingsPage() {
     }
   }
 
-  function handleExportBackup() {
+  function downloadMarkdownFile(fileName: string, content: string) {\n    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });\n    const url = URL.createObjectURL(blob);\n    const a = document.createElement("a");\n    a.href = url;\n    a.download = fileName;\n    a.click();\n    URL.revokeObjectURL(url);\n  }\n\n  function handleExportCampaignState() {\n    downloadMarkdownFile("CAMPAIGN_STATE.md", buildCampaignStateMarkdown(collections));\n    toast.success("CAMPAIGN_STATE.md сформирован; лист персонажа в него не включён.");\n  }\n\n  function handleExportCharacterState() {\n    downloadMarkdownFile("PLAYER_CHARACTER_STATE.md", buildPlayerCharacterStateMarkdown(collections));\n    toast.success("PLAYER_CHARACTER_STATE.md сформирован отдельно.");\n  }\n\n  function handleExportSessionLog() {\n    downloadMarkdownFile("SESSION_LOG.md", buildSessionLogMarkdown(collections));\n    toast.success("SESSION_LOG.md сформирован.");\n  }\n\n  function handleExportBackup() {
     const envelope = exportBackupJson();
     const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -145,6 +147,18 @@ function SettingsPage() {
           Мастер подготовки кампании (обязателен до начала игры) и резервное копирование JSON.
         </p>
       </header>
+
+      <section className="panel-surface space-y-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Файлы непрерывности кампании</h2>
+          <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCampaignState}>Скачать CAMPAIGN_STATE.md</Button>
+          <Button type="button" variant="secondary" className="touch-target" onClick={handleExportSessionLog}>Скачать SESSION_LOG.md</Button>
+          <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCharacterState}>Скачать PLAYER_CHARACTER_STATE.md</Button>
+        </div>
+      </section>
 
       {/* Setup Wizard */}
       <section className="panel-surface space-y-4 p-4">
