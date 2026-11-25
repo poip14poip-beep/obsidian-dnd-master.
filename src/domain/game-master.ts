@@ -192,7 +192,7 @@ function validateTurn(value: unknown): GameMasterTurn {
     }
   }
   const world = turn.worldChanges as Record<string, unknown> | undefined;
-  const worldKeys = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
+  const worldKeys = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newLocations", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
   if (!world || worldKeys.some((key) => !Array.isArray(world[key]))) {
     throw new GameMasterError("Модель не вернула полный блок изменений мира.", "INVALID_WORLD_CHANGES");
   }
