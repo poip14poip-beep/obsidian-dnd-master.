@@ -25,7 +25,7 @@ export interface ObsidianTurnDraftPayload {
   player_action: string;
   gm_resolution: string;
   pending_changes?: Record<string, unknown>;
-  status?: "draft" | "ready" | "committed";
+  status?: "draft" | "ready_to_commit";
 }
 
 export interface ObsidianSavedDraft {
@@ -39,15 +39,6 @@ export interface ObsidianCommitResult {
   turn_number?: number;
   session_log_id?: string;
   [key: string]: unknown;
-}
-
-interface ApiEnvelope<T> {
-  ok: true;
-} 
-
-interface ApiErrorEnvelope {
-  error?: string;
-  detail?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
