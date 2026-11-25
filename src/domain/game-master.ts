@@ -7,7 +7,7 @@ export interface GameMasterContext {
 }
 export interface GameMasterTurn {
   narration: string; summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
-  newInGameDate: string; consequenceText: string;
+  newInGameDate: string; newLocationId: string | null; newLocationKey: string | null; consequenceText: string;
   rolls: Array<{ label: string; formula: string; result: string }>;
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -63,6 +63,12 @@ const turnSchema = {
         npcId: { type: "string" }, factSummary: { type: "string" }, sourceId: { type: "string" },
         acquisitionPath: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["npcId", "factSummary", "sourceId", "acquisitionPath", "certainty"] } },
+      newLocations: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        tempId: { type: "string" }, name: { type: "string" }, region: { type: "string" }, description: { type: "string" },
+        certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, sourceId: { type: "string" },
+        distanceFromCurrent: { type: "string" }, travelTimeHours: { type: ["number", "null"] },
+        routeCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, routeNotes: { type: "string" },
+      }, required: ["tempId", "name", "region", "description", "certainty", "sourceId", "distanceFromCurrent", "travelTimeHours", "routeCertainty", "routeNotes"] } },
       newNpcs: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         tempId: { type: "string" }, name: { type: "string" }, role: { type: "string" },
         locationId: { type: ["string", "null"] }, factionId: { type: ["string", "null"] },
@@ -82,11 +88,11 @@ const turnSchema = {
         status: { type: "string", enum: ["SCHEDULED", "TRIGGERED", "RESOLVED"] },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["title", "triggerInGameDate", "consequence", "status", "certainty"] } },
-    }, required: ["facts", "npcUpdates", "npcKnowledgeAdditions", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"] },
+    }, required: ["facts", "npcUpdates", "npcKnowledgeAdditions", "newLocations", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"] },
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "consequenceText", "rolls", "characterChanges", "worldChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "newLocationKey", "consequenceText", "rolls", "characterChanges", "worldChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -211,6 +217,19 @@ function validateTurn(value: unknown): GameMasterTurn {
       throw new GameMasterError("Запись знаний NPC должна иметь источник и путь получения.", "INVALID_NPC_KNOWLEDGE");
     }
   }
+  const newLocationIds = new Set<string>();
+  for (const location of changesById("newLocations")) {
+    if (typeof location.tempId !== "string" || !location.tempId.trim() || newLocationIds.has(location.tempId) ||
+        typeof location.name !== "string" || !location.name.trim() || typeof location.region !== "string" ||
+        typeof location.description !== "string" || typeof location.sourceId !== "string" ||
+        typeof location.distanceFromCurrent !== "string" ||
+        (location.travelTimeHours !== null && (typeof location.travelTimeHours !== "number" || !Number.isFinite(location.travelTimeHours) || location.travelTimeHours < 0)) ||
+        typeof location.routeNotes !== "string" || !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(location.certainty)) ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(location.routeCertainty))) {
+      throw new GameMasterError("Некорректная новая локация или маршрут.", "INVALID_NEW_LOCATION");
+    }
+    newLocationIds.add(location.tempId);
+  }
   const newNpcIds = new Set<string>();
   for (const npc of changesById("newNpcs")) {
     if (typeof npc.tempId !== "string" || !npc.tempId.trim() || newNpcIds.has(npc.tempId) ||
@@ -246,7 +265,8 @@ function validateTurn(value: unknown): GameMasterTurn {
   const hasPendingRoll = (turn.rolls as Array<Record<string, unknown>>).length > 0;
   if ((turn.needsClarification || hasPendingRoll) && ((turn.timeDeltaMinutes as number) !== 0 || (turn.hpDelta as number) !== 0 ||
       (changes.inventory as unknown[]).length > 0 || (changes.resources as unknown[]).length > 0 ||
-      (changes.conditions as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
+      (changes.conditions as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0) ||
+      worldKeys.some((key) => (world[key] as unknown[]).length > 0) || turn.newLocationId !== null || turn.newLocationKey !== null)) {
     throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
   }
   return turn as unknown as GameMasterTurn;
@@ -281,6 +301,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов.",
+      "При смене места назначения укажи newLocationId, если это уже зарегистрированная локация. Если место канонично, но ещё не зарегистрировано, добавь его в worldChanges.newLocations и укажи newLocationKey = tempId; не указывай выдуманные координаты/дистанции. При неизвестном расстоянии используй UNKNOWN и null.",
       "worldChanges хранит только доказуемые последствия текущего действия: обновляй NPC и их знания только при конкретном канале получения информации; добавляй факты с корректным эпистемическим слоем и не выдавай гипотезы за объективную истину; ресурсы/цели фракций меняй только при установленной причине; delayedEvents создавай только при реальном отложенном обязательстве/триггере. Пустые коллекции обязательны, когда изменений нет.",
       "Не обновляй NPC, фракции или их знания только потому, что игрок о них подумал или спросил. NPCKnowledgeAddition требует конкретного пути: свидетель, услышанная речь, документ, приказ, отчёт или иной достоверный канал.",
       "Новый NPC/фракция создаются только если персонаж действительно установил контакт/идентичность; неизвестное имя остаётся UNKNOWN, не придумывай имена для безымянных людей.");

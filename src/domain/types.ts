@@ -244,6 +244,10 @@ export interface WorldChangeSet {
   npcKnowledgeAdditions: Array<{
     npcId: string; factSummary: string; sourceId: string; acquisitionPath: string; certainty: CertaintyStatus;
   }>;
+  newLocations: Array<{
+    tempId: string; name: string; region: string; description: string; certainty: CertaintyStatus;
+    sourceId: string; distanceFromCurrent: string; travelTimeHours: number | null; routeCertainty: CertaintyStatus; routeNotes: string;
+  }>;
   newNpcs: Array<{
     tempId: string; name: string; role: string; locationId: string | null; factionId: string | null;
     goals: string; attitudeToPlayer: string; certainty: CertaintyStatus;
