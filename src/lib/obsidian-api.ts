@@ -140,12 +140,6 @@ export async function callObsidianApi<T>(
   return invoke<T>(clientResult.client, body);
 }
 
-export async function listCloudCampaigns(): Promise<
-  ObsidianApiResult<{ campaigns: ObsidianCampaignRecord[] }>
-> {
-  return callObsidianApi({ action: "list_campaigns" });
-}
-
 export async function createCloudCampaign(
   title: string,
   settings: Record<string, unknown> = {},
