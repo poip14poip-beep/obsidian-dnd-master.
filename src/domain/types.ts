@@ -184,6 +184,8 @@ export interface InventoryItem {
   quantity: number;
   notes: string;
   certainty: CertaintyStatus;
+  location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER";
+  unitWeightLb?: number | null;
 }
 
 /**

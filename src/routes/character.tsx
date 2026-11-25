@@ -109,7 +109,7 @@ function CharacterPage() {
     setStatsCertainty("KNOWN");
     const importedInventory = extracted.inventory.map((item, index) => ({
       id: `dossier-item-${index + 1}`, name: item.name, quantity: item.quantity,
-      notes: [item.location, item.notes].filter(Boolean).join(" · "), certainty: item.certainty,
+      notes: item.notes, location: item.location, unitWeightLb: null, certainty: item.certainty,
     }));
     const saved = updatePlayerCharacter({
       ...(extracted.name ? { name: extracted.name, nameCertainty: "KNOWN" as const } : {}),
