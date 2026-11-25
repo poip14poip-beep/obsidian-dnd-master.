@@ -357,6 +357,86 @@ export function ObsidianStoreProvider({
     [appendAudit, collections, commitCollections],
   );
 
+  const verifySource: ObsidianStoreValue["verifySource"] = useCallback(
+    (sourceId) => {
+      const target = collections.sources.find((source) => source.id === sourceId);
+      if (!target) return { ok: false, error: "Источник не найден.", report: lastIntegrityReport };
+      if (target.contentStatus !== "ATTACHED" || !target.content.trim()) {
+        return { ok: false, error: "Нельзя проверить источник без загруженного содержимого.", report: lastIntegrityReport };
+      }
+      if (target.processing?.status !== "PROCESSED" || !target.processing.sha256) {
+        return { ok: false, error: "Сначала обработайте источник и проверьте SHA-256.", report: lastIntegrityReport };
+      }
+      const now = new Date().toISOString();
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_VERIFIED",
+        "OK",
+        `Пользователь подтвердил содержимое источника «${target.title}» (SHA-256 ${target.processing.sha256}).`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: collections.sources.map((source) =>
+          source.id === sourceId ? { ...source, reviewStatus: "VERIFIED" as SourceReviewStatus } : source,
+        ),
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const setSourceContextEnabled: ObsidianStoreValue["setSourceContextEnabled"] = useCallback(
+    (sourceId, enabled) => {
+      const target = collections.sources.find((source) => source.id === sourceId);
+      if (!target) return { ok: false, error: "Источник не найден.", report: lastIntegrityReport };
+      if (enabled && (
+        target.contentStatus !== "ATTACHED" ||
+        target.processing?.status !== "PROCESSED" ||
+        target.reviewStatus !== "VERIFIED"
+      )) {
+        return {
+          ok: false,
+          error: "В контекст ИИ можно включить только загруженный, обработанный и отдельно проверенный источник.",
+          report: lastIntegrityReport,
+        };
+      }
+      if (target.contextEnabled === enabled) {
+        return { ok: true, report: lastIntegrityReport ?? runIntegrityAudit(collections) };
+      }
+      const now = new Date().toISOString();
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_CONTEXT_CHANGED",
+        "OK",
+        `Источник «${target.title}»: контекст ИИ ${enabled ? "включён" : "отключён"}.`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: collections.sources.map((source) =>
+          source.id === sourceId ? { ...source, contextEnabled: enabled } : source,
+        ),
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
   const addFact: ObsidianStoreValue["addFact"] = useCallback(
     (input) => {
       const now = new Date().toISOString();
