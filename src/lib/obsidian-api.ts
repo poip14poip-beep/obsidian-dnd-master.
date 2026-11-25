@@ -16,6 +16,10 @@ export interface ObsidianCampaignRecord {
   id: string;
   title: string;
   status?: string;
+  campaign_date?: string | null;
+  current_location_id?: string | null;
+  last_confirmed_turn?: number | null;
+  updated_at?: string;
   settings?: Record<string, unknown>;
 }
 
@@ -134,6 +138,12 @@ export async function callObsidianApi<T>(
   const clientResult = await getClient();
   if (!clientResult.ok) return clientResult;
   return invoke<T>(clientResult.client, body);
+}
+
+export async function listCloudCampaigns(): Promise<
+  ObsidianApiResult<{ campaigns: ObsidianCampaignRecord[] }>
+> {
+  return callObsidianApi({ action: "list_campaigns" });
 }
 
 export async function createCloudCampaign(
