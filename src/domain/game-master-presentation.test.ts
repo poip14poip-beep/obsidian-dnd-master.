@@ -22,9 +22,9 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     state.player_character_state.currentLocationLabel = "UNKNOWN";
     const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 7);
     expect(answer).toContain("ХОД #0007");
-    expect(answer).toContain("\\nКАМПАНИЯ:");
+    expect(answer).toContain("\nКАМПАНИЯ:");
     expect(answer).toContain("ВРЕМЯ: 08:00");
-    expect(answer).not.toContain("\\\\n");
+    expect(answer).not.toContain("\\n");
     expect(answer).toContain("ИГРОВОЙ ГОД: НЕ УСТАНОВЛЕНО");
     expect(answer).toContain("ПОГОДА: НЕ УСТАНОВЛЕНО");
     expect(answer).toContain("СЕНСОРНОЕ ВОСПРИЯТИЕ");
