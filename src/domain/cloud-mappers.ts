@@ -150,6 +150,8 @@ export async function mapCloudSources(
       `[obsidian-local-id:${source.id}]`,
       source.originLabel,
       source.notes,
+      `[review-status:${source.reviewStatus ?? "UNREVIEWED"}]`,
+      `[context-enabled:${source.contextEnabled === true ? "true" : "false"}]`,
     ].filter(Boolean).join("\n");
     rows.push({
       id,
