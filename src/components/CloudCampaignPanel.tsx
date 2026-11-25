@@ -227,9 +227,7 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
               <div key={key} className="rounded-md border border-border p-2">
                 <span className="block text-[10px] text-muted-foreground">{label}</span>
                 <span className="mono-code text-sm font-semibold text-foreground">
-                  {key === "world_state" || key === "player_character_state"
-                    ? (snapshot[key] ? "1" : "0")
-                    : collectionCount(key)}
+                  {collectionCount(key)}
                 </span>
               </div>
             ))}
