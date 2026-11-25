@@ -229,6 +229,7 @@ export interface PlayerCharacterState {
   speedFeet?: number | null;
   hitDice?: string;
   savingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
+  baseSavingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   skillBonuses?: Array<{ name: string; bonus: number; basis: string }>;
   classFeaturesByLevel?: Array<{ level: number; features: string }>;
   weaponAttacks?: Array<{ weapon: string; attackBonus: number; damage: string; mastery: string }>;

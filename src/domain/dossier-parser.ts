@@ -15,6 +15,7 @@ export interface DossierBasics {
   speedFeet: number | null;
   hitDice: string | null;
   savingThrowBonuses: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number } | null;
+  baseSavingThrowBonuses: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number } | null;
   skillBonuses: Array<{ name: string; bonus: number; basis: string }>;
   classFeaturesByLevel: Array<{ level: number; features: string }>;
   weaponAttacks: Array<{ weapon: string; attackBonus: number; damage: string; mastery: string }>;
@@ -79,10 +80,15 @@ export function extractDossierBasics(text: string): DossierBasics {
   const saveRows = section("9.2.", "9.3.");
   const saveValues = saveRows.map((line) => line.split("|").map((cell) => cell.trim()))
     .find((cells) => cells.length >= 6 && cells.slice(0, 6).every((cell) => /^[+-]\d+$/.test(cell)));
-  const savingThrowBonuses = saveValues ? {
+  const baseSavingThrowBonuses = saveValues ? {
     strength: Number(saveValues[0]), dexterity: Number(saveValues[1]), constitution: Number(saveValues[2]),
     intelligence: Number(saveValues[3]), wisdom: Number(saveValues[4]), charisma: Number(saveValues[5]),
   } : null;
+  const finalSaveMatch = text.match(/итог\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s+соответственно/i);
+  const savingThrowBonuses = finalSaveMatch ? {
+    strength: Number(finalSaveMatch[1]), dexterity: Number(finalSaveMatch[2]), constitution: Number(finalSaveMatch[3]),
+    intelligence: Number(finalSaveMatch[4]), wisdom: Number(finalSaveMatch[5]), charisma: Number(finalSaveMatch[6]),
+  } : baseSavingThrowBonuses;
   const skillBonuses = section("9.3.", "9.4.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());
     if (cells.length < 3 || !cells[0]! || !/^[+-]\d+$/.test(cells[1]!)) return [];
@@ -104,7 +110,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   const resources: DossierResource[] = [];
   const resourcePatterns: Array<{ name: string; pattern: RegExp; recovery: string }> = [
     { name: "Second Wind", pattern: /Second Wind:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "UNKNOWN" },
-    { name: "Action Surge", pattern: /Action Surge:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "Long Rest" },
+    { name: "Action Surge", pattern: /Action Surge:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "UNKNOWN" },
     { name: "Indomitable", pattern: /Indomitable:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "UNKNOWN" },
   ];
   for (const resource of resourcePatterns) {
@@ -128,5 +134,5 @@ export function extractDossierBasics(text: string): DossierBasics {
   return { name, speciesAndClass, level, classLevel, epicCampaignLevels, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
     armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
     speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null,
-    savingThrowBonuses, skillBonuses, classFeaturesByLevel, weaponAttacks, inventory, resources, evidence };
+    savingThrowBonuses, baseSavingThrowBonuses, skillBonuses, classFeaturesByLevel, weaponAttacks, inventory, resources, evidence };
 }
