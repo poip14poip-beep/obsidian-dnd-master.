@@ -44,8 +44,7 @@ export async function extractDocxText(file: File): Promise<string> {
   }
   const xml = new DOMParser().parseFromString(new TextDecoder().decode(xmlBytes), "application/xml");
   if (xml.querySelector("parsererror")) throw new Error("Не удалось прочитать XML-содержимое DOCX.");
-  const paragraphs = Array.from(xml.getElementsByTagName("w:p"));
-  const output = paragraphs.map((paragraph) => {
+  const renderParagraph = (paragraph: Element): string => {
     const style = paragraph.getElementsByTagName("w:pStyle")[0]?.getAttribute("w:val") ?? "";
     const level = /^Heading([1-6])$/i.exec(style)?.[1];
     const parts: string[] = [];
@@ -55,12 +54,31 @@ export async function extractDocxText(file: File): Promise<string> {
       if (element.localName === "pPr") continue;
       const textNodes = Array.from(element.getElementsByTagName("w:t"));
       if (textNodes.length) parts.push(textNodes.map((item) => item.textContent ?? "").join(""));
-      if (element.getElementsByTagName("w:tab").length) parts.push("\t");
-      if (element.getElementsByTagName("w:br").length) parts.push("\n");
+      if (element.getElementsByTagName("w:tab").length) parts.push("\\t");
+      if (element.getElementsByTagName("w:br").length) parts.push("\\n");
     }
     const value = parts.join("").trim();
     return value ? `${level ? "#".repeat(Number(level)) + " " : ""}${value}` : "";
-  }).filter(Boolean);
+  };
+  const output: string[] = [];
+  const documentBody = xml.getElementsByTagName("w:body")[0];
+  if (!documentBody) throw new Error("В DOCX не найден основной текстовый блок.");
+  for (const node of Array.from(documentBody.childNodes)) {
+    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+    const element = node as Element;
+    if (element.localName === "p") {
+      const paragraph = renderParagraph(element);
+      if (paragraph) output.push(paragraph);
+    } else if (element.localName === "tbl") {
+      const rows = Array.from(element.getElementsByTagName("w:tr"));
+      for (const row of rows) {
+        const cells = Array.from(row.children).filter((child) => (child as Element).localName === "tc");
+        const values = cells.map((cell) => Array.from((cell as Element).getElementsByTagName("w:p"))
+          .map(renderParagraph).filter(Boolean).join(" / "));
+        if (values.some(Boolean)) output.push(values.join(" | "));
+      }
+    }
+  }
   const result = output.join("\n\n").trim();
   if (!result) throw new Error("В DOCX не найден текст для импорта.");
   return result;
