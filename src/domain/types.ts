@@ -8,6 +8,7 @@ export type EpistemicLayer =
 export type SourceType = "GOVERNING_DOC" | "WORLD_CANON" | "PLAYER_DOSSIER" | "SUPPLEMENTAL";
 
 export type SourceContentStatus = "NOT_ATTACHED" | "ATTACHED";
+export type SourceReviewStatus = "UNREVIEWED" | "VERIFIED";
 
 export type FactScope = "GLOBAL" | "REGION" | "LOCATION" | "FACTION" | "PERSONAL";
 
