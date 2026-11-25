@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { SourceDocument } from "@/domain/types";
 import { extractDocxText } from "@/domain/docx-text";
+import { processSourceContent } from "@/domain/source-processing";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/sources")({
@@ -41,6 +42,7 @@ function SourcesPage() {
   const [draftOrigin, setDraftOrigin] = useState("");
   const [draftNotes, setDraftNotes] = useState("");
   const [draftFileName, setDraftFileName] = useState<string | null>(null);
+  const [savingSource, setSavingSource] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newOrigin, setNewOrigin] = useState("");
@@ -72,20 +74,39 @@ function SourcesPage() {
     toast.info(`Прочитан файл ${file.name} (${text.length} симв.). Нажмите «Сохранить источник».`);
   }
 
-  function handleSaveSource(e: FormEvent) {
+  async function handleSaveSource(e: FormEvent) {
     e.preventDefault();
-    if (!editingId) return;
-    const res = attachSourceContent(editingId, {
-      fileName: draftFileName,
-      content: draftContent,
-      originLabel: draftOrigin,
-      notes: draftNotes,
-    });
-    if (res.ok) {
-      toast.success("Источник сохранён и проверен обратным чтением.");
-      setEditingId(null);
-    } else {
-      toast.error(res.error);
+    if (!editingId || savingSource) return;
+    const source = sources.find((item) => item.id === editingId);
+    if (!source) {
+      toast.error("Источник больше не найден. Обновите страницу и проверьте состояние.");
+      return;
+    }
+    setSavingSource(true);
+    try {
+      const processed = await processSourceContent(
+        { id: source.id, title: source.title, type: source.type, fileName: draftFileName },
+        draftContent,
+      );
+      const res = attachSourceContent(editingId, {
+        fileName: draftFileName,
+        content: draftContent,
+        originLabel: draftOrigin,
+        notes: draftNotes,
+        processing: processed.processing,
+        canonSections: processed.canonSections,
+        dateMentions: processed.dateMentions,
+      });
+      if (res.ok) {
+        toast.success(`Источник обработан: SHA-256 подтверждён, ${processed.processing.lineCount} строк, ${processed.processing.sectionCount} разделов.`);
+        setEditingId(null);
+      } else {
+        toast.error(res.error);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось обработать источник.");
+    } finally {
+      setSavingSource(false);
     }
   }
 
@@ -221,11 +242,16 @@ function SourcesPage() {
                       : "Файл не загружен (содержимое не выдумано)"}
                   </strong>
                 </span>
-                <span className="mono-code">SHA/FNV: {src.checksum}</span>
+                <span className="mono-code">Хеш записи: {src.checksum}</span>
+                <span className="mono-code">SHA-256: {src.processing?.sha256 ?? "НЕ ПРОВЕРЕН"}</span>
                 {src.fileName && <span className="mono-code">Файл: {src.fileName}</span>}
+                <span>Обработка: <strong className="text-foreground">{src.processing?.status === "PROCESSED" ? "ПРОВЕРЕН" : "НЕ ОБРАБОТАН"}</strong></span>
+                {src.processing?.status === "PROCESSED" && <span>{src.processing.lineCount} строк · {src.processing.sectionCount} разделов · {src.processing.chunkCount} фрагментов</span>}
+                {src.processing?.dateCandidateCount ? <span>Кандидатов дат: {src.processing.dateCandidateCount} (не утверждены)</span> : null}
               </div>
 
               {src.notes && <p className="text-xs text-muted-foreground">{src.notes}</p>}
+              {src.processing?.warnings.map((warning, index) => <p key={index} className="text-xs text-status-approx">Предупреждение обработки: {warning}</p>)}
 
               {src.contentStatus === "ATTACHED" && !isEditing && (
                 <details className="rounded border border-border bg-background/60 p-2.5 text-xs">

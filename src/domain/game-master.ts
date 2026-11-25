@@ -64,41 +64,46 @@ const turnSchema = {
   required: ["narration", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
-  const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
+  const terms = action.toLocaleLowerCase().split(/[^\\p{L}\\p{N}]+/u).filter((term) => term.length > 2);
   const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED");
-  const ranked = canon.flatMap((source) => {
-    const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
+  type RankedExcerpt = { source: SourceDocument; sectionId: string; headingPath: string[]; text: string; startLine: number; endLine: number; score: number };
+  const ranked: RankedExcerpt[] = canon.flatMap((source) => {
+    if (source.canonSections?.length) {
+      return source.canonSections.map((section) => {
+        const haystack = `${section.headingPath.join(" ")} ${section.heading}\\n${section.text}`.toLocaleLowerCase();
+        return { source, sectionId: section.id, headingPath: section.headingPath, text: section.text,
+          startLine: section.startLine, endLine: section.endLine,
+          score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
+      });
+    }
+    const lines = source.content.replace(/\\r\\n?/g, "\\n").split("\\n");
     const paragraphs: Array<{ text: string; startLine: number; endLine: number }> = [];
     let current: string[] = [];
     let startLine = 1;
     const flush = (endLine: number) => {
-      const text = current.join("\n").trim();
+      const text = current.join("\\n").trim();
       if (text) paragraphs.push({ text, startLine, endLine });
       current = [];
     };
     lines.forEach((line, index) => {
-      if (!line.trim()) {
-        flush(index);
-        startLine = index + 2;
-      } else {
-        if (current.length === 0) startLine = index + 1;
-        current.push(line);
-      }
+      if (!line.trim()) { flush(index); startLine = index + 2; }
+      else { if (current.length === 0) startLine = index + 1; current.push(line); }
     });
     flush(lines.length);
-    return paragraphs.map((paragraph) => ({
-      source, ...paragraph,
-      score: terms.reduce((score, term) => score + (paragraph.text.toLocaleLowerCase().includes(term) ? 1 : 0), 0),
-    }));
-  }).filter((item) => item["score"] > 0).sort((a, b) => b.score - a.score).slice(0, 8);
+    return paragraphs.map((paragraph) => {
+      const haystack = paragraph.text.toLocaleLowerCase();
+      return { source, sectionId: "UNINDEXED", headingPath: [], ...paragraph,
+        score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
+    });
+  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 8);
   const factText = facts.filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
-    .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\n");
+    .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\\n");
   return [
     ranked.length ? ranked.map((item) =>
-      `[ИСТОЧНИК: ${item["source"].title}; sourceId=${item["source"].id}; строки ${item["startLine"]}–${item["endLine"]}]\n${item["text"]}`,
-    ).join("\n\n") : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
-    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : "",
-  ].filter(Boolean).join("\n\n");
+      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}]\\n${item.text}`,
+    ).join("\\n\\n") : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
+    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\\n${factText}` : "",
+  ].filter(Boolean).join("\\n\\n");
 }
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
