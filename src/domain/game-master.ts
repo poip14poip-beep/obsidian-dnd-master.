@@ -124,18 +124,18 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
   if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
   for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
-    if (!["CREATE", "UPDATE"].includes(String(npc.action)) || typeof npc.name !== "string" || !npc.name.trim() ||
-        typeof npc.role !== "string" || typeof npc.goals !== "string" || typeof npc.attitudeToPlayer !== "string" ||
-        (npc.locationName !== null && typeof npc.locationName !== "string") ||
-        (npc.factionName !== null && typeof npc.factionName !== "string") ||
-        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc.certainty)) ||
-        typeof npc.reason !== "string" || !Array.isArray(npc.knowledgeAdditions)) {
+    if (!["CREATE", "UPDATE"].includes(String(npc["action"])) || typeof npc["name"] !== "string" || !npc["name"].trim() ||
+        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" ||
+        (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
+        (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
+        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
     }
-    for (const knowledge of npc.knowledgeAdditions as Array<Record<string, unknown>>) {
-      if (typeof knowledge.factSummary !== "string" || !knowledge.factSummary.trim() ||
-          typeof knowledge.acquisitionPath !== "string" || !knowledge.acquisitionPath.trim() ||
-          !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge.certainty))) {
+    for (const knowledge of npc["knowledgeAdditions"] as Array<Record<string, unknown>>) {
+      if (typeof knowledge["factSummary"] !== "string" || !knowledge["factSummary"].trim() ||
+          typeof knowledge["acquisitionPath"] !== "string" || !knowledge["acquisitionPath"].trim() ||
+          !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge["certainty"]))) {
         throw new GameMasterError("Некорректная запись знания NPC.", "INVALID_NPC_KNOWLEDGE");
       }
     }
@@ -144,11 +144,11 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
     throw new GameMasterError("Мастер указал локацию, которой нет в подтверждённом реестре. Сначала добавьте её в раздел «Время и карта».", "UNKNOWN_LOCATION_ID");
   }
   const changes = turn["characterChanges"] as Record<string, unknown> | undefined;
-  if (!changes || !Array.isArray(changes.inventory) || !Array.isArray(changes.resources) ||
-      !Array.isArray(changes.conditions) || !changes.currencyDelta || typeof changes.currencyDelta !== "object") {
+  if (!changes || !Array.isArray(changes["inventory"]) || !Array.isArray(changes["resources"]) ||
+      !Array.isArray(changes["conditions"]) || !changes["currencyDelta"] || typeof changes["currencyDelta"] !== "object") {
     throw new GameMasterError("Модель не вернула обязательный блок изменений состояния персонажа.", "INVALID_CHARACTER_CHANGES");
   }
-  for (const item of changes.inventory as Array<Record<string, unknown>>) {
+  for (const item of changes["inventory"] as Array<Record<string, unknown>>) {
     if (!["ADD", "REMOVE", "SET"].includes(String(item["action"])) || typeof item["name"] !== "string" ||
         !item["name"].trim() || !Number.isInteger(item["quantity"]) ||
         (item["action"] === "SET" ? (item["quantity"] as number) < 0 : (item["quantity"] as number) < 1) ||
@@ -156,7 +156,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
       throw new GameMasterError("Некорректное изменение инвентаря в ответе мастера.", "INVALID_INVENTORY_CHANGE");
     }
   }
-  for (const resource of changes.resources as Array<Record<string, unknown>>) {
+  for (const resource of changes["resources"] as Array<Record<string, unknown>>) {
     if (typeof resource["name"] !== "string" || !resource["name"].trim() ||
         (resource["current"] !== null && (!Number.isInteger(resource["current"]) || (resource["current"] as number) < 0)) ||
         (resource["max"] !== null && (!Number.isInteger(resource["max"]) || (resource["max"] as number) < 0)) ||
@@ -166,11 +166,11 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
       throw new GameMasterError("Некорректное изменение ресурса в ответе мастера.", "INVALID_RESOURCE_CHANGE");
     }
   }
-  const currency = changes.currencyDelta as Record<string, unknown>;
+  const currency = changes["currencyDelta"] as Record<string, unknown>;
   for (const coin of ["cp", "sp", "ep", "gp", "pp"]) {
     if (!Number.isInteger(currency[coin])) throw new GameMasterError("Некорректное изменение валюты.", "INVALID_CURRENCY_CHANGE");
   }
-  for (const condition of changes.conditions as Array<Record<string, unknown>>) {
+  for (const condition of changes["conditions"] as Array<Record<string, unknown>>) {
     if (!["ADD", "REMOVE"].includes(String(condition["action"])) || typeof condition["name"] !== "string" || !condition["name"].trim()) {
       throw new GameMasterError("Некорректное изменение состояния персонажа.", "INVALID_CONDITION_CHANGE");
     }
@@ -183,8 +183,8 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[]): GameMas
   }
   const hasPendingRoll = (turn["rolls"] as Array<Record<string, unknown>>).length > 0;
   if ((turn["needsClarification"] || hasPendingRoll) && ((turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
-      (changes.inventory as unknown[]).length > 0 || (changes.resources as unknown[]).length > 0 ||
-      (changes.conditions as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
+      (changes["inventory"] as unknown[]).length > 0 || (changes["resources"] as unknown[]).length > 0 ||
+      (changes["conditions"] as unknown[]).length > 0 || Object.values(currency).some((amount) => amount !== 0))) {
     throw new GameMasterError("При необходимости уточнения мастер не может менять время или HP.", "INVALID_CLARIFICATION_DELTA");
   }
   return turn as unknown as GameMasterTurn;
