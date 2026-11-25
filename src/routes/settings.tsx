@@ -254,9 +254,10 @@ function SettingsPage() {
                 id="cfg-cal"
                 value={calendarSystem}
                 onChange={(e) => setCalendarSystem(e.target.value)}
-                placeholder="Например: Календарь Экдрасиля"
+                placeholder="Единая письменная эра; год 0 — начало общей письменной эры"
                 className="touch-target"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Конкретная точка старта UNKNOWN; выбери её сам.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
@@ -276,23 +277,24 @@ function SettingsPage() {
           </h3>
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="cfg-date">Стартовая внутриигровая дата (не UNKNOWN)</Label>
+              <Label htmlFor="cfg-date">Стартовый год и точность даты</Label>
               <Input
                 id="cfg-date"
                 value={startInGameDate}
                 onChange={(e) => setStartInGameDate(e.target.value)}
-                placeholder="Например: День 1, 08:00"
+                placeholder="2000 год (APPROXIMATE; точный день и время UNKNOWN)"
                 disabled={s.confirmed}
                 className="touch-target mono-code"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">В досье Лии указан 2000 год, но точные день и время не установлены. Сохрани год как APPROXIMATE — не придумывай дату.</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="cfg-loc">Стартовая локация (не UNKNOWN)</Label>
+              <Label htmlFor="cfg-loc">Стартовая локация (выбирается игроком)</Label>
               <Input
                 id="cfg-loc"
                 value={startLocationName}
                 onChange={(e) => setStartLocationName(e.target.value)}
-                placeholder="Укажите стартовую локацию вручную"
+                placeholder="UNKNOWN — выбери город или место"
                 disabled={s.confirmed}
                 className="touch-target"
               />
