@@ -14,6 +14,10 @@ export interface DossierBasics {
   proficiencyBonus: number | null;
   speedFeet: number | null;
   hitDice: string | null;
+  savingThrowBonuses: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number } | null;
+  skillBonuses: Array<{ name: string; bonus: number; basis: string }>;
+  classFeaturesByLevel: Array<{ level: number; features: string }>;
+  weaponAttacks: Array<{ weapon: string; attackBonus: number; damage: string; mastery: string }>;
   inventory: DossierInventoryItem[];
   resources: DossierResource[];
   evidence: string[];
@@ -65,6 +69,37 @@ export function extractDossierBasics(text: string): DossierBasics {
     inventory.push({ name, quantity, notes, location: inventoryLocation,
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
+  const section = (startPrefix: string, endPrefix: string): string[] => {
+    const clean = (line: string) => line.replace(/^#{1,6}\\s*/, "").trim();
+    const start = lines.findIndex((line) => clean(line).startsWith(startPrefix));
+    if (start < 0) return [];
+    const end = lines.findIndex((line, index) => index > start && clean(line).startsWith(endPrefix));
+    return lines.slice(start + 1, end < 0 ? lines.length : end);
+  };
+  const saveRows = section("9.2.", "9.3.");
+  const saveValues = saveRows.map((line) => line.split("|").map((cell) => cell.trim()))
+    .find((cells) => cells.length >= 6 && cells.slice(0, 6).every((cell) => /^[+-]\\d+$/.test(cell)));
+  const savingThrowBonuses = saveValues ? {
+    strength: Number(saveValues[0]), dexterity: Number(saveValues[1]), constitution: Number(saveValues[2]),
+    intelligence: Number(saveValues[3]), wisdom: Number(saveValues[4]), charisma: Number(saveValues[5]),
+  } : null;
+  const skillBonuses = section("9.3.", "9.4.").flatMap((line) => {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 3 || !cells[0] || !/^[+-]\\d+$/.test(cells[1])) return [];
+    if (/^навык$/i.test(cells[0])) return [];
+    return [{ name: cells[0], bonus: Number(cells[1]), basis: cells.slice(2).join(" | ") }];
+  });
+  const classFeaturesByLevel = section("9.4.", "9.5.").flatMap((line) => {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 2 || !/^\\d{1,2}$/.test(cells[0])) return [];
+    const level = Number(cells[0]);
+    return level >= 1 && level <= 20 && cells[1] ? [{ level, features: cells.slice(1).join(" | ") }] : [];
+  });
+  const weaponAttacks = section("9.5.", "10.").flatMap((line) => {
+    const cells = line.split("|").map((cell) => cell.trim());
+    if (cells.length < 4 || !/^[+-]\\d+$/.test(cells[1]) || /^оружие$/i.test(cells[0])) return [];
+    return [{ weapon: cells[0], attackBonus: Number(cells[1]), damage: cells[2], mastery: cells[3] }];
+  });
   const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
   const resources: DossierResource[] = [];
   const resourcePatterns: Array<{ name: string; pattern: RegExp; recovery: string }> = [
@@ -87,8 +122,11 @@ export function extractDossierBasics(text: string): DossierBasics {
     abilityScores ? "Характеристики: STR " + abilityScores.strength + ", DEX " + abilityScores.dexterity + ", CON " + abilityScores.constitution + ", INT " + abilityScores.intelligence + ", WIS " + abilityScores.wisdom + ", CHA " + abilityScores.charisma : "",
     inventory.length ? `Предметов импортировано: ${inventory.length}` : "",
     resources.length ? `Классовых ресурсов распознано: ${resources.map((item) => item.name + " " + item.max).join(", ")}` : "",
+    skillBonuses.length ? `Навыков распознано: ${skillBonuses.length}` : "",
+    weaponAttacks.length ? `Атак распознано: ${weaponAttacks.length}` : "",
   ].filter(Boolean);
   return { name, speciesAndClass, level, classLevel, epicCampaignLevels, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
     armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
-    speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null, inventory, resources, evidence };
+    speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null,
+    savingThrowBonuses, skillBonuses, classFeaturesByLevel, weaponAttacks, inventory, resources, evidence };
 }
