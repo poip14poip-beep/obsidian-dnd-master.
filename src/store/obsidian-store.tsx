@@ -802,6 +802,15 @@ export function ObsidianStoreProvider({
     const ws = collections.world_state;
     const pc = collections.player_character_state;
     const s = ws.setup;
+    const governingReady = collections.sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
+    const canonReady = collections.sources.some((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
+    if (!governingReady || !canonReady) {
+      return {
+        ok: false,
+        error: "Для запуска обязательны загруженные оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля. Досье персонажа может быть загружено отдельно или создано вручную.",
+        report: lastIntegrityReport,
+      };
+    }
     if (
       !s.sourcesConfirmed ||
       !s.parametersConfirmed ||

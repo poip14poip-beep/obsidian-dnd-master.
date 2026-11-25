@@ -172,7 +172,7 @@ function SettingsPage() {
               Открыть источники
             </Link>
           </div>
-          <ul className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье Лии или другого персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
             {sources.slice(0, 3).map((src) => (
               <li key={src.id}>
                 • <strong className="text-foreground">{src.title}</strong> ({src.targetPartition}) —{" "}
