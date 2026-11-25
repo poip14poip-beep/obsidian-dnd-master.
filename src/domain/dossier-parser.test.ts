@@ -12,6 +12,9 @@ describe("player dossier summary extraction", () => {
   it("extracts ability scores and inventory rows from DOCX table text", () => {
     const result = extractDossierBasics([
       "ЛИЯ ВЕЙН",
+      "Общий уровень | 21 (домашнее эпическое расширение)",
+      "HP | 184",
+      "КБ | КБ 20",
       "Сила | Ловкость | Телосложение | Интеллект | Мудрость | Харизма",
       "20 (+5) | 16 (+3) | 16 (+3) | 18 (+4) | 14 (+2) | 16 (+3)",
       "Бонус мастерства | +6",
@@ -22,8 +25,12 @@ describe("player dossier summary extraction", () => {
       "1 | Cloak of Protection | +1 КБ",
       "11.2. Оружие и обслуживание",
       "Second Wind: четыре использования; Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
+      "2–3 дня | Сухой паёк | Пополняется в пути",
       "1 | Катана в ножнах | Основное оружие",
     ].join("\n"));
+    expect(result.level).toBe(21);
+    expect(result.hitPointMaximum).toBe(184);
+    expect(result.armorClass).toBe(20);
     expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
     expect(result.proficiencyBonus).toBe(6);
     expect(result.speedFeet).toBe(30);
