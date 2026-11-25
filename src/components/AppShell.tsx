@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
-  const { user, guestMode, signOut } = useAuth();
+  const { user, guestMode, status: authStatus, signOut } = useAuth();
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
@@ -80,6 +80,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {guestMode && (
+        <div role="status" className="border-b border-status-approx/40 bg-status-approx/10 px-3 py-2 text-center text-xs text-status-approx">
+          Локальный режим: кампания хранится только в этом браузере. Экспортируйте резервную копию; облачная синхронизация недоступна.
+        </div>
+      )}
+      {authStatus === "unconfigured" && !guestMode && (
+        <div role="status" className="border-b border-status-approx/40 bg-status-approx/10 px-3 py-2 text-center text-xs text-status-approx">
+          Для пробной игры выберите локальный режим на экране входа. Облачная авторизация не настроена.
+        </div>
+      )}
       {/* Desktop persistent left sidebar */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-sidebar-border bg-sidebar lg:flex">
         <div className="border-b border-sidebar-border px-4 py-4">
@@ -140,7 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="space-y-1 border-t border-sidebar-border pt-2">
             <p className="truncate font-medium text-sidebar-foreground">
-              {user?.email ?? "Авторизованный пользователь"}
+              {guestMode ? "Гостевой режим" : user?.email ?? "Авторизованный пользователь"}
             </p>
             <p className="text-[10px] text-status-approx">
               Локальный слой · без облачной синхронизации
