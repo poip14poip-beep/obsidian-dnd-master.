@@ -92,6 +92,28 @@ export function extractDossierBasics(text: string): DossierBasics {
     inventory.push({ name, quantity, notes, location: inventoryLocation, startPolicy: inventoryStartPolicy,
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
+  const personalInventoryRows = lines.flatMap((line, index) => {
+    const heading = line.replace(/^#{1,6}\\s*/, "");
+    if (!/^11\\.5\\./.test(heading)) return [];
+    const end = lines.findIndex((candidate, candidateIndex) => candidateIndex > index && /^11\\.6\\./.test(candidate.replace(/^#{1,6}\\s*/, "")));
+    const rows = lines.slice(index + 1, end < 0 ? lines.length : end);
+    return rows.flatMap((row) => {
+      if (!row.includes("|")) return [];
+      const cells = row.split("|").map((cell) => cell.trim());
+      if (cells.length < 2 || /^(?:предмет|кол-во|количество)$/i.test(cells[0]!)) return [];
+      const name = cells[0]!;
+      if (!name || /^(?:описание|назначение)$/i.test(cells[1]!)) return [];
+      return [{
+        name,
+        quantity: 1,
+        notes: `Агрегированная запись из раздела личных вещей; точное количество и текущее местоположение UNKNOWN. ${cells.slice(1).join(" | ")}`,
+        location: "UNKNOWN" as const,
+        certainty: "APPROXIMATE" as const,
+        startPolicy: "KEEP_FROM_DOSSIER" as const,
+      }];
+    });
+  });
+  inventory.push(...personalInventoryRows);
   const section = (startPrefix: string, endPrefix: string): string[] => {
     const clean = (line: string) => line.replace(/^#{1,6}\s*/, "").trim();
     const start = lines.findIndex((line) => clean(line).startsWith(startPrefix));
