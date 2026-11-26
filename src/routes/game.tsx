@@ -37,6 +37,7 @@ function GamePage() {
   const gmModel = "obsidian-free";
   const [opening, setOpening] = useState(worldState.openingScene ?? "");
   const [openingBusy, setOpeningBusy] = useState(false);
+  const [openingAttempted, setOpeningAttempted] = useState(false);
   const [playerAction, setPlayerAction] = useState("");
   const [pendingAction, setPendingAction] = useState("");
   const [gmBusy, setGmBusy] = useState(false);
@@ -146,6 +147,7 @@ function GamePage() {
   }
 
   async function handleOpenCampaign() {
+    setOpeningAttempted(true);
     setGmError(null);
     if (!setupReady) {
       setGmError("Подготовка не пройдена. Проверь три обработанных и подтверждённых источника, лист персонажа и подтверждение старта.");
@@ -175,6 +177,12 @@ function GamePage() {
       setOpeningBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!setupReady || sessionLog.lastTurnNumber > 0 || openingBusy || openingAttempted || openingCommitStage) return;
+    if (!session?.access_token) return;
+    void handleOpenCampaign();
+  }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
   async function handleResolveAction(actionOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
