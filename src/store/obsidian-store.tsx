@@ -1127,7 +1127,7 @@ export function ObsidianStoreProvider({
     const pc = collections.player_character_state;
     const s = ws.setup;
     const isVerifiedContextSource = (source: SourceDocument, type: SourceDocument["type"]) =>
-      type === "GOVERNING_DOC"
+      type === "GOVERNING_DOC" || type === "WORLD_CANON"
         ? source.type === type && source.serverManaged === true
         : source.type === type &&
           source.contentStatus === "ATTACHED" &&
