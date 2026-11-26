@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CanonRouteImport } from './routes/canon'
 import { Route as CharacterRouteImport } from './routes/character'
 import { Route as FactionsRouteImport } from './routes/factions'
+import { Route as GameRouteImport } from './routes/game'
 import { Route as NpcsRouteImport } from './routes/npcs'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -51,6 +52,11 @@ const CharacterRoute = CharacterRouteImport.update({
 const FactionsRoute = FactionsRouteImport.update({
   id: '/factions',
   path: '/factions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameRoute = GameRouteImport.update({
+  id: '/game',
+  path: '/game',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NpcsRoute = NpcsRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/canon'
     | '/character'
     | '/factions'
+    | '/game'
     | '/npcs'
     | '/reset-password'
     | '/settings'
@@ -190,6 +200,7 @@ export interface RootRouteChildren {
   CanonRoute: typeof CanonRoute
   CharacterRoute: typeof CharacterRoute
   FactionsRoute: typeof FactionsRoute
+  GameRoute: typeof GameRoute
   NpcsRoute: typeof NpcsRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -241,6 +252,13 @@ declare module '@tanstack/react-router' {
       path: '/factions'
       fullPath: '/factions'
       preLoaderRoute: typeof FactionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/game': {
+      id: '/game'
+      path: '/game'
+      fullPath: '/game'
+      preLoaderRoute: typeof GameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/npcs': {
@@ -302,6 +320,7 @@ const rootRouteChildren: RootRouteChildren = {
   CanonRoute: CanonRoute,
   CharacterRoute: CharacterRoute,
   FactionsRoute: FactionsRoute,
+  GameRoute: GameRoute,
   NpcsRoute: NpcsRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
