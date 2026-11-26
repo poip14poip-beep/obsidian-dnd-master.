@@ -36,6 +36,28 @@ describe("generateRandomStart", () => {
     expect(result.characterPatch.abilityScores).toBeUndefined();
   });
 
+  it("keeps only confirmed equipment, adds a background kit, assigns weights and generates starting money", () => {
+    const result = generateRandomStart(40, () => 0, {
+      background: "Солдат",
+      generateBackgroundKit: true,
+      retainedInventory: [
+        { id: "katana", name: "Катана в ножнах", quantity: 1, notes: "Подтверждённое оружие", certainty: "KNOWN", location: "CARRIED", unitWeightLb: null },
+        { id: "armor", name: "Кожа Последнего Часа", quantity: 1, notes: "Авторский лёгкий доспех", certainty: "KNOWN", location: "WORN", unitWeightLb: null },
+        { id: "cloak", name: "Плащ", quantity: 1, notes: "Одежда из досье", certainty: "KNOWN", location: "WORN", unitWeightLb: null },
+      ],
+    });
+    expect(result.replaceInventory).toBe(true);
+    expect(result.inventory.map((item) => item.name)).toContain("Катана в ножнах");
+    expect(result.inventory.map((item) => item.name)).toContain("Кожа Последнего Часа");
+    expect(result.inventory.map((item) => item.name)).toContain("Набор целителя");
+    expect(result.inventory.map((item) => item.name)).not.toContain("Короткий лук");
+    expect(result.inventory.map((item) => item.name)).not.toContain("Дорожная одежда");
+    expect(result.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined)).toBe(true);
+    expect(result.characterPatch.currency).toEqual({ cp: 1, sp: 1, ep: 0, gp: 20, pp: 0 });
+    expect(result.characterPatch.background).toBe("Soldier");
+    expect(result.narrative).toContain("Случайный стартовый капитал");
+  });
+
   it("always starts with full HP instead of unexplained random injuries", () => {
     const result = generateRandomStart(184, () => 0);
     expect(result.hpCurrent).toBe(184);
