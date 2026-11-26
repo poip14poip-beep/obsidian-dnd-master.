@@ -44,6 +44,17 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+function compactAuditValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return value.length > 1200 ? value.slice(0, 1200) + "…[сокращено]" : value;
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (depth >= 6) return "[вложенные данные сокращены]";
+  if (Array.isArray(value)) return value.slice(0, 24).map((item) => compactAuditValue(item, depth + 1));
+  if (isRecord(value)) {
+    const entries = Object.entries(value).slice(0, 70).map(([key, item]) => [key, compactAuditValue(item, depth + 1)]);
+    return Object.fromEntries(entries);
+  }
+  return String(value);
+}
 function validateSchema(value: unknown, schema: JsonRecord): boolean {
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
   const type = schema.type;
@@ -297,7 +308,14 @@ Deno.serve(async (req: Request) => {
   if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !isCompatibilityRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
-  const inputText = requestBody.input as string;
+  let inputText = requestBody.input as string;
+  if (isCompatibilityRequest) {
+    try {
+      const parsedInput = JSON.parse(inputText);
+      inputText = JSON.stringify(compactAuditValue(parsedInput));
+      if (inputText.length > 18_000) inputText = inputText.slice(0, 18_000);
+    } catch { /* keep the original input so malformed dossiers are reported accurately */ }
+  }
   const instructionText = requestBody.instructions as string;
   const schema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
   const schemaName = isCompatibilityRequest ? "obsidian_character_compatibility" : isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
@@ -376,8 +394,8 @@ Deno.serve(async (req: Request) => {
     .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 12 : 12)
-    .map((item) => item.paragraph);
+    .slice(0, isCompatibilityRequest ? 8 : 12)
+    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 1100) : item.paragraph);
   const rulesContext = selectedRules.length
     ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
@@ -413,8 +431,8 @@ Deno.serve(async (req: Request) => {
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 8 : 18)
-    .map((item) => item.paragraph);
+    .slice(0, isCompatibilityRequest ? 6 : 18)
+    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 900) : item.paragraph);
   const canonContext = selectedCanon.length
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
@@ -426,7 +444,7 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
+    ? [MODEL_ATTEMPTS[0]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
       : highImpactTurn
@@ -487,7 +505,7 @@ Deno.serve(async (req: Request) => {
     ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
-    { role: "system", content: serverInstructions },
+    { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
     { role: "user", content: inputText },
   ];
   const failures: string[] = [];
@@ -496,7 +514,7 @@ Deno.serve(async (req: Request) => {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
-      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id, systemChars: serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
+      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -511,9 +529,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isCompatibilityRequest ? 5000 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 2800 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 24_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 40_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
