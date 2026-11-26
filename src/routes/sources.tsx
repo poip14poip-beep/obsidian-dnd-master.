@@ -38,6 +38,7 @@ export const Route = createFileRoute("/sources")({
 
 function SourcesPage() {
   const { sources, attachSourceContent, addSupplementalSource, verifySource, setSourceContextEnabled } = useObsidianStore();
+  const playerVisibleSources = sources.filter((source) => source.playerVisible !== false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftContent, setDraftContent] = useState("");
   const [draftOrigin, setDraftOrigin] = useState("");
@@ -209,7 +210,7 @@ function SourcesPage() {
       )}
 
       <div className="space-y-3">
-        {sources.map((src) => {
+        {playerVisibleSources.map((src) => {
           const isEditing = editingId === src.id;
           return (
             <article key={src.id} className="panel-surface space-y-3 p-4">
