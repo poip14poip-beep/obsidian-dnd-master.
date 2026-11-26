@@ -63,6 +63,7 @@ function CharacterPage() {
           <Value label="Временные HP" value={character.hpTemp} />
           <Value label="Класс Доспеха (КД)" value={character.armorClass} />
           <Value label="Бонус мастерства" value={character.proficiencyBonus} />
+          <Value label="Размер существа" value={character.size ?? "UNKNOWN"} />
           <Value label="Скорость" value={character.speedFeet === null || character.speedFeet === undefined ? "UNKNOWN" : `${character.speedFeet} ft`} />
         </div>
         {stats && (
@@ -131,7 +132,7 @@ function CharacterPage() {
                   {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {item.location ?? "CARRIED"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} lb/ед.`}
+                  {item.location ?? "UNKNOWN"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} lb/ед.`}
                 </span>
               </li>
             ))}
