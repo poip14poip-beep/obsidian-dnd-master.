@@ -75,6 +75,21 @@ async function renderCampaignStore(storage: StorageLike) {
   return hook;
 }
 
+describe("source visibility and campaign separation", () => {
+  it("keeps the master prompt and rules out of player-visible sources and uses a neutral character dossier", () => {
+    const initial = createInitialCollections();
+    const governing = initial.sources.find((source) => source.type === "GOVERNING_DOC");
+    const rules = initial.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD);
+    const dossier = initial.sources.find((source) => source.type === "PLAYER_DOSSIER");
+
+    expect(governing?.playerVisible).toBe(false);
+    expect(rules?.playerVisible).toBe(false);
+    expect(dossier?.playerVisible).toBe(false);
+    expect(dossier?.id).toBe("src-player-character-dossier");
+    expect(dossier?.title).toBe("Лист персонажа текущей кампании");
+  });
+});
+
 describe("campaign setup confirmation", () => {
   it("validates and commits setup only after all three sources are verified and enabled", async () => {
     const storage = createMemoryStorage();
