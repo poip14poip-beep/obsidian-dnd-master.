@@ -182,6 +182,7 @@ export interface ObsidianStoreValue {
   // Setup Wizard & Campaign Parameters
   applyGeneratedStart: (input: {
     city: { name: string; region: string; continent: string; population: number };
+    placeName: string;
     date: string;
     narrative: string;
     locationDescription: string;
@@ -961,6 +962,8 @@ export function ObsidianStoreProvider({
       id: locationId,
       name: input.city.name,
       region: input.city.region,
+      cityName: input.city.name,
+      placeName: input.placeName,
       description: input.locationDescription,
       certainty: "KNOWN",
       sourceId: "src-ekdrasil-chronicle",
