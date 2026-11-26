@@ -89,22 +89,22 @@ function outputText(message: JsonRecord): string {
 const identitySchema: JsonRecord = {
   type: "object", additionalProperties: false,
   properties: {
-    name: { type: "string" },
+    name: { type: "string", minLength: 2, maxLength: 70 },
     species: { type: "string", enum: ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] },
     className: { type: "string", enum: ["Fighter","Rogue","Barbarian"] },
     background: { type: "string", enum: ["Acolyte","Criminal","Sage","Soldier"] },
     birthplace: { type: "string", enum: ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"] },
     ageYears: { type: "integer" },
-    genderPresentation: { type: "string" },
-    family: { type: "string" },
-    upbringing: { type: "string" },
-    lifeEvents: { type: "array", items: { type: "string" } },
-    personalityTraits: { type: "array", items: { type: "string" } },
-    ideal: { type: "string" },
-    bond: { type: "string" },
-    flaw: { type: "string" },
-    motivation: { type: "string" },
-    preCampaignDesire: { type: "string" }
+    genderPresentation: { type: "string", minLength: 2, maxLength: 50 },
+    family: { type: "string", minLength: 20, maxLength: 220 },
+    upbringing: { type: "string", minLength: 20, maxLength: 220 },
+    lifeEvents: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 12, maxLength: 180 } },
+    personalityTraits: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 3, maxLength: 70 } },
+    ideal: { type: "string", minLength: 8, maxLength: 140 },
+    bond: { type: "string", minLength: 8, maxLength: 140 },
+    flaw: { type: "string", minLength: 8, maxLength: 140 },
+    motivation: { type: "string", minLength: 15, maxLength: 180 },
+    preCampaignDesire: { type: "string", minLength: 15, maxLength: 180 }
   },
   required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire"]
 };
@@ -412,9 +412,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isIdentityRequest ? 1800 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isIdentityRequest ? 3000 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isIdentityRequest ? 30_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isIdentityRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
