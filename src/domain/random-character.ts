@@ -4,7 +4,7 @@ type Ability = "strength" | "dexterity" | "constitution" | "intelligence" | "wis
 type Random = (length: number) => number;
 type ClassKey = "Fighter" | "Rogue" | "Barbarian";
 type BackgroundKey = "Soldier" | "Criminal";
-type SpeciesKey = "Dwarf" | "Elf";
+type SpeciesKey = "Human" | "Elf" | "Dark Elf" | "Gnome" | "Red Dwarf" | "Half-Elf" | "Beastfolk";
 type ElfLineage = "Drow" | "High Elf" | "Wood Elf";
 
 const ABILITIES: Ability[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
@@ -46,10 +46,15 @@ const BACKGROUND_DATA = {
   Criminal: { abilities:["dexterity","constitution","intelligence"] as Ability[], feat:"Alert", skills:["Sleight of Hand","Stealth"], tool:"Воровские инструменты", gear:[["Кинжал",2,"1d4 колющий; Finesse, Light"],["Воровские инструменты",1,"Инструмент"],["Ломик",1,"Инструмент"],["Мешочек",2,"Контейнер"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",16,"16 GP"]] },
 } as const;
 
-const SPECIES_DATA = {
-  Dwarf: { size:"MEDIUM" as const, speed:30, hp:1, traits:"Тёмное зрение 120 футов; сопротивление урону ядом и преимущество на спасброски против состояния Отравлен; Dwarven Toughness: +1 к максимуму HP." },
-  Elf: { size:"MEDIUM" as const, speed:30, hp:0, traits:"Тёмное зрение 60 футов; Fey Ancestry: преимущество на спасброски для избегания или окончания состояния Очарован; Trance: не нуждается во сне, магия не может усыпить; продолжительный отдых за 4 часа медитации; Keen Senses: владение одним навыком на выбор — Проницательность, Восприятие или Выживание." },
-} as const;
+const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string}> = {
+  Human:{size:"MEDIUM",speed:30,hp:0,traits:"Народная гибкость (домашнее правило Экдрасиля): владение одним навыком на выбор." ,skill:""},
+  Elf:{size:"MEDIUM",speed:30,hp:0,traits:"Наследие фей: преимущество на спасброски для избегания или окончания состояния Очарован; транс: 4 часа медитации вместо сна; острые чувства — владение Восприятием.",skill:"Perception"},
+  "Dark Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Сумеречное зрение (домашнее правило Экдрасиля): тёмное зрение 60 футов; выдержка: владение одним навыком из Проницательности или Выживания.",skill:""},
+  Gnome:{size:"MEDIUM",speed:30,hp:0,traits:"Гномья наблюдательность (домашнее правило Экдрасиля): владение Расследованием; инженерная сноровка: владение одним ремесленным инструментом.",skill:"Investigation"},
+  "Red Dwarf":{size:"MEDIUM",speed:30,hp:1,traits:"Крепкое сложение (домашнее правило Экдрасиля): +1 HP на 1 уровне; владение Атлетикой или Выживанием.",skill:""},
+  "Half-Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Смешанное наследие (домашнее правило Экдрасиля): владение двумя навыками на выбор.",skill:""},
+  Beastfolk:{size:"MEDIUM",speed:30,hp:0,traits:"Разнообразная телесная адаптация (домашнее правило Экдрасиля): выбери один навык — Атлетика, Восприятие или Выживание. Индивидуальные особенности зверолюда описываются отдельно и не дают дополнительных механических преимуществ.",skill:""},
+};
 
 const GIVEN_NAMES = ["Арен","Брен","Кайр","Лиор","Мира","Селин","Тарен","Эйра","Вейл","Нерис","Оррин","Илана"];
 const FAMILY_NAMES = ["Вейр","Талмор","Элден","Каменный Шаг","Серый Ворон","Ренн","Дорн","Лесная Тень","Марек","Валь"];
@@ -73,13 +78,13 @@ export interface RandomCharacterResult {
 export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const className=choose(["Fighter","Rogue","Barbarian"] as const,random);
   const background=choose(["Soldier","Criminal"] as const,random);
-  const species=choose(["Dwarf","Elf"] as const,random);
+  const species=choose(["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] as const,random);
   const classData=CLASS_DATA[className];
   const backgroundData=BACKGROUND_DATA[background];
   const speciesData=SPECIES_DATA[species];
-  const elfLineage: ElfLineage | null = species === "Elf" ? choose(["Drow","High Elf","Wood Elf"] as const,random) : null;
+  const elfLineage: ElfLineage | null = null;
   // SRD 5.2.1: Keen Senses grants proficiency in Perception; it is not a choice among skills.
-  const elfKeenSkill = species === "Elf" ? "Perception" : null;
+  const elfKeenSkill = speciesData.skill && speciesData.skill.length > 0 ? speciesData.skill : null;
   const rolls=ABILITIES.map((ability)=>({ability,total:rollStat(random)}));
   // Assign rolled scores to abilities in random order, then apply the background's legal ability increases.
   const shuffled=[...ABILITIES];
@@ -124,20 +129,20 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     :className==="Rogue"
       ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
-  const lineageText = elfLineage === "Drow" ? "Elven Lineage — Drow: тёмное зрение 120 футов; заговор Dancing Lights." : elfLineage === "High Elf" ? "Elven Lineage — High Elf: заговор Prestidigitation; после продолжительного отдыха можно заменить его другим заговором из списка волшебника." : elfLineage === "Wood Elf" ? "Elven Lineage — Wood Elf: скорость 35 футов; заговор Druidcraft." : "";
-  const dwarfText = species === "Dwarf" ? "Dwarven Resilience: сопротивление урону ядом и преимущество на спасброски для избегания или окончания состояния Отравлен. Dwarven Toughness: +1 к максимуму HP за каждый уровень. Stonecunning: бонусным действием получает Tremorsense 60 футов на 10 минут, находясь на каменной поверхности; число использований равно бонусу мастерства, восстановление после продолжительного отдыха." : "";
+  const lineageText = "";
+  const dwarfText = "";
   const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`,lineageText,dwarfText].filter(Boolean);
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
-    speciesAndClass:`${species}${elfLineage ? ` (${elfLineage})` : ""} · ${className} 1 уровня · Предыстория: ${background}`,
+    speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
-    abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:elfLineage === "Wood Elf" ? 35 : speciesData.speed,
+    abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
     hitDice:`1d${classData.die}`,baseSavingThrowBonuses:saves,savingThrowBonuses:saves,
     skillBonuses,classFeaturesByLevel:[{level:1,features:featureText.join(" ")}],
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
-    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}${elfLineage ? ` (${elfLineage})` : ""}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Дополнительные опции и детали, не входящие в этот генератор, не подразумеваются.`,
+    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
-  return {character,summary:{name:character.name!,className,background,species:elfLineage ? `${species} (${elfLineage})` : species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
+  return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }
