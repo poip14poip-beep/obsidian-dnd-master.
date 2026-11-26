@@ -92,6 +92,7 @@ function importCharacterFromDossier(
     notes: item.notes,
     certainty: item.certainty,
     location: item.location === "WORN" ? "WORN" as const : "OTHER" as const,
+    startPolicy: item.startPolicy,
   }));
   const importedResources = basics.resources.map((resource, index) => ({
     id: `lia-dossier-resource-${index + 1}`,
