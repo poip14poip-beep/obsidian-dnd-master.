@@ -192,10 +192,15 @@ function PlayPage() {
       },
     });
     if (error) {
-      let detail = error.message || "Не удалось проверить персонажа мастером.";
+      let detail = [error.name, error.message].filter(Boolean).join(": ") || "Не удалось проверить персонажа мастером.";
       if ("context" in error && error.context instanceof Response) {
-        const payload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
-        detail = payload?.error?.message ?? detail;
+        const responseText = await error.context.clone().text().catch(() => "");
+        let serverMessage = "";
+        try {
+          const payload = JSON.parse(responseText) as { error?: { message?: string; code?: string } };
+          serverMessage = [payload.error?.code, payload.error?.message].filter(Boolean).join(": ");
+        } catch { serverMessage = responseText.slice(0, 500); }
+        if (serverMessage) detail = serverMessage;
       }
       throw new Error(detail);
     }
@@ -365,6 +370,23 @@ function PlayPage() {
     }
   }
   const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setImportError(null); };
+  const clearDossier = () => {
+    if (!dossier || locked || dossierUploadBusy || biographyBusy) return;
+    const result = attachSourceContent(dossier.id, {
+      fileName: null,
+      content: "",
+      originLabel: "Лист персонажа удалён пользователем",
+      notes: "Предыдущий файл удалён. Можно загрузить другой лист персонажа.",
+    });
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    setCandidate(null);
+    setConfirmed(false);
+    setBiographyReady(false);
+    setImportError(null);
+  };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || dossierUploadBusy) return;
@@ -477,7 +499,10 @@ function PlayPage() {
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
         {importError && <p className="text-xs text-destructive">{importError}</p>}
         {biographyBusy && <p className="text-sm text-primary">Мастер автоматически сверяет персонажа с хроникой Экдрасиля и SRD 5.2.1…</p>}
-        <Button disabled={locked || !parsed || confirmed || biographyBusy} onClick={() => void confirmDossier()}>{biographyBusy ? "Проверяю совместимость…" : "Проверить и импортировать персонажа"}</Button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button disabled={locked || !parsed || confirmed || biographyBusy} onClick={() => void confirmDossier()}>{biographyBusy ? "Проверяю совместимость…" : "Проверить и импортировать персонажа"}</Button>
+          <Button type="button" variant="outline" disabled={locked || dossierUploadBusy || biographyBusy} onClick={clearDossier}>Удалить файл и загрузить другой</Button>
+        </div>
       </>}
     </section>}
     {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
