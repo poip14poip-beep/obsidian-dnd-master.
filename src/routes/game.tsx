@@ -433,6 +433,13 @@ function GamePage() {
         </section>
       )}
 
+      {sessionLog.lastTurnNumber === 0 && character.recentPreCampaignHistory?.trim() && (
+        <article className="rounded-xl border border-border bg-card/60 p-4">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Последний месяц перед прибытием</p>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{character.recentPreCampaignHistory}</div>
+        </article>
+      )}
+
       {opening && (
         <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Предыстория · появление персонажа</p>
