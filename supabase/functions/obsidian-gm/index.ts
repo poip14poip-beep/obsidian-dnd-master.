@@ -376,7 +376,7 @@ Deno.serve(async (req: Request) => {
           messages,
           response_format: responseFormat,
           structured_outputs: true,
-          temperature: 0.25,
+          temperature: isBiographyRequest ? 0.78 : 0.25,
           max_tokens: 8192,
         }),
         signal: AbortSignal.timeout(55_000),
