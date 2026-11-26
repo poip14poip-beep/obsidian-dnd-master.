@@ -115,7 +115,7 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
   const verified = sources.filter((source) => {
     const label = `${source.title} ${source.originLabel} ${source.fileName ?? ""}`;
     return source.type === "SUPPLEMENTAL" &&
-      /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(label) &&
+      /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(label) &&
       source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
       source.processing?.status === "PROCESSED" &&
       source.reviewStatus === "VERIFIED" && source.contextEnabled === true;
@@ -133,15 +133,15 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
     ...( /перегруз|вес|грузоподъём/.test(russian) ? ["carrying capacity", "encumbrance", "push", "drag", "lift"] : []),
     ...( /класс|боец|воин|особенност/.test(russian) ? ["fighter", "character classes", "class features"] : []),
   ];
-  const actionTerms = action.toLocaleLowerCase().split(/[^\\p{L}\\p{N}]+/u).filter((term) => term.length > 2);
+  const actionTerms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
   const terms = [...new Set([...actionTerms, ...mappedTerms].map((term) => term.toLocaleLowerCase()))];
   const excerpts: Array<{ source: SourceDocument; startLine: number; endLine: number; text: string; score: number }> = [];
   for (const source of verified) {
-    const lines = source.content.replace(/\\r\\n?/g, "\\n").split("\\n");
+    const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
     let paragraph: string[] = [];
     let startLine = 1;
     const flush = (endLine: number) => {
-      const text = paragraph.join("\\n").trim();
+      const text = paragraph.join("\n").trim();
       paragraph = [];
       if (!text) return;
       const lower = text.toLocaleLowerCase();
@@ -161,11 +161,11 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
   for (const item of selected) {
     const excerpt = item.text.slice(0, Math.min(item.text.length, budget));
     if (!excerpt) break;
-    output.push(`[RULE SOURCE: ${item.source.title}; sourceId=${item.source.id}; lines ${item.startLine}–${item.endLine}]${item.text.length > excerpt.length ? " (excerpt truncated)" : ""}\\n${excerpt}`);
+    output.push(`[RULE SOURCE: ${item.source.title}; sourceId=${item.source.id}; lines ${item.startLine}–${item.endLine}]${item.text.length > excerpt.length ? " (excerpt truncated)" : ""}\n${excerpt}`);
     budget -= excerpt.length;
     if (budget <= 0) break;
   }
-  return output.join("\\n\\n");
+  return output.join("\n\n");
 }
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
