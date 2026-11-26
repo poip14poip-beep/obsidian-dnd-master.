@@ -102,6 +102,7 @@ export function createInitialWorldState(): WorldState {
     currentInGameDate: "UNKNOWN",
     elapsedMinutes: 0,
     encumbranceMode: "UNSET",
+    campaignPreferences: { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" },
     startLocationName: "UNKNOWN",
     currentLocationId: null,
     setup: {
