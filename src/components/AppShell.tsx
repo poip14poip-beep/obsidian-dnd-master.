@@ -293,37 +293,39 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       {/* Android-first fixed bottom navigation */}
-      <nav
-        aria-label="Нижняя навигация"
-        className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 backdrop-blur lg:hidden"
-      >
-        {MOBILE_BOTTOM_PATHS.map((path) => {
-          const item = NAV_ITEMS.find((n) => n.to === path)!;
-          const Icon = item.icon;
-          const active = pathname === item.to;
-          return (
-            <Link
-              key={path}
-              to={path}
-              className={cn(
-                "touch-target flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium",
-                active ? "text-primary" : "text-muted-foreground",
-              )}
-            >
-              <Icon className="h-5 w-5" />
-              <span className="truncate">{item.shortLabel}</span>
-            </Link>
-          );
-        })}
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="touch-target flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-muted-foreground"
+      {pathname !== "/game" && (
+        <nav
+          aria-label="Нижняя навигация"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-border bg-sidebar/95 backdrop-blur lg:hidden"
         >
-          <Menu className="h-5 w-5" />
-          <span>Разделы</span>
-        </button>
-      </nav>
+          {MOBILE_BOTTOM_PATHS.map((path) => {
+            const item = NAV_ITEMS.find((n) => n.to === path)!;
+            const Icon = item.icon;
+            const active = pathname === item.to;
+            return (
+              <Link
+                key={path}
+                to={path}
+                className={cn(
+                  "touch-target flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium",
+                  active ? "text-primary" : "text-muted-foreground",
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="truncate">{item.shortLabel}</span>
+              </Link>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => setDrawerOpen(true)}
+            className="touch-target flex flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-muted-foreground"
+          >
+            <Menu className="h-5 w-5" />
+            <span>Разделы</span>
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
