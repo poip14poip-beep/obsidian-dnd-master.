@@ -106,6 +106,17 @@ describe("verified SRD rules context", () => {
     expect(result).toContain("sourceId=SUPPLEMENTAL");
   });
 
+
+  it("uses PDF page breaks when extracting relevant SRD passages", () => {
+    const rules = {
+      ...source("SUPPLEMENTAL", "Unrelated introductory page with no combat rule.\\fCombat\\nThe Attack action lets you make one attack."),
+      title: "SRD 5.2.1",
+      originLabel: "Official D&D 2024 SRD 5.2.1",
+    };
+    const result = selectRulesContext([...context.sources, rules], "Лия атакует мечом");
+    expect(result).toContain("The Attack action");
+    expect(result).not.toContain("Unrelated introductory page");
+  });
   it("does not use an unreviewed SRD source", () => {
     const rules = {
       ...source("SUPPLEMENTAL", "Combat\\nThe Attack action lets you make one attack."),
