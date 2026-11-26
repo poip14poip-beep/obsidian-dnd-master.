@@ -83,6 +83,30 @@ function outputText(message: JsonRecord): string {
   }
   return "";
 }
+const biographySchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    ageYears: { type: ["integer", "null"] },
+    ageCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+    genderPresentation: { type: "string" },
+    appearance: { type: "string" },
+    birthplace: { type: "string" },
+    birthplaceSource: { type: "string" },
+    family: { type: "string" },
+    upbringing: { type: "string" },
+    lifeEvents: { type: "array", items: { type: "string" } },
+    personalityTraits: { type: "array", items: { type: "string" } },
+    ideal: { type: "string" },
+    bond: { type: "string" },
+    flaw: { type: "string" },
+    motivation: { type: "string" },
+    biography: { type: "string" },
+    canonBasis: { type: "array", items: { type: "string" } },
+    inventedDetailsNotice: { type: "string" },
+  },
+  required: ["ageYears","ageCertainty","genderPresentation","appearance","birthplace","birthplaceSource","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","biography","canonBasis","inventedDetailsNotice"],
+};
+
 function tokens(usage: unknown): { input_tokens?: number; output_tokens?: number } | undefined {
   if (!isRecord(usage)) return undefined;
   const input = Number(usage.prompt_tokens);
@@ -155,6 +179,7 @@ Deno.serve(async (req: Request) => {
     return json({ stored: true, source: data }, 200, cors);
   }
 
+  const isBiographyRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_BIOGRAPHY";
   if (!ROUTERAI_API_KEY) {
     return json({ error: {
       code: "ROUTERAI_SECRET_MISSING",
@@ -162,19 +187,18 @@ Deno.serve(async (req: Request) => {
     } }, 503, cors);
   }
 
-  if (!isRecord(body) ||
-      typeof body.model !== "string" || !ALLOWED_MODELS.has(body.model) ||
-      typeof body.instructions !== "string" || body.instructions.length < 1 || body.instructions.length > 250_000 ||
-      typeof body.input !== "string" || body.input.length < 1 || body.input.length > 700_000 ||
-      !isRecord(body.text) || !isRecord(body.text.format) ||
-      body.text.format.type !== "json_schema" ||
-      body.text.format.name !== "obsidian_game_turn" ||
-      body.text.format.strict !== true ||
-      !isRecord(body.text.format.schema)) {
+  const commonRequestValid = isRecord(body) &&
+    typeof body.model === "string" && ALLOWED_MODELS.has(body.model) &&
+    typeof body.instructions === "string" && body.instructions.length >= 1 && body.instructions.length <= 250_000 &&
+    typeof body.input === "string" && body.input.length >= 1 && body.input.length <= 700_000;
+  const turnRequestValid = isRecord(body) && isRecord(body.text) && isRecord(body.text.format) &&
+    body.text.format.type === "json_schema" && body.text.format.name === "obsidian_game_turn" &&
+    body.text.format.strict === true && isRecord(body.text.format.schema);
+  if (!commonRequestValid || (!isBiographyRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
-
-  const schema = body.text.format.schema;
+  const schema: JsonRecord = isBiographyRequest ? biographySchema : (body as JsonRecord).text as JsonRecord && (((body as JsonRecord).text as JsonRecord).format as JsonRecord).schema as JsonRecord;
+  const schemaName = isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
   }
@@ -254,7 +278,7 @@ Deno.serve(async (req: Request) => {
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
-  const isCharacterGeneration = /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const isCharacterGeneration = isBiographyRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
@@ -268,7 +292,14 @@ Deno.serve(async (req: Request) => {
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
-    canonContext,
+    isBiographyRequest ? "Полная хроника Экдрасиля доступна как закрытый источник. Выбирай только подтверждённые факты, не выводи новые факты из общего фэнтези-опыта." : canonContext,
+    ...(isBiographyRequest ? [
+      "РЕЖИМ ГЕНЕРАЦИИ БИОГРАФИИ: не изменяй механику, имя, народ, класс, предысторию, место рождения, источник места рождения или canonBasis, переданные в JSON. Возвращай те же birthplace, birthplaceSource и canonBasis дословно.",
+      "Создай индивидуальную, причинно связанную биографию на русском языке. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
+      "В Экдрасиле нет свободной повседневной магии. Не добавляй заклинания и магические силы. Мутация и проклятие различны и редки; не добавляй их без явного разрешения во входных параметрах. Обычный персонаж не должен иметь мутацию или проклятие по умолчанию.",
+      "Возраст, семья, воспитание и события биографии — индивидуально сгенерированные детали, а не канон. Если неизвестно — UNKNOWN. Не добавляй механические эффекты.",
+      "Не создавай новые города, страны, организации, исторические события или NPC. Сведения о происхождении должны соответствовать переданным подтверждённым данным.",
+    ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
     { role: "system", content: serverInstructions },
@@ -278,7 +309,7 @@ Deno.serve(async (req: Request) => {
   for (const attempt of MODEL_ATTEMPTS) {
     try {
       const responseFormat = attempt.format === "schema"
-        ? { type: "json_schema", json_schema: { name: "obsidian_game_turn", strict: true, schema } }
+        ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
