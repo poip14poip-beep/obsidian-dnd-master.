@@ -102,15 +102,55 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
       return { source, sectionId: "UNINDEXED", headingPath: [], ...paragraph,
         score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
     });
-  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 8);
-  const factText = facts.filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
-    .slice(0, 30).map((fact) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`).join("\n");
+  }).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 24);
+  const selectedFacts = facts
+    .filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
+    .map((fact) => {
+      const haystack = `${fact.title} ${fact.statement}`.toLocaleLowerCase();
+      const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+      return { fact, score };
+    })
+    .sort((a, b) => b.score - a.score || b.fact.createdAt.localeCompare(a.fact.createdAt))
+    .slice(0, 60)
+    .map(({ fact }) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`)
+    .join("\n");
+  const selectedExcerpts = ranked
+    .sort((a, b) => b.score - a.score || a.startLine - b.startLine)
+    .filter((item) => item.score > 0)
+    .slice(0, 12);
+  const fallbackExcerpts = selectedExcerpts.length ? selectedExcerpts : ranked.slice(0, 6);
   return [
-    ranked.length ? ranked.map((item) =>
-      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}]\n${item.text}`,
-    ).join("\n\n") : "Релевантные фрагменты хроники по запросу не найдены. Не заполняй пробелы выдуманным каноном.",
-    factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : "",
+    fallbackExcerpts.length ? fallbackExcerpts.map((item) =>
+      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}; relevance=${item.score}]\n${item.text}`,
+    ).join("\n\n") : "Релевантные фрагменты хроники не извлечены. Не заполняй пробелы выдуманным каноном.",
+    selectedFacts ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${selectedFacts}` : "",
   ].filter(Boolean).join("\n\n");
+}
+function selectRelevantJournal(
+  entries: Array<GameTurnEntry | TechnicalMessageEntry>,
+  action: string,
+  historicalLimit = 8,
+): Array<GameTurnEntry | TechnicalMessageEntry> {
+  const recent = entries.slice(-12);
+  const recentIds = new Set(recent.map((entry) => entry.id));
+  const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
+  if (!terms.length) return recent;
+  const historical = entries
+    .filter((entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN" && !recentIds.has(entry.id))
+    .map((entry) => {
+      const text = [entry.summary, entry.playerIntent, entry.worldOutcome, entry.gmNarration].join(" ").toLocaleLowerCase();
+      const score = terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
+      return { entry, score };
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || b.entry.turnNumber - a.entry.turnNumber)
+    .slice(0, historicalLimit)
+    .map((item) => item.entry);
+  return [...historical, ...recent].sort((a, b) => {
+    const aTurn = a.entryType === "GAME_TURN" ? a.turnNumber : Number.MAX_SAFE_INTEGER;
+    const bTurn = b.entryType === "GAME_TURN" ? b.turnNumber : Number.MAX_SAFE_INTEGER;
+    return aTurn - bTurn;
+  });
 }
 export function selectRulesContext(sources: SourceDocument[], action: string): string {
   const verified = sources.filter((source) => {
@@ -364,7 +404,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     verifiedRulesReference: verifiedRulesContext,
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
-    recentJournal: context.journal.slice(-12),
+    recentJournal: selectRelevantJournal(context.journal, context.action),
     requirements: [
       ...(context.mode === "OPENING" ? [
         "Это вступительная сцена, а не действие персонажа и не игровой ход. summary = «Вступительная сцена кампании»; worldOutcome = «Вступление показано; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
@@ -392,7 +432,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };
-  const model = options.model ?? "gpt-4.1-mini";
+  const model = options.model ?? "obsidian-free";
   let response: Response;
   try {
     response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {

@@ -5,14 +5,23 @@ const SUPABASE_PUBLISHABLE_KEY =
   Deno.env.get("SUPABASE_ANON_KEY") ??
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   "";
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY") ?? "";
-const ALLOWED_MODELS = new Set(["gpt-4.1-mini"]);
+const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
   "https://id-preview--f1a28b3c-1045-4cea-a6be-745d1ef02a64.lovable.app",
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
+
+type JsonRecord = Record<string, unknown>;
+type ModelAttempt = { id: string; format: "schema" | "json" };
+const MODEL_ATTEMPTS: ModelAttempt[] = [
+  { id: "baidu/ernie-5.5-flash-preview:free", format: "schema" },
+  { id: "inclusionai/ling-3.2-flash:free", format: "schema" },
+  { id: "google/gemma-4-26b-a4b-it:free", format: "json" },
+  { id: "openrouter/free", format: "schema" },
+];
 
 function corsHeaders(origin: string | null): HeadersInit {
   return {
@@ -29,14 +38,64 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
     headers: { ...cors, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
   });
 }
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function validateSchema(value: unknown, schema: JsonRecord): boolean {
+  const type = schema.type;
+  if (type === "object") {
+    if (!isRecord(value)) return false;
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    const required = Array.isArray(schema.required) ? schema.required.filter((x): x is string => typeof x === "string") : [];
+    if (required.some((key) => !(key in value))) return false;
+    if (schema.additionalProperties === false && Object.keys(value).some((key) => !(key in properties))) return false;
+    return Object.entries(properties).every(([key, child]) => !(key in value) || (isRecord(child) && validateSchema(value[key], child)));
+  }
+  if (type === "array") {
+    return Array.isArray(value) && (!isRecord(schema.items) || value.every((item) => validateSchema(item, schema.items as JsonRecord)));
+  }
+  if (Array.isArray(type)) {
+    const allowed = type as unknown[];
+    const matches = (candidate: unknown): boolean => {
+      if (candidate === "null") return value === null;
+      if (candidate === "string") return typeof value === "string";
+      if (candidate === "integer") return Number.isInteger(value);
+      if (candidate === "number") return typeof value === "number" && Number.isFinite(value);
+      if (candidate === "boolean") return typeof value === "boolean";
+      if (candidate === "object") return isRecord(value);
+      if (candidate === "array") return Array.isArray(value);
+      return false;
+    };
+    return allowed.some(matches);
+  }
+  if (type === "string") return typeof value === "string";
+  if (type === "integer") return Number.isInteger(value);
+  if (type === "number") return typeof value === "number" && Number.isFinite(value);
+  if (type === "boolean") return typeof value === "boolean";
+  if (Array.isArray(schema.enum)) return schema.enum.includes(value);
+  return true;
+}
+function outputText(message: JsonRecord): string {
+  const content = message.content;
+  if (typeof content === "string") return content.trim();
+  if (Array.isArray(content)) {
+    return content.map((part) => isRecord(part) && typeof part.text === "string" ? part.text : "").join("\n").trim();
+  }
+  return "";
+}
+function tokens(usage: unknown): { input_tokens?: number; output_tokens?: number } | undefined {
+  if (!isRecord(usage)) return undefined;
+  const input = Number(usage.prompt_tokens);
+  const output = Number(usage.completion_tokens);
+  return {
+    ...(Number.isFinite(input) ? { input_tokens: input } : {}),
+    ...(Number.isFinite(output) ? { output_tokens: output } : {}),
+  };
 }
 
 Deno.serve(async (req: Request) => {
   const origin = req.headers.get("origin");
   const cors = corsHeaders(origin);
-
   if (req.method === "OPTIONS") {
     if (!origin || !ALLOWED_ORIGINS.has(origin)) return new Response("Origin not allowed", { status: 403 });
     return new Response("ok", { headers: cors });
@@ -46,11 +105,9 @@ Deno.serve(async (req: Request) => {
 
   const declaredLength = Number(req.headers.get("content-length") ?? "0");
   if (declaredLength > 1_000_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
-
   const authorization = req.headers.get("authorization") ?? "";
   const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
   if (!tokenMatch) return json({ error: { code: "AUTH_REQUIRED", message: "Sign in to use the game master." } }, 401, cors);
-
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     return json({ error: { code: "SERVER_CONFIGURATION_INCOMPLETE", message: "Supabase server configuration is incomplete." } }, 503, cors);
   }
@@ -61,24 +118,21 @@ Deno.serve(async (req: Request) => {
   if (authError || !authData.user) {
     return json({ error: { code: "INVALID_SESSION", message: "Your session is invalid or expired. Sign in again." } }, 401, cors);
   }
-  if (!OPENAI_API_KEY) {
-    return json({ error: { code: "OPENAI_SECRET_MISSING", message: "The server is not configured with an OpenAI API key yet." } }, 503, cors);
+  if (!OPENROUTER_API_KEY) {
+    return json({ error: {
+      code: "OPENROUTER_SECRET_MISSING",
+      message: "Не настроен бесплатный провайдер мастера. Добавь OPENROUTER_API_KEY в Supabase → Edge Functions → Secrets.",
+    } }, 503, cors);
   }
 
   let rawBody: string;
-  try {
-    rawBody = await req.text();
-  } catch {
-    return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors);
-  }
+  try { rawBody = await req.text(); }
+  catch { return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors); }
   if (rawBody.length > 1_000_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
 
   let body: unknown;
-  try {
-    body = JSON.parse(rawBody);
-  } catch {
-    return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors);
-  }
+  try { body = JSON.parse(rawBody); }
+  catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
   if (!isRecord(body) ||
       typeof body.model !== "string" || !ALLOWED_MODELS.has(body.model) ||
       typeof body.instructions !== "string" || body.instructions.length < 1 || body.instructions.length > 250_000 ||
@@ -91,42 +145,86 @@ Deno.serve(async (req: Request) => {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
 
-  try {
-    const openaiResponse = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: body.model,
-        instructions: body.instructions,
-        input: body.input,
-        text: body.text,
-        max_output_tokens: 8192,
-      }),
-      signal: AbortSignal.timeout(110_000),
-    });
-    const responseText = await openaiResponse.text();
-    let payload: unknown;
+  const schema = body.text.format.schema;
+  const messages = [
+    { role: "system", content: body.instructions },
+    { role: "user", content: body.input },
+  ];
+  const failures: string[] = [];
+  for (const attempt of MODEL_ATTEMPTS) {
     try {
-      payload = JSON.parse(responseText);
-    } catch {
-      return json({ error: { code: "INVALID_OPENAI_RESPONSE", message: "OpenAI returned an unreadable response." } }, 502, cors);
+      const responseFormat = attempt.format === "schema"
+        ? { type: "json_schema", json_schema: { name: "obsidian_game_turn", strict: true, schema } }
+        : { type: "json_object" };
+      const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
+          "X-Title": "Obsidian D&D Master",
+        },
+        body: JSON.stringify({
+          model: attempt.id,
+          messages,
+          response_format: responseFormat,
+          provider: { data_collection: "deny", allow_fallbacks: true },
+          temperature: 0.25,
+          max_tokens: 8192,
+        }),
+        signal: AbortSignal.timeout(30_000),
+      });
+      const raw = await upstream.text();
+      let payload: unknown;
+      try { payload = JSON.parse(raw); }
+      catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+
+      if (!upstream.ok) {
+        const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
+        const message = typeof apiError.message === "string" ? apiError.message.slice(0, 220) : `HTTP ${upstream.status}`;
+        if (upstream.status === 401 || upstream.status === 402 || upstream.status === 403) {
+          return json({ error: {
+            code: upstream.status === 402 ? "OPENROUTER_PAYMENT_REQUIRED" : "OPENROUTER_AUTH_ERROR",
+            message: upstream.status === 402
+              ? "OpenRouter вернул ошибку оплаты. Проверь, что выбран именно бесплатный вариант модели и на аккаунте нет платной маршрутизации."
+              : "OpenRouter не принял ключ или запрос. Проверь OPENROUTER_API_KEY и настройки аккаунта.",
+          } }, upstream.status, cors);
+        }
+        failures.push(`${attempt.id}: ${upstream.status} ${message}`);
+        continue;
+      }
+
+      const root = isRecord(payload) ? payload : {};
+      const choices = Array.isArray(root.choices) ? root.choices : [];
+      const choice = isRecord(choices[0]) ? choices[0] : {};
+      const message = isRecord(choice.message) ? choice.message : {};
+      const content = outputText(message);
+      if (!content || choice.finish_reason === "length") {
+        failures.push(`${attempt.id}: empty or truncated output`);
+        continue;
+      }
+      let parsed: unknown;
+      try { parsed = JSON.parse(content); }
+      catch { failures.push(`${attempt.id}: invalid JSON`); continue; }
+      if (!validateSchema(parsed, schema)) {
+        failures.push(`${attempt.id}: output does not match the required turn schema`);
+        continue;
+      }
+      return json({
+        output_text: content,
+        model: attempt.id,
+        usage: tokens(root.usage),
+      }, 200, cors);
+    } catch (error) {
+      const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      failures.push(`${attempt.id}: ${timedOut ? "timeout" : "network error"}`);
     }
-    if (!openaiResponse.ok) {
-      const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
-      const message = typeof apiError.message === "string" ? apiError.message.slice(0, 500) : "OpenAI rejected the request.";
-      return json({ error: { code: "MODEL_API_ERROR", message } }, openaiResponse.status, cors);
-    }
-    return json(payload, 200, cors);
-  } catch (error) {
-    const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
-    return json({
-      error: {
-        code: timedOut ? "OPENAI_TIMEOUT" : "OPENAI_NETWORK_ERROR",
-        message: timedOut ? "The model request timed out. Try again." : "Could not reach OpenAI. Check the connection and try again.",
-      },
-    }, 502, cors);
   }
+
+  return json({
+    error: {
+      code: "FREE_MODEL_STACK_EXHAUSTED",
+      message: "Бесплатные модели сейчас недоступны или не вернули корректный ход. Ничего не сохранено. Повтори запрос позже. " + failures.join("; ").slice(0, 700),
+    },
+  }, 503, cors);
 });
