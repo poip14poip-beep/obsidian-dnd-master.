@@ -170,6 +170,15 @@ export function generateRandomStart(
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
   const date = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
+  const background = resolveBackground(options.background, index);
+  const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
+  const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
+  const alreadyHasClothing = retainedInventory.some((item) => /одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name));
+  const backgroundKit = alreadyHasClothing
+    ? generatedKit.filter((item) => !/одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name))
+    : generatedKit;
+  const inventory = [...retainedInventory, ...backgroundKit];
+  const currency = options.generateBackgroundKit ? generateBackgroundCurrency(background, index) : undefined;
   const narrative = [
     "Стартовая сцена сгенерирована случайно для новой кампании. Метод: Web Crypto, равномерный выбор без смещения. Персонаж начинает с полными HP; случайные ранения без причины не назначаются.",
     options.generateBackgroundKit
@@ -184,15 +193,6 @@ export function generateRandomStart(
     `Здоровье: ${profile.label}, ${hpCurrent}/${hpMaximum} HP. ${profile.description}`,
     "Это бытовая стартовая ситуация, а не задание: нет заказчика, обязательной встречи, квеста или скрытого требования следовать сюжету. Игрок свободен действовать как хочет.",
   ].join("\n\n");
-  const background = resolveBackground(options.background, index);
-  const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
-  const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
-  const alreadyHasClothing = retainedInventory.some((item) => /одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name));
-  const backgroundKit = alreadyHasClothing
-    ? generatedKit.filter((item) => !/одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name))
-    : generatedKit;
-  const inventory = [...retainedInventory, ...backgroundKit];
-  const currency = options.generateBackgroundKit ? generateBackgroundCurrency(background, index) : undefined;
   const generatedAt = new Date().toISOString();
   return {
     city, scene: scene.label, narrative, date, hpCurrent, healthLabel: profile.label,
