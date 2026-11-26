@@ -184,7 +184,7 @@ describe("random free-roam start", () => {
       });
       expect(imported.ok).toBe(true);
     });
-    const draws = [7, 2, 1, 18];
+    const draws = [7, 2, 1, 18, 42];
     const generated = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
@@ -195,6 +195,7 @@ describe("random free-roam start", () => {
     act(() => {
       applied = result.current.applyGeneratedStart({
         city: generated.city,
+        placeName: generated.placeName,
         date: generated.date,
         narrative: generated.narrative,
         locationDescription: generated.location.description,
@@ -208,6 +209,8 @@ describe("random free-roam start", () => {
     expect(result.current.worldState.startLocationName).toBe("Морвейн");
     expect(result.current.worldState.startNarrative).toContain("не задание");
     expect(result.current.locations[0]?.name).toBe("Морвейн");
+    expect(result.current.locations[0]?.cityName).toBe("Морвейн");
+    expect(result.current.locations[0]?.placeName).toBe("На городском рынке");
     expect(result.current.character.name).toBe("Лия Вейн");
     expect(result.current.character.hpCurrent).toBe(184);
     expect(result.current.character.hpMax).toBe(184);
