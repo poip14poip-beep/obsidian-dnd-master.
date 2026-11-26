@@ -56,6 +56,11 @@ function createReadySetupCollections() {
   initial.player_character_state.level = 21;
   initial.player_character_state.proficiencyBonus = 6;
   initial.player_character_state.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+  initial.player_character_state.speciesAndClass = "Человек · Fighter 20 / Champion";
+  initial.player_character_state.baseSavingThrowBonuses = { strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 };
+  initial.player_character_state.skillBonuses = [{ name: "Атлетика", bonus: 11, basis: "Сила +5, владение +6" }];
+  initial.player_character_state.weaponAttacks = [{ weapon: "Катана", attackBonus: 11, damage: "1d8+5", mastery: "Sap" }];
+  initial.player_character_state.classFeaturesByLevel = [{ level: 1, features: "Second Wind" }];
   initial.player_character_state.inventory = [{ id: "dossier-katana", name: "Катана в ножнах", quantity: 1, notes: "Из досье", certainty: "KNOWN", location: "UNKNOWN" }];
   return initial;
 }
