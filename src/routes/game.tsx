@@ -146,6 +146,7 @@ function GamePage() {
           playerIntent: actionToResolve.trim(),
           worldOutcome: result.turn.worldOutcome,
           gmNarration: formatArchivedGameMasterAnswer(result.turn, worldState, character, locations, nextTurnNumber),
+          campaignMemory: result.turn.campaignMemory,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
           newInGameDate: result.turn.newInGameDate,
           newLocationId: result.turn.newLocationId ?? "",

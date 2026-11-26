@@ -307,6 +307,8 @@ export interface TurnDraft {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  /** Compact campaign memory produced for retrieval in future turns. */
+  campaignMemory?: string;
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
   timeDeltaMinutes: number;
@@ -337,6 +339,7 @@ export interface GameTurnEntry {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  campaignMemory?: string;
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
   locationIdAfter: string | null;

@@ -138,7 +138,7 @@ function selectRelevantJournal(
   const historical = entries
     .filter((entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN" && !recentIds.has(entry.id))
     .map((entry) => {
-      const text = [entry.summary, entry.playerIntent, entry.worldOutcome, entry.gmNarration].join(" ").toLocaleLowerCase();
+      const text = [entry.summary, entry.playerIntent, entry.worldOutcome, entry.gmNarration, entry.campaignMemory].join(" ").toLocaleLowerCase();
       const score = terms.reduce((sum, term) => sum + (text.includes(term) ? 1 : 0), 0);
       return { entry, score };
     })

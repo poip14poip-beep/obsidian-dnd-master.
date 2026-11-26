@@ -1494,6 +1494,7 @@ export function ObsidianStoreProvider({
         playerIntent: activeDraft.playerIntent.trim(),
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
+        campaignMemory: activeDraft.campaignMemory?.trim() ?? "",
         characterChanges,
         npcChanges: activeDraft.npcChanges ?? [],
         locationIdAfter: nextLocationId,
