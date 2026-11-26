@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { createInitialCollections } from "@/domain/defaults";
+import { buildBackupEnvelope } from "@/domain/integrity";
 import {
   commitCloudTurn,
   createCloudCampaign,
@@ -8,6 +10,7 @@ import {
   saveCloudCampaignSnapshot,
   saveLinkedCloudSnapshot,
   saveCloudTurnDraft,
+  setCloudCampaignLink,
 } from "@/lib/obsidian-api";
 
 describe("obsidian-api client input guards", () => {
@@ -15,24 +18,7 @@ describe("obsidian-api client input guards", () => {
     const result = await createCloudCampaign("   ");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_TITLE");
-  
-  it("keeps turns local when no cloud campaign is linked", async () => {
-    const result = await saveLinkedCloudSnapshot({
-      app: "Obsidian Control",
-      backupVersion: 2,
-      exportedAt: "2026-11-26T00:00:00.000Z",
-      storageDisclaimer: "test",
-      collections: {
-        sources: [], canon_facts: [], world_state: {} as never,
-        player_character_state: {} as never, npcs: [], factions: [], locations: [],
-        timeline_events: [], turn_drafts: [], session_log: { schemaVersion: 1, lastTurnNumber: 0, entries: [] },
-        audit_log: { schemaVersion: 1, entries: [] },
-      },
-      checksums: {} as never,
-    });
-    expect(result).toEqual({ ok: true, skipped: true });
   });
-});
 
   it("rejects empty or malformed campaign IDs before bootstrap", async () => {
     const empty = await loadCloudCampaign(" ");
@@ -78,5 +64,11 @@ describe("obsidian-api client input guards", () => {
     if (!negativeRevision.ok) expect(negativeRevision.error.code).toBe("INVALID_SNAPSHOT_REVISION");
     if (!invalidTurn.ok) expect(invalidTurn.error.code).toBe("INVALID_SNAPSHOT_REVISION");
     if (!invalidLoad.ok) expect(invalidLoad.error.code).toBe("INVALID_CAMPAIGN_ID");
+  });
+
+  it("keeps turns local when no cloud campaign is linked", async () => {
+    setCloudCampaignLink(null);
+    const result = await saveLinkedCloudSnapshot(buildBackupEnvelope(createInitialCollections()));
+    expect(result).toEqual({ ok: true, skipped: true });
   });
 });
