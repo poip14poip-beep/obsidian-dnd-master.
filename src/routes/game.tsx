@@ -30,12 +30,12 @@ export const Route = createFileRoute("/game")({
 function GamePage() {
   const {
     sources, worldState, character, canonFacts, npcs, factions, locations, timelineEvents,
-    sessionLog, turnDraft, updateTurnDraft, checkTurnDraft, commitTurnDraft, lastStorageError,
+    sessionLog, turnDraft, updateTurnDraft, checkTurnDraft, commitTurnDraft, saveOpeningScene, lastStorageError,
   } = useObsidianStore();
 
   const { session } = useAuth();
   const gmModel = "obsidian-free";
-  const [opening, setOpening] = useState("");
+  const [opening, setOpening] = useState(worldState.openingScene ?? "");
   const [openingBusy, setOpeningBusy] = useState(false);
   const [playerAction, setPlayerAction] = useState("");
   const [pendingAction, setPendingAction] = useState("");
@@ -73,6 +73,10 @@ function GamePage() {
     : "";
 
   useEffect(() => {
+    if (worldState.openingScene?.trim()) setOpening(worldState.openingScene);
+  }, [worldState.openingScene]);
+
+  useEffect(() => {
     if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
       setDraftReady(true);
       setDraftChecked(Boolean(turnDraft.checkedAt));
@@ -101,6 +105,10 @@ function GamePage() {
       setGmError("Подготовка не пройдена. Проверь три обработанных и подтверждённых источника, лист персонажа и подтверждение старта.");
       return;
     }
+    if (worldState.openingScene?.trim()) {
+      setOpening(worldState.openingScene);
+      return;
+    }
     if (!session?.access_token) {
       setGmError("Для работы мастера войди в аккаунт. Локальный гостевой режим не может обращаться к защищённому API.");
       return;
@@ -108,9 +116,12 @@ function GamePage() {
     setOpeningBusy(true);
     try {
       const result = await resolvePlayerAction(session.access_token, makeContext("", "OPENING"), { model: gmModel });
-      setOpening(formatCampaignOpening(result.turn, worldState, character, locations));
+      const openingText = formatCampaignOpening(result.turn, worldState, character, locations);
+      const saved = saveOpeningScene(openingText);
+      if (!saved.ok) throw new Error(saved.error ?? "Не удалось сохранить вступительную сцену.");
+      setOpening(openingText);
       setGmTurn(null);
-      toast.success("Вступление готово. Ход не создан, время и состояние не изменены.");
+      toast.success("Вступление сохранено. Игровой ход и игровое время не изменены.");
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось подготовить вступительную сцену.");
     } finally {

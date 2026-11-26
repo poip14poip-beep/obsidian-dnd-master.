@@ -185,6 +185,7 @@ export interface ObsidianStoreValue {
     characterPatch: Partial<Omit<PlayerCharacterState, "schemaVersion" | "stateVersion" | "updatedAt">>;
     inventory: Array<Omit<InventoryItem, "id">>;
   }) => PersistVerifyResult;
+  saveOpeningScene: (openingScene: string) => PersistVerifyResult;
   updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
   confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
   resetForTrialCampaign: () => PersistVerifyResult;
@@ -1010,6 +1011,37 @@ export function ObsidianStoreProvider({
     });
   }, [collections, commitCollections, lastIntegrityReport]);
 
+  const saveOpeningScene: ObsidianStoreValue["saveOpeningScene"] = useCallback((openingScene) => {
+    const text = openingScene.trim();
+    if (!text) {
+      return { ok: false, error: "Пустую вступительную сцену нельзя сохранить.", report: lastIntegrityReport };
+    }
+    const currentWorld = collections.world_state;
+    if (!currentWorld.setup.confirmed) {
+      return { ok: false, error: "Сначала подтвердите подготовку кампании.", report: lastIntegrityReport };
+    }
+    if (currentWorld.openingScene?.trim()) {
+      return { ok: false, error: "Вступительная сцена уже сохранена и не может быть сгенерирована заново.", report: lastIntegrityReport };
+    }
+    const now = new Date().toISOString();
+    const nextWorld: WorldState = {
+      ...currentWorld,
+      openingScene: text,
+      openingSceneGeneratedAt: now,
+      stateVersion: currentWorld.stateVersion + 1,
+      updatedAt: now,
+    };
+    const nextAudit = appendAudit(
+      collections.audit_log,
+      "OPENING_SCENE_SAVED",
+      "OK",
+      "Сохранена неизменяемая вступительная сцена мастера. Игровой ход и игровое время не изменены.",
+      nextWorld,
+      collections.player_character_state,
+    );
+    return commitCollections({ ...collections, world_state: nextWorld, audit_log: nextAudit });
+  }, [collections, appendAudit, commitCollections, lastIntegrityReport]);
+
   const updateCampaignParameters: ObsidianStoreValue["updateCampaignParameters"] = useCallback(
     (patch) => {
       const now = new Date().toISOString();
@@ -1697,6 +1729,7 @@ export function ObsidianStoreProvider({
       removeInventoryItem,
       updateInventoryItem,
       applyGeneratedStart,
+      saveOpeningScene,
       updateCampaignParameters,
       confirmCampaignSetup,
     resetForTrialCampaign,
@@ -1739,6 +1772,7 @@ export function ObsidianStoreProvider({
       removeInventoryItem,
       updateInventoryItem,
       applyGeneratedStart,
+      saveOpeningScene,
       updateCampaignParameters,
       confirmCampaignSetup,
       updateTurnDraft,

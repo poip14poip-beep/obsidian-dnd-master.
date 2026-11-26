@@ -17,10 +17,11 @@ const ALLOWED_ORIGINS = new Set([
 type JsonRecord = Record<string, unknown>;
 type ModelAttempt = { id: string; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
+  // Let OpenRouter select an available free model that supports JSON-schema output first.
+  { id: "openrouter/free", format: "schema" },
   { id: "baidu/ernie-5.5-flash-preview:free", format: "schema" },
   { id: "inclusionai/ling-3.2-flash:free", format: "schema" },
   { id: "google/gemma-4-26b-a4b-it:free", format: "json" },
-  { id: "openrouter/free", format: "schema" },
 ];
 
 function corsHeaders(origin: string | null): HeadersInit {
@@ -183,6 +184,16 @@ Deno.serve(async (req: Request) => {
       if (!upstream.ok) {
         const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
         const message = typeof apiError.message === "string" ? apiError.message.slice(0, 220) : `HTTP ${upstream.status}`;
+        if (upstream.status === 429) {
+          const retryAfter = upstream.headers.get("retry-after");
+          return json({
+            error: {
+              code: "OPENROUTER_RATE_LIMITED",
+              message: "Бесплатный маршрут мастера временно ограничен по частоте запросов. Ничего не сохранено." +
+                (retryAfter ? ` Повтори через ${retryAfter} сек.` : " Повтори немного позже."),
+            },
+          }, 429, cors);
+        }
         if (upstream.status === 401 || upstream.status === 402 || upstream.status === 403) {
           return json({ error: {
             code: upstream.status === 402 ? "OPENROUTER_PAYMENT_REQUIRED" : "OPENROUTER_AUTH_ERROR",

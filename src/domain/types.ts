@@ -205,6 +205,9 @@ export interface WorldState {
   quests?: CampaignQuest[];
   startLocationName: string;
   startNarrative?: string;
+  /** Immutable GM opening scene, persisted separately from the generated starting-location description. */
+  openingScene?: string;
+  openingSceneGeneratedAt?: string;
   startGeneration?: {
     method: "WEB_CRYPTO_GETRANDOMVALUES";
     generatedAt: string;
@@ -434,6 +437,7 @@ export interface AuditEntry {
   timestamp: string;
   action:
     | "CAMPAIGN_RESET_FOR_TRIAL"
+    | "OPENING_SCENE_SAVED"
     | "SETUP_CONFIRMED"
     | "PLAYER_CHARACTER_UPDATED"
     | "TURN_COMMITTED"
