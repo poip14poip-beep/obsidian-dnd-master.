@@ -182,6 +182,7 @@ function CharacterPage() {
                   <span className="font-medium">{item.name}</span>
                   <span className="mono-code ml-2 text-xs text-muted-foreground">×{item.quantity}</span>
                   {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
+                  {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {item.attunement}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {item.location ?? "UNKNOWN"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} lb/ед.`}
