@@ -65,6 +65,18 @@ describe("generateRandomStart", () => {
     expect(result.narrative).toContain("Случайный стартовый капитал");
   });
 
+  it("adds matching ammunition only when the imported character already has a ranged weapon", () => {
+    const result = generateRandomStart(30, () => 0, {
+      generateStartingSupplies: true,
+      retainedInventory: [
+        { id: "bow", name: "Длинный лук", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: 2 },
+      ],
+    });
+    expect(result.inventory.find((item) => item.name === "Стрелы")?.quantity).toBe(10);
+    expect(result.inventory.some((item) => item.name === "Арбалетные болты")).toBe(false);
+    expect(result.inventory.find((item) => item.name === "Длинный лук")).toBeDefined();
+  });
+
   it("resolves carried-item weights and currency so the standard starting load is calculable", () => {
     const generated = generateRandomStart(40, () => 0, {
       background: "Солдат",
