@@ -41,9 +41,9 @@ export const Route = createFileRoute("/sources")({
 function SourcesPage() {
   const { sources, attachSourceContent, addSupplementalSource, verifySource, setSourceContextEnabled } = useObsidianStore();
   const { session } = useAuth();
-  const [vaultBusy, setVaultBusy] = useState<"OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE" | null>(null);
+  const [vaultBusy, setVaultBusy] = useState<"OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE" | "CHARACTER_GENERATION_GUIDE" | null>(null);
   const [vaultStatus, setVaultStatus] = useState<Record<string, string>>({});
-  async function uploadMasterDocument(kind: "OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE", event: ChangeEvent<HTMLInputElement>) {
+  async function uploadMasterDocument(kind: "OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE" | "CHARACTER_GENERATION_GUIDE", event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || vaultBusy) return;
     const env = readSupabaseEnv();
@@ -67,7 +67,7 @@ function SourcesPage() {
       const version = String(payload.source?.version ?? "UNKNOWN");
       const hash = payload.source?.sha256 ?? "UNKNOWN";
       setVaultStatus((current) => ({ ...current, [kind]: file.name + " · версия " + version + " · SHA-256 " + hash.slice(0, 12) }));
-      toast.success(kind === "OBSIDIAN_MASTER_PROMPT" ? "ОБСИДИАН 4.1 сохранён в постоянном ядре мастера." : kind === "SRD_5_2_1" ? "SRD 5.2.1 сохранён в постоянном ядре мастера." : "Хроника Экдрасиля сохранена в постоянной библии мира.");
+      toast.success(kind === "OBSIDIAN_MASTER_PROMPT" ? "ОБСИДИАН 4.1 сохранён в постоянном ядре мастера." : kind === "SRD_5_2_1" ? "SRD 5.2.1 сохранён в постоянном ядре мастера." : kind === "EKDRASIL_WORLD_BIBLE" ? "Хроника Экдрасиля сохранена в постоянной библии мира." : "Методика генерации персонажей сохранена отдельно от канона и правил.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось сохранить служебный документ.");
     } finally {
@@ -200,6 +200,12 @@ function SourcesPage() {
           <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("EKDRASIL_WORLD_BIBLE", event)} className="block w-full text-xs" />
           <span className="block text-[11px] text-muted-foreground">Подключается ко всем кампаниям Экдрасиля. Персонажи и события кампаний сюда не попадают.</span>
           {vaultStatus["EKDRASIL_WORLD_BIBLE"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["EKDRASIL_WORLD_BIBLE"]}</span>}
+        </label>
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>Методика генерации персонажей · референс мастера</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("CHARACTER_GENERATION_GUIDE", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">Отдельные инструкции о случайной генерации биографий и предысторий. Не является каноном, не меняет SRD и не импортируется в кампании.</span>
+          {vaultStatus["CHARACTER_GENERATION_GUIDE"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["CHARACTER_GENERATION_GUIDE"]}</span>}
         </label>
       </div>
       {vaultBusy && <p className="text-xs text-muted-foreground">Сохраняю документ в постоянной базе мастера…</p>}

@@ -130,7 +130,7 @@ Deno.serve(async (req: Request) => {
     const sourceKind = body.sourceKind;
     const title = body.title;
     const content = body.content;
-    if (sourceKind !== "OBSIDIAN_MASTER_PROMPT" && sourceKind !== "SRD_5_2_1" && sourceKind !== "EKDRASIL_WORLD_BIBLE") {
+    if (sourceKind !== "OBSIDIAN_MASTER_PROMPT" && sourceKind !== "SRD_5_2_1" && sourceKind !== "EKDRASIL_WORLD_BIBLE" && sourceKind !== "CHARACTER_GENERATION_GUIDE") {
       return json({ error: { code: "INVALID_GM_SOURCE_KIND", message: "Unsupported master source type." } }, 400, cors);
     }
     if (typeof title !== "string" || !title.trim() || typeof content !== "string" ||
@@ -198,6 +198,8 @@ Deno.serve(async (req: Request) => {
   const ruleParagraphs = rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80);
   const canonDoc = isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string"
     ? privateSources.EKDRASIL_WORLD_BIBLE.content : "";
+  const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
+    ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
   if (!canonDoc.trim()) {
     return json({ error: {
       code: "EKDRASIL_CANON_NOT_CONFIGURED",
@@ -252,8 +254,15 @@ Deno.serve(async (req: Request) => {
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
+  const isCharacterGeneration = /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const characterGuideContext = isCharacterGeneration
+    ? (characterGuide.trim()
+      ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
+      : "РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ НЕ ЗАГРУЖЕН. Не выдумывай его содержание; используй только основной промт, подтверждённый канон и SRD.")
+    : "";
   const serverInstructions = [
     masterPrompt,
+    characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     body.instructions,
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
