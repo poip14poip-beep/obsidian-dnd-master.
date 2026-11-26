@@ -1,3 +1,5 @@
+import { localizeInventoryItemName, localizeSkillName } from "./dnd-localization";
+
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
   name: string; quantity: number; notes: string; location: "WORN" | "OTHER"; certainty: "KNOWN" | "APPROXIMATE";
@@ -62,7 +64,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     if (!quantityMatch) continue;
     const quantity = Number(quantityMatch[1]);
     if (!Number.isInteger(quantity) || quantity < 1) continue;
-    const name = cells[1].replace(/^["«]|["»]$/g, "").trim();
+    const name = localizeInventoryItemName(cells[1].replace(/^["«]|["»]$/g, "").trim());
     if (!name) continue;
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
@@ -87,7 +89,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     const cells = line.split("|").map((cell) => cell.trim());
     if (cells.length < 3 || !cells[0] || !/^[+-]\d+$/.test(cells[1])) return [];
     if (/^навык$/i.test(cells[0])) return [];
-    return [{ name: cells[0], bonus: Number(cells[1]), basis: cells.slice(2).join(" | ") }];
+    return [{ name: localizeSkillName(cells[0]), bonus: Number(cells[1]), basis: cells.slice(2).join(" | ") }];
   });
   const classFeaturesByLevel = section("9.4.", "9.5.").flatMap((line) => {
     const cells = line.split("|").map((cell) => cell.trim());

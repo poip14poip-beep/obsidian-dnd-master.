@@ -13,6 +13,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
+import { isCampaignActive } from "@/domain/campaign-state";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import { buildDiceContinuationAction } from "@/domain/dice-continuation";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,7 @@ function TurnsPage() {
   const [rollFormula, setRollFormula] = useState("1d20");
   const [rollResult, setRollResult] = useState("");
 
+  const campaignActive = isCampaignActive(worldState.setup.confirmed, sessionLog.lastTurnNumber);
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
 
   async function handleResolveAction(actionOverride?: string) {
@@ -86,7 +88,7 @@ function TurnsPage() {
     setGmError(null);
     setGmTurn(null);
     if (!submittedAction.trim()) return;
-    if (!worldState.setup.confirmed) {
+    if (!campaignActive) {
       setGmError("Сначала завершите обязательную подготовку кампании.");
       return;
     }
@@ -236,7 +238,7 @@ function TurnsPage() {
         </p>
       </header>
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed} />\n\n      <section className="panel-surface space-y-3 p-4">
+      <SetupGateBanner confirmed={campaignActive} />\n\n      <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
@@ -262,10 +264,10 @@ function TurnsPage() {
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
           <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
-        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={handleResolveAction}>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !campaignActive} onClick={handleResolveAction}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
-        {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
+        {!campaignActive && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
         {gmError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger">{gmError}</div>}
         {gmTurn && (
           <div className="space-y-3 rounded-md border border-primary/30 bg-background/60 p-3">
@@ -361,7 +363,7 @@ function TurnsPage() {
           </span>
         </div>
 
-        {!worldState.setup.confirmed ? (
+        {!campaignActive ? (
           <div className="flex items-center gap-2 rounded border border-border bg-background/60 p-3 text-xs text-muted-foreground">
             <Lock className="h-4 w-4 shrink-0 text-status-approx" />
             Создание и commit игровых ходов заблокированы до завершения Мастера подготовки кампании.
