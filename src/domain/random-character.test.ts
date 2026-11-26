@@ -1,0 +1,33 @@
+import { describe, expect, it } from "vitest";
+import { generateRandomCharacter } from "./random-character";
+
+describe("SRD 5.2.1 random character generator", () => {
+  it("creates a complete level-one Fighter with calculated defenses, attacks, gear and currency", () => {
+    const result = generateRandomCharacter(() => 0);
+    expect(result.summary.className).toBe("Fighter");
+    expect(result.summary.background).toBe("Soldier");
+    expect(result.summary.species).toBe("Dwarf");
+    expect(result.character.level).toBe(1);
+    expect(result.character.hpMax).toBeGreaterThan(0);
+    expect(result.character.hpCurrent).toBe(result.character.hpMax);
+    expect(result.character.armorClass).toBe(17);
+    expect(result.character.weaponAttacks?.[0]?.damage).toContain("2d6");
+    expect(result.character.baseSavingThrowBonuses).toBeDefined();
+    expect(result.character.skillBonuses?.length).toBeGreaterThanOrEqual(4);
+    expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Second Wind");
+    expect(result.character.currency?.gp).toBe(18);
+    expect(result.character.inventory?.some((entry) => entry.name === "Кольчуга")).toBe(true);
+  });
+
+  it("creates a Rogue with Expertise and an Elf's traits", () => {
+    const result = generateRandomCharacter((length) => Math.min(1, length - 1));
+    expect(result.summary.className).toBe("Rogue");
+    expect(result.summary.background).toBe("Criminal");
+    expect(result.summary.species).toBe("Elf");
+    expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Expertise:");
+    expect(result.character.skillBonuses?.filter((skill) => skill.basis.includes("экспертность"))).toHaveLength(2);
+    expect(result.character.speedFeet).toBe(35);
+    expect(result.character.armorClass).toBe(11 + Math.floor(((result.character.abilityScores?.dexterity ?? 10) - 10) / 2));
+    expect(result.character.currency?.gp).toBe(24);
+  });
+});
