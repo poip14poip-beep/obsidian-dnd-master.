@@ -48,7 +48,7 @@ export function formatGameMasterAnswer(
   locations: LocationRecord[],
   turnNumber: number,
 ): string {
-  const location = locations.find((item) => item.id === world.currentLocationId);
+  const location = locations.find((item) => item.id === (turn.newLocationId ?? world.currentLocationId));
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const region = known(location?.region);
   const date = known(world.currentInGameDate);
