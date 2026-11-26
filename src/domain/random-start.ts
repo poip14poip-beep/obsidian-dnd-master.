@@ -52,7 +52,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 
-export function generateRandomStart(index = secureIndex, hpMaximum: number): RandomStartResult {
+export function generateRandomStart(hpMaximum: number, index = secureIndex): RandomStartResult {
   const cityIndex = index(CITIES.length);
   const sceneIndex = index(SCENES.length);
   const healthProfileRoll = index(HEALTH.length) + 1;
