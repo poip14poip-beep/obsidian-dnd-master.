@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
-import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/random-character";
+import { generateRandomCharacter, type RandomCharacterProfile, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { extractDocxText } from "@/domain/docx-text";
 import { processSourceContent } from "@/domain/source-processing";
@@ -40,6 +40,7 @@ function PlayPage() {
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
   const [biographyReady, setBiographyReady] = useState(false);
+  const [generationSeed, setGenerationSeed] = useState<string | null>(null);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -140,20 +141,75 @@ function PlayPage() {
   const randomize = () => {
     if (biographyBusy || locked) return;
     try {
-      const generated = {
-        ...generateRandomCharacter(secureIndex),
-        generationSeed: Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join("-"),
-      };
-      setCandidate(generated);
+      const seed = Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join("-");
+      setGenerationSeed(seed);
+      setCandidate(null);
       setMode("RANDOM");
       setConfirmed(false);
       setBiographyReady(false);
       setImportError(null);
-      void generateBiographyWithMaster(generated);
+      void generateRandomCharacterWithMaster(seed);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     }
   };
+  async function generateRandomCharacterWithMaster(seed: string) {
+    if (biographyBusy || locked) return;
+    setBiographyBusy(true);
+    setBiographyReady(false);
+    setImportError(null);
+    try {
+      const env = readSupabaseEnv();
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+      const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
+      const { data, error } = await client.functions.invoke("obsidian-gm", {
+        body: {
+          operation: "GENERATE_RANDOM_CHARACTER_IDENTITY",
+          model: "obsidian-free",
+          instructions: "С нуля создай личность случайного персонажа для кампании Экдрасиль. Сам выбери имя, народ, класс, предысторию, возраст, канонический город рождения и всю личную основу биографии. Используй только варианты из строгой схемы. Имя должно соответствовать культурному звучанию народа и места. Выбирай необычную, но правдоподобную судьбу, не используй шаблонные трагедии. Учитывай подтверждённую хронику, географию, социальные условия и отсутствие свободной повседневной магии. Не придумывай канонические факты, города, организации, NPC и исторические события. Верни все поля на русском языке, конкретно и без заглушек. generationSeed — случайный ключ разнообразия, никогда не упоминай его в биографии.",
+          input: JSON.stringify({ action: "Выбор полной личности нового случайного персонажа Экдрасиля", generationSeed: seed }),
+        },
+      });
+      if (error) {
+        let detail = error.message || "Не удалось вызвать мастера.";
+        if ("context" in error && error.context instanceof Response) {
+          const errorPayload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+          detail = errorPayload?.error?.message ?? detail;
+        }
+        throw new Error(detail);
+      }
+      if (!data?.output_text) throw new Error("Мастер не вернул личность персонажа.");
+      const identity = JSON.parse(data.output_text) as RandomCharacterProfile;
+      const supportedSpecies = ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"];
+      const supportedClasses = ["Fighter","Rogue","Barbarian"];
+      const supportedBackgrounds = ["Acolyte","Criminal","Sage","Soldier"];
+      if (!identity || typeof identity.name !== "string" || identity.name.trim().length < 2 ||
+          !supportedSpecies.includes(identity.species) || !supportedClasses.includes(identity.className) ||
+          !supportedBackgrounds.includes(identity.background) || typeof identity.birthplace !== "string" ||
+          !Number.isInteger(identity.ageYears) || identity.ageYears < 18 || identity.ageYears > 80 ||
+          typeof identity.family !== "string" || identity.family.length < 30 ||
+          typeof identity.upbringing !== "string" || identity.upbringing.length < 30 ||
+          !Array.isArray(identity.lifeEvents) || identity.lifeEvents.length < 2 ||
+          !Array.isArray(identity.personalityTraits) || identity.personalityTraits.length < 2 ||
+          typeof identity.ideal !== "string" || identity.ideal.length < 10 ||
+          typeof identity.bond !== "string" || identity.bond.length < 10 ||
+          typeof identity.flaw !== "string" || identity.flaw.length < 10 ||
+          typeof identity.motivation !== "string" || identity.motivation.length < 20 ||
+          typeof identity.preCampaignDesire !== "string" || identity.preCampaignDesire.length < 20) {
+        throw new Error("Личность персонажа не прошла проверку. Мастер должен выбрать имя, народ, класс, предысторию и заполнить все поля биографии.");
+      }
+      const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
+      setCandidate(generated);
+      setBiographyBusy(false);
+      await generateBiographyWithMaster(generated);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
+    } finally {
+      setBiographyBusy(false);
+    }
+  }
   async function generateBiographyWithMaster(target: RandomCharacterResult | null = candidate) {
     if (!target || biographyBusy || locked) return;
     setBiographyBusy(true);
@@ -349,7 +405,7 @@ function PlayPage() {
       </>}
     </section>}
     {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
-    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => void generateBiographyWithMaster(candidate)}>Повторить генерацию через API</Button></section>}
+    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => candidate ? void generateBiographyWithMaster(candidate) : generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></section>}
     {mode === "RANDOM" && candidate && biographyReady && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Досье персонажа · 1 уровень</h2>
       <section className="space-y-2">
