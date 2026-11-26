@@ -143,7 +143,7 @@ export function CloudCampaignPanel({
       if (remote.found && remote.revision !== revision) {
         setLatest(remote);
         setRevision(remote.revision);
-        setCloudCampaignLink({ campaignId: id, revision: remote.revision });
+        setCanSave(false);
         throw new Error("В облаке есть более новая версия. Сначала загрузи её и восстанови локальное состояние; перезапись без сверки запрещена.");
       }
       if (!remote.found && revision !== 0) {
