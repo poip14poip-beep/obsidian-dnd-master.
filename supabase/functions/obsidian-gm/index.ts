@@ -432,9 +432,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: (isIdentityRequest || isBiographyRequest) ? 5000 : 8192,
+          max_tokens: (isIdentityRequest || isBiographyRequest) ? 3200 : 8192,
         }),
-        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 22_000 : 35_000),
+        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 55_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
