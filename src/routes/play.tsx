@@ -29,6 +29,7 @@ function PlayPage() {
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  const [cloakAttunement, setCloakAttunement] = useState<"UNKNOWN" | "ATTUNED" | "NOT_ATTUNED">("UNKNOWN");
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -41,7 +42,7 @@ function PlayPage() {
     setMode("RANDOM");
     setConfirmed(false);
   };
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setCloakAttunement("UNKNOWN"); };
   const confirmDossier = () => {
     if (!parsed || !dossier) return;
     const result = updatePlayerCharacter({
@@ -53,7 +54,7 @@ function PlayPage() {
       epicCampaignLevels: parsed.epicCampaignLevels,
       hpCurrent: null,
       hpMax: parsed.hitPointMaximum,
-      armorClass: parsed.armorClass === null ? null : parsed.armorClass - 1,
+      armorClass: parsed.armorClass === null ? null : (cloakAttunement === "ATTUNED" ? parsed.armorClass : parsed.armorClass - 1),
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
@@ -64,9 +65,9 @@ function PlayPage() {
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
-      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy })),
+      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: cloakAttunement === "UNKNOWN" ? "UNKNOWN" : cloakAttunement } : {}) })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. КБ 19 — подтверждённая база без бонуса Cloak of Protection; КБ 20 и +1 ко всем спасброскам возможны только если плащ надет и настроен. Настройка не подтверждена. Размер существа в досье не указан и остаётся UNKNOWN.",
+      notes: `Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Настройка Cloak of Protection: ${cloakAttunement}. Без подтверждённой настройки используется КБ 19 и базовые спасброски; при подтверждённой настройке — КБ 20 и +1 ко всем спасброскам. Размер существа в досье не указан и остаётся UNKNOWN.`,
     });
     if (result.ok) setConfirmed(true);
   };
@@ -99,6 +100,14 @@ function PlayPage() {
           ["Имя",parsed.name],["Вид и класс",parsed.speciesAndClass],["Уровень",parsed.level],["Макс. HP",parsed.hitPointMaximum],["КД без плаща",parsed.armorClass === null ? null : parsed.armorClass - 1],["КД с настроенным плащом",parsed.armorClass],["Бонус мастерства",parsed.proficiencyBonus],["Скорость",parsed.speedFeet],["Навыков",parsed.skillBonuses.length],["Атак",parsed.weaponAttacks.length],["Классовых уровней с особенностями",parsed.classFeaturesByLevel.length],["Предметов",parsed.inventory.length],["Ресурсов",parsed.resources.length]
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
         <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Текущие HP, деньги, местоположение, активные состояния и фактические остатки ресурсов не выводятся автоматически. После импорта потребуется отдельная подготовка старта.</div>
+        <div className="space-y-1.5">
+          <label htmlFor="cloak-attunement" className="text-xs font-medium">Cloak of Protection — настройка (attunement)</label>
+          <select id="cloak-attunement" value={cloakAttunement} onChange={(event) => setCloakAttunement(event.target.value as typeof cloakAttunement)} className="touch-target w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
+            <option value="UNKNOWN">Не установлено — использовать КБ 19 и базовые спасброски</option>
+            <option value="ATTUNED">Да, плащ настроен — КБ 20 и +1 ко всем спасброскам</option>
+            <option value="NOT_ATTUNED">Нет, плащ не настроен — КБ 19 и базовые спасброски</option>
+          </select>
+        </div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
         <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
       </>}
