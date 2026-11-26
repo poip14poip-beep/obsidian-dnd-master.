@@ -39,23 +39,23 @@ export function extractDossierBasics(text: string): DossierBasics {
   const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\r\n]{0,120})/i)
     ?? summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[\s\S]{0,120}?(Fighter\s*\d+[^\r\n]{0,100})/i);
   const speciesAndClass = classMatch ? `${classMatch[1]!}. ${classMatch[2]!.trim()}` : null;
-  const levelMatch = text.match(/(?:общий\s+уровень\s*\|\s*)(\d{1,2})\b/i)
-    ?? text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
-    ?? text.match(/общий\s+(\d{1,2})-й\s+уровень/i);
+  const levelMatch = normalizedText.match(/(?:общий\s+уровень\s*\|\s*)(\d{1,2})\b/i)
+    ?? normalizedText.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
+    ?? normalizedText.match(/общий\s+(\d{1,2})-й\s+уровень/i);
   const level = levelMatch ? Number(levelMatch[1]) : null;
-  const classLevelMatch = text.match(/Классовые уровни\s*\|\s*[^\d]*(\d{1,2})\b/i);
+  const classLevelMatch = normalizedText.match(/Классовые уровни\s*\|\s*[^\d]*(\d{1,2})\b/i);
   const classLevel = classLevelMatch ? Number(classLevelMatch[1]) : null;
   const epicCampaignLevels = level !== null && classLevel !== null && level > classLevel ? level - classLevel : 0;
-  const hpMatch = text.match(/^\s*HP\s*\|\s*([1-9]\d{1,2})\b/im) ?? text.match(/(?:^|[\s·])([1-9]\d{1,2})\s*HP\b/i);
-  const acMatch = text.match(/^\s*КБ\s*\|\s*КБ\s*(\d{1,2})\b/im) ?? text.match(/КБ\s*(\d{1,2})/i);
-  const abilityRow = text.match(/Сила\s*\|\s*Ловкость\s*\|\s*Телосложение\s*\|\s*Интеллект\s*\|\s*Мудрость\s*\|\s*Харизма[\s\S]{0,180}?(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)/i);
+  const hpMatch = normalizedText.match(/^\s*HP\s*\|\s*([1-9]\d{1,2})\b/im) ?? normalizedText.match(/(?:^|[\s·])([1-9]\d{1,2})\s*HP\b/i);
+  const acMatch = normalizedText.match(/^\s*КБ\s*\|\s*КБ\s*(\d{1,2})\b/im) ?? normalizedText.match(/КБ\s*(\d{1,2})/i);
+  const abilityRow = normalizedText.match(/Сила\s*\|\s*Ловкость\s*\|\s*Телосложение\s*\|\s*Интеллект\s*\|\s*Мудрость\s*\|\s*Харизма[\s\S]{0,180}?(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)\s*\|\s*(\d{1,2})\s*\([+-]\d+\)/i);
   const abilityScores = abilityRow ? {
     strength: Number(abilityRow[1]), dexterity: Number(abilityRow[2]), constitution: Number(abilityRow[3]),
     intelligence: Number(abilityRow[4]), wisdom: Number(abilityRow[5]), charisma: Number(abilityRow[6]),
   } : null;
-  const proficiencyMatch = text.match(/Бонус мастерства\s*\|\s*\+?(\d+)/i);
-  const speedMatch = text.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
-  const hitDiceMatch = text.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
+  const proficiencyMatch = normalizedText.match(/Бонус мастерства\s*\|\s*\+?(\d+)/i);
+  const speedMatch = normalizedText.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
+  const hitDiceMatch = normalizedText.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
   let inventoryLocation: "WORN" | "OTHER" | null = null;
   for (const line of lines) {
@@ -93,7 +93,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     strength: Number(saveValues[0]), dexterity: Number(saveValues[1]), constitution: Number(saveValues[2]),
     intelligence: Number(saveValues[3]), wisdom: Number(saveValues[4]), charisma: Number(saveValues[5]),
   } : null;
-  const finalSaveMatch = text.match(/итог\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s+соответственно/i);
+  const finalSaveMatch = normalizedText.match(/итог\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s*,\s*([+-]\d+)\s+соответственно/i);
   const savingThrowBonuses = finalSaveMatch ? {
     strength: Number(finalSaveMatch[1]), dexterity: Number(finalSaveMatch[2]), constitution: Number(finalSaveMatch[3]),
     intelligence: Number(finalSaveMatch[4]), wisdom: Number(finalSaveMatch[5]), charisma: Number(finalSaveMatch[6]),
@@ -123,7 +123,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     { name: "Indomitable", pattern: /Indomitable:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "UNKNOWN" },
   ];
   for (const resource of resourcePatterns) {
-    const match = text.match(resource.pattern);
+    const match = normalizedText.match(resource.pattern);
     if (!match) continue;
     const count = /^\d+$/.test(match[1]!) ? Number(match[1]!) : numberWords[match[1]!.toLocaleLowerCase()];
     if (count !== undefined) resources.push({ name: resource.name, current: null, max: count, recovery: resource.recovery, certainty: "KNOWN" });
