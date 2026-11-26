@@ -288,6 +288,10 @@ function GamePage() {
           <span>Календарь: {worldState.calendarSystem || "НЕ УСТАНОВЛЕН"}</span>
           <span>Сохранено ходов: {sessionLog.lastTurnNumber}</span>
           <span>HP: {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"}</span>
+          <span>Температура: {worldState.environment?.temperatureC == null ? "НЕ УСТАНОВЛЕНО" : worldState.environment.temperatureC + " °C"}</span>
+          <span>Погода: {worldState.environment?.weather || "НЕ УСТАНОВЛЕНО"}</span>
+          <span>Освещение: {worldState.environment?.lighting || "НЕ УСТАНОВЛЕНО"}</span>
+          <span>Видимость: {worldState.environment?.visibility || "НЕ УСТАНОВЛЕНО"}</span>
         </div>
       </section>
 
