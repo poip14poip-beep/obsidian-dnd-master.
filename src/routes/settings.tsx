@@ -229,7 +229,7 @@ function SettingsPage() {
       <section className="panel-surface space-y-3 p-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Файлы непрерывности кампании</h2>
-          <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа.</p>
+          <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа. Приложение сохраняет локальные коллекции с обратным чтением и проверкой контрольных сумм, но не может автоматически перезаписать файлы в Библиотеке ChatGPT. После каждого завершённого игрового хода скачай все три файла и замени соответствующие версии в Library; до этого обновление Library не подтверждено.</p>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCampaignState}>Скачать CAMPAIGN_STATE.md</Button>
