@@ -101,6 +101,31 @@ describe("campaign setup confirmation", () => {
     expect(result.current.character.currentLocationLabel).toBe("Начальная площадь");
   });
 
+  it("allows a generated random character to start without a player dossier", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.player_character_state.sourceDossierId = "GENERATED_RANDOM";
+    initial.sources = initial.sources.map((source) => source.type === "PLAYER_DOSSIER"
+      ? { ...source, contentStatus: "NOT_ATTACHED", content: "", reviewStatus: "UNREVIEWED", contextEnabled: false }
+      : source);
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    let confirmation: ReturnType<typeof result.current.confirmCampaignSetup>;
+    act(() => {
+      confirmation = result.current.confirmCampaignSetup({
+        campaignName: "Случайная кампания",
+        calendarSystem: "Календарь Экдрасиля",
+        startInGameDate: "День 1, 08:00",
+        startLocationName: "Начальная площадь",
+        encumbranceMode: "STANDARD",
+      });
+    });
+
+    expect(confirmation!.ok).toBe(true);
+    expect(result.current.worldState.setup.confirmed).toBe(true);
+  });
+
   it("blocks setup when the player dossier is attached but not reviewed and enabled", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
