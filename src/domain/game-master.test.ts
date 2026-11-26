@@ -51,7 +51,7 @@ describe("game master resolver", () => {
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     expect(request.instructions).toContain("СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING");
     expect(request.input).toContain('"mode":"OPENING"');
-    expect(request.input).toContain("стартовая");
+    expect(request.input).toContain("Служебный запрос мастеру");
   });
   it("rejects opening output that mutates the campaign", async () => {
     const invalidOpening = { ...validTurn, timeDeltaMinutes: 1, newInGameDate: context.world.currentInGameDate };
