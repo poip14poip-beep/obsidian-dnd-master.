@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { toast } from "sonner";
 
 import { CertaintyBadge } from "@/components/StatusPill";
 import { calculatePlayerInventoryWeight } from "@/domain/inventory-weight";
@@ -26,7 +28,8 @@ function Value({ label, value }: { label: string; value: string | number | null 
 }
 
 function CharacterPage() {
-  const { sources, worldState, character } = useObsidianStore();
+  const { sources, worldState, character, updateCharacterResource } = useObsidianStore();
+  const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const dossier = sources.find((source) => source.id === character.sourceDossierId);
   const load = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
   const stats = character.abilityScores;
@@ -42,7 +45,7 @@ function CharacterPage() {
         </div>
         <p className="text-xs text-muted-foreground">
           Режим просмотра. Это подтверждённое состояние персонажа, а не форма редактирования.
-          Изменения игровых ресурсов и предметов фиксируются мастером при разрешении хода.
+          Изменения в ходе игры фиксируются мастером; игрок может отдельно внести только фактически проверенное текущее количество ресурса.
         </p>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <CertaintyBadge status={character.statsCertainty} />
@@ -146,7 +149,32 @@ function CharacterPage() {
                   <p className="text-sm font-medium">{resource.name}</p>
                   <p className="text-xs text-muted-foreground">Восстановление: {resource.recovery}</p>
                 </div>
-                <p className="mono-code text-sm font-semibold">{resource.current ?? "?"}/{resource.max ?? "?"}</p>
+                <div className="flex items-center gap-2">
+                  <p className="mono-code text-sm font-semibold">{resource.current ?? "?"}/{resource.max ?? "?"}</p>
+                  <input
+                    aria-label={`Фактический остаток ресурса ${resource.name}`}
+                    type="number" min={0} max={resource.max ?? undefined} step={1}
+                    value={resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current))}
+                    onChange={(event) => setResourceDrafts((current) => ({ ...current, [resource.id]: event.target.value }))}
+                    placeholder="UNKNOWN"
+                    className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  />
+                  <button
+                    type="button"
+                    className="rounded-md border border-border px-2 py-1 text-xs"
+                    onClick={() => {
+                      const raw = resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current));
+                      const value = Number(raw);
+                      if (raw.trim() === "" || !Number.isInteger(value) || value < 0 || (resource.max !== null && value > resource.max)) {
+                        toast.error(`Укажи целое значение от 0 до ${resource.max ?? "допустимого максимума"}.`);
+                        return;
+                      }
+                      const result = updateCharacterResource(resource.id, value);
+                      if (result.ok) toast.success(`Остаток ресурса «${resource.name}» обновлён без продвижения игрового времени.`);
+                      else toast.error(result.error);
+                    }}
+                  >Зафиксировать</button>
+                </div>
               </div>
             ))}
           </div>
