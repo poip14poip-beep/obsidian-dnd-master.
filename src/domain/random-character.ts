@@ -49,7 +49,7 @@ const BACKGROUND_DATA = {
 
 const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string;skillOptions?:string[];skillCount?:number}> = {
   Human:{size:"MEDIUM",speed:30,hp:0,traits:"Народная гибкость (домашнее правило Экдрасиля): владение одним навыком на выбор.",skillOptions:["Acrobatics","Animal Handling","Arcana","Athletics","Deception","History","Insight","Intimidation","Investigation","Medicine","Nature","Perception","Performance","Persuasion","Religion","Sleight of Hand","Stealth","Survival"],skillCount:1},
-  Elf:{size:"MEDIUM",speed:30,hp:0,traits:"Наследие фей: преимущество на спасброски для избегания или окончания состояния Очарован; транс: 4 часа медитации вместо сна; острые чувства — владение Восприятием.",skill:"Perception"},
+  Elf:{size:"MEDIUM",speed:30,hp:0,traits:"Острые чувства: владение навыком Восприятие. Магические расовые черты D&D не переносятся автоматически в Экдрасиль.",skill:"Perception"},
   "Dark Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Сумеречное зрение (домашнее правило Экдрасиля): тёмное зрение 60 футов; выдержка: владение одним навыком из Проницательности или Выживания.",skillOptions:["Insight","Survival"],skillCount:1},
   Gnome:{size:"MEDIUM",speed:30,hp:0,traits:"Гномья наблюдательность (домашнее правило Экдрасиля): владение Расследованием; инженерная сноровка: владение одним ремесленным инструментом.",skill:"Investigation"},
   "Red Dwarf":{size:"MEDIUM",speed:30,hp:1,traits:"Крепкое сложение (домашнее правило Экдрасиля): +1 HP на 1 уровне; владение Атлетикой или Выживанием.",skillOptions:["Athletics","Survival"],skillCount:1},
@@ -196,6 +196,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     bond:"Сохраняет личную вещь, напоминающую о семье.",
     flaw:"Неохотно просит о помощи, даже когда она необходима.",
     motivation,
+    preCampaignDesire:motivation,
     biography:"Персонаж родился в "+origin[0]+", в области "+origin[1]+" на континенте "+origin[2]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
     canonBasis:["Хроника Экдрасиля, Том XI, §44: город "+origin[0]+" — "+origin[1]+", континент "+origin[2]+"."],
     inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
