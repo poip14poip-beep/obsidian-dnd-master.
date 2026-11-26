@@ -202,30 +202,71 @@ function PlayPage() {
         throw new Error("Личность персонажа не прошла проверку. Мастер должен выбрать имя, народ, класс, предысторию и заполнить личную историю.");
       }
       const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
-      const { data: biographyData, error: biographyError } = await client.functions.invoke("obsidian-gm", {
-        body: {
-          operation: "GENERATE_CHARACTER_BIOGRAPHY",
-          model: "obsidian-free",
-          instructions: "Создай вторую часть досье персонажа на основе уже проверенной личности и готового механического листа. Не меняй имя, народ, класс, предысторию, характеристики, навыки, владения, оружие, снаряжение и предметы. Заполни подробную внешность из 11 конкретных полей, цельную биографию до начала кампании, подтверждённый источник города рождения, canonBasis, skillOrigins только для навыков персонажа, weaponBackground и equipmentBackground для его реальных предметов. Внешность согласуй с народом, возрастом, профессией, климатом и достатком. Не добавляй магию, мутации, проклятия, канонических NPC и глобальные события без основания. Верни только JSON по строгой схеме.",
-          input: JSON.stringify({
-            action: "Создание подробной биографии и внешности для уже выбранной личности",
-            generationSeed: seed,
-            character: generated.character,
-            mechanicalSummary: generated.summary,
-            randomRolls: generated.rolls,
-          }),
-        },
-      });
-      if (biographyError) {
-        let detail = biographyError.message || "Не удалось создать биографию.";
-        if ("context" in biographyError && biographyError.context instanceof Response) {
-          const payload = await biographyError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
-          detail = payload?.error?.message ?? detail;
+      const invokeDossierPart = async (operation: string, action: string, extraInstructions: string) => {
+        const { data, error } = await client.functions.invoke("obsidian-gm", {
+          body: {
+            operation,
+            model: "obsidian-free",
+            instructions: extraInstructions,
+            input: JSON.stringify({
+              action,
+              generationSeed: seed,
+              character: generated.character,
+              mechanicalSummary: generated.summary,
+              randomRolls: generated.rolls,
+            }),
+          },
+        });
+        if (error) {
+          let detail = error.message || "Не удалось вызвать мастера.";
+          if ("context" in error && error.context instanceof Response) {
+            const payload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+            detail = payload?.error?.message ?? detail;
+          }
+          throw new Error(detail);
         }
-        throw new Error(detail);
-      }
-      if (!biographyData?.output_text) throw new Error("Мастер не вернул подробную биографию.");
-      const biography = JSON.parse(biographyData.output_text) as CharacterBiography;
+        if (!data?.output_text) throw new Error("Мастер не вернул часть досье: " + action);
+        return JSON.parse(data.output_text) as Record<string, unknown>;
+      };
+      const appearancePart = await invokeDossierPart(
+        "GENERATE_CHARACTER_APPEARANCE",
+        "Подробная внешность персонажа",
+        "Опиши внешность по 11 полям: рост, телосложение, кожа, волосы, глаза, лицо, одежда, обувь, аксессуары, отличительные особенности, первое впечатление. Согласуй с народом, возрастом, происхождением, профессией и снаряжением. Без магических особенностей."
+      );
+      const storyPart = await invokeDossierPart(
+        "GENERATE_CHARACTER_STORY",
+        "Биография персонажа до начала кампании",
+        "Напиши цельную индивидуальную биографию на русском 350–500 слов. Добавь источник места рождения, 2–4 подтверждённых пункта канона и отметку, какие личные детали вымышлены. Не меняй личность и не выдумывай мировой канон."
+      );
+      const originsPart = await invokeDossierPart(
+        "GENERATE_CHARACTER_ORIGINS",
+        "Происхождение навыков, оружия и снаряжения",
+        "Объясни происхождение каждого уже имеющегося навыка, переданного оружия и каждого предмета инвентаря. Не добавляй и не меняй механические данные. Для навыков используй формат 'точное имя навыка — содержательное происхождение'."
+      );
+      const biography = {
+        ageYears: identity.ageYears,
+        ageCertainty: "KNOWN",
+        genderPresentation: identity.genderPresentation,
+        birthplace: identity.birthplace,
+        family: identity.family,
+        upbringing: identity.upbringing,
+        lifeEvents: identity.lifeEvents,
+        personalityTraits: identity.personalityTraits,
+        ideal: identity.ideal,
+        bond: identity.bond,
+        flaw: identity.flaw,
+        motivation: identity.motivation,
+        preCampaignDesire: identity.preCampaignDesire,
+        appearance: String(appearancePart.appearance ?? ""),
+        appearanceDetails: appearancePart.appearanceDetails,
+        biography: String(storyPart.biography ?? ""),
+        birthplaceSource: String(storyPart.birthplaceSource ?? ""),
+        canonBasis: storyPart.canonBasis,
+        inventedDetailsNotice: String(storyPart.inventedDetailsNotice ?? ""),
+        skillOrigins: originsPart.skillOrigins,
+        weaponBackground: String(originsPart.weaponBackground ?? ""),
+        equipmentBackground: String(originsPart.equipmentBackground ?? ""),
+      } as CharacterBiography;
       const skillNames = generated.character.skillBonuses?.map((skill) => skill.name) ?? [];
       const skillOriginMap = new Map(biography.skillOrigins.map((entry) => {
         const separator = entry.indexOf(" — ");
