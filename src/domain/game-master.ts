@@ -244,6 +244,10 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
     /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`)
   );
+  if (rulesSources.length === 0) throw new GameMasterError(
+    "Для применения полного корпуса правил D&D 2024 прикрепи SRD 5.2.1 как дополнительный источник, обработай его, проверь и включи в контекст. До этого доступны только базовые формулы; игровой ход заблокирован, чтобы мастер не выдавал непроверенные правила за RAW.",
+    "DND_RULES_SOURCE_NOT_READY",
+  );
   const dossier = context.sources.find((source) =>
     source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" &&
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
