@@ -28,6 +28,7 @@ describe("player dossier summary extraction", () => {
       "## 9.3. Навыки и пассивные показатели",
       "Атлетика | +11 | Сила +5, владение +6; Soldier",
       "История | +10 | Интеллект +4, владение +6; Skilled",
+      "Perception | +8 | Wisdom +2, proficiency +6",
       "## 9.4. Fighter 20: способности по уровням",
       "1 | Fighting Style, Second Wind, Weapon Mastery",
       "20 | Three Extra Attacks — всего 4 атаки",
@@ -51,13 +52,15 @@ describe("player dossier summary extraction", () => {
     expect(result.speedFeet).toBe(30);
     expect(result.hitDice).toBe("20d10");
     expect(result.savingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
-    expect(result.skillBonuses).toHaveLength(2);
+    expect(result.skillBonuses).toHaveLength(3);
     expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
+    expect(result.skillBonuses[2]).toMatchObject({ name: "Внимательность", bonus: 8, basis: "Wisdom +2, proficiency +6" });
     expect(result.classFeaturesByLevel).toHaveLength(2);
     expect(result.weaponAttacks).toHaveLength(2);
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
     expect(result.inventory).toHaveLength(3);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN" });
+    expect(result.inventory[1]).toMatchObject({ name: "Плащ защиты", location: "WORN" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "OTHER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
