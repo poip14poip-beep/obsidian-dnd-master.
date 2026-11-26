@@ -48,7 +48,8 @@ function PlayPage() {
     character.baseSavingThrowBonuses && character.skillBonuses?.length &&
     character.weaponAttacks?.length && character.classFeaturesByLevel?.length
   );
-  const verifiedCoreSourcesReady = (["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const).every((type) =>
+  const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
+  const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
       source.type === type && source.contentStatus === "ATTACHED" &&
       source.content.trim().length > 0 && source.processing?.status === "PROCESSED" &&
@@ -75,7 +76,7 @@ function PlayPage() {
     setStartError(null);
     if (locked) return;
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском проверь и включи в контекст три источника: ОБСИДИАН 4.1, Хронику Экдрасиля и досье персонажа.");
+      setStartError("Перед запуском проверь ОБСИДИАН 4.1 и Хронику Экдрасиля; для загруженного досье также требуется его проверка и включение в контекст.");
       return;
     }
     if (!characterReady) {
@@ -157,6 +158,7 @@ function PlayPage() {
     }
     setImportError(null);
     const result = updatePlayerCharacter({
+      sourceDossierId: dossier.id,
       name: parsed.name ?? "UNKNOWN",
       nameCertainty: parsed.name ? "KNOWN" : "UNKNOWN",
       speciesAndClass: parsed.speciesAndClass ?? "UNKNOWN",
@@ -186,6 +188,7 @@ function PlayPage() {
     if (!candidate) return;
     const result = updatePlayerCharacter({
       ...candidate.character,
+      sourceDossierId: "GENERATED_RANDOM",
       notes: candidate.character.notes ?? "",
     });
     if (result.ok) setConfirmed(true);
