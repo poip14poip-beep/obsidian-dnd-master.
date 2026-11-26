@@ -474,13 +474,14 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     // separately carries full detail for recent and query-matched historical turns.
     fullCampaignChronicle: context.journal
       .filter((entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN")
+      .slice(-300)
       .map((entry) => ({
         turnNumber: entry.turnNumber,
         inGameDate: entry.inGameDateAfter,
-        summary: entry.summary.slice(0, 500),
-        playerIntent: entry.playerIntent.slice(0, 500),
-        worldOutcome: entry.worldOutcome.slice(0, 700),
-        campaignMemory: entry.campaignMemory.slice(0, 900),
+        summary: entry.summary.slice(0, 180),
+        playerIntent: entry.playerIntent.slice(0, 160),
+        worldOutcome: entry.worldOutcome.slice(0, 220),
+        campaignMemory: entry.campaignMemory.slice(0, 320),
       })),
     recentJournal: selectRelevantJournal(context.journal, context.action),
     requirements: [
