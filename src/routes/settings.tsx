@@ -49,6 +49,7 @@ function SettingsPage() {
   const [campaignName, setCampaignName] = useState(worldState.campaignName);
   const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem);
   const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode ?? "UNSET");
+  const [campaignPreferences, setCampaignPreferences] = useState(worldState.campaignPreferences ?? { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" });
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [startNarrative, setStartNarrative] = useState(worldState.startNarrative ?? "");
@@ -59,6 +60,7 @@ function SettingsPage() {
     setCampaignName(worldState.campaignName);
     setCalendarSystem(worldState.calendarSystem);
     setEncumbranceMode(worldState.encumbranceMode ?? "UNSET");
+    setCampaignPreferences(worldState.campaignPreferences ?? { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" });
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
     setStartNarrative(worldState.startNarrative ?? "");
@@ -98,6 +100,7 @@ function SettingsPage() {
       startInGameDate: startInGameDate.trim() || "UNKNOWN",
       startLocationName: startLocationName.trim() || "UNKNOWN",
       encumbranceMode,
+      campaignPreferences,
     });
     if (res.ok) {
       toast.success("Параметры подготовки сохранены.");
@@ -340,6 +343,27 @@ function SettingsPage() {
               />
               <p className="text-[11px] leading-relaxed text-muted-foreground">Если не хочешь менять случайный результат, оставь город как сгенерирован. Досье не фиксирует предыдущий маршрут Лии в 2000 году.</p>
             </div>
+          </div>
+          <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+            <h3 className="text-sm font-semibold text-foreground">Открытые настройки кампании — Приложение B ОБСИДИАН 4.1</h3>
+            <p className="text-xs text-muted-foreground">Каждый пункт требует явного решения. Неиспользуемое правило отметь словами «Не используется». Пустые поля блокируют старт.</p>
+            {([
+              ["allowedBooksAndOptions", "Разрешённые книги и опциональные правила"],
+              ["diceMethod", "Способ броска кубиков"],
+              ["advancement", "Прогрессия персонажа: XP или Milestone"],
+              ["foodAndWater", "Питание, вода и жажда"],
+              ["randomEncounters", "Случайные встречи и используемые таблицы"],
+              ["pvp", "Отношение к PvP"],
+              ["deathAndResurrection", "Смерть и воскрешение сверх базовых правил"],
+              ["economyDetail", "Степень детализации экономики и торговли"],
+              ["contentBoundaries", "Допустимые темы и границы содержания"],
+              ["houseRules", "Домашние правила и дополнительные механики"],
+            ] as const).map(([key, label]) => (
+              <div className="space-y-1" key={key}>
+                <Label htmlFor={`pref-${key}`}>{label}</Label>
+                <Input id={`pref-${key}`} value={campaignPreferences[key]} onChange={(e) => setCampaignPreferences((prev) => ({ ...prev, [key]: e.target.value }))} placeholder="Укажи решение или «Не используется»" className="touch-target" disabled={s.confirmed} />
+              </div>
+            ))}
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
             <Checkbox
