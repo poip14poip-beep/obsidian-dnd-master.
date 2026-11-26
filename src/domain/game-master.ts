@@ -111,6 +111,62 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
     factText ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${factText}` : "",
   ].filter(Boolean).join("\n\n");
 }
+export function selectRulesContext(sources: SourceDocument[], action: string): string {
+  const verified = sources.filter((source) => {
+    const label = `${source.title} ${source.originLabel} ${source.fileName ?? ""}`;
+    return source.type === "SUPPLEMENTAL" &&
+      /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(label) &&
+      source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
+      source.processing?.status === "PROCESSED" &&
+      source.reviewStatus === "VERIFIED" && source.contextEnabled === true;
+  });
+  if (!verified.length) return "UNKNOWN: verified SRD 5.2.1 text source is not attached and enabled.";
+  const russian = action.toLocaleLowerCase();
+  const mappedTerms = [
+    ...( /атак|удар|оруж|бой|инициатив/.test(russian) ? ["attack", "combat", "weapon", "initiative", "attack roll"] : []),
+    ...( /урон|поврежден/.test(russian) ? ["damage", "damage roll", "resistance", "vulnerability"] : []),
+    ...( /спасброс|сопротив/.test(russian) ? ["saving throw", "saving throws"] : []),
+    ...( /провер|навык|характеристик/.test(russian) ? ["ability check", "d20 test", "skill"] : []),
+    ...( /движ|перемещ|скорост/.test(russian) ? ["movement", "speed", "difficult terrain"] : []),
+    ...( /состояни|слеп|испуг|отрав/.test(russian) ? ["condition", "conditions", "poisoned", "frightened"] : []),
+    ...( /отдых|восстанов/.test(russian) ? ["long rest", "short rest", "resting"] : []),
+    ...( /перегруз|вес|грузоподъём/.test(russian) ? ["carrying capacity", "encumbrance", "push", "drag", "lift"] : []),
+    ...( /класс|боец|воин|особенност/.test(russian) ? ["fighter", "character classes", "class features"] : []),
+  ];
+  const actionTerms = action.toLocaleLowerCase().split(/[^\\p{L}\\p{N}]+/u).filter((term) => term.length > 2);
+  const terms = [...new Set([...actionTerms, ...mappedTerms].map((term) => term.toLocaleLowerCase()))];
+  const excerpts: Array<{ source: SourceDocument; startLine: number; endLine: number; text: string; score: number }> = [];
+  for (const source of verified) {
+    const lines = source.content.replace(/\\r\\n?/g, "\\n").split("\\n");
+    let paragraph: string[] = [];
+    let startLine = 1;
+    const flush = (endLine: number) => {
+      const text = paragraph.join("\\n").trim();
+      paragraph = [];
+      if (!text) return;
+      const lower = text.toLocaleLowerCase();
+      const score = terms.reduce((sum, term) => sum + (lower.includes(term) ? 1 : 0), 0);
+      if (score > 0) excerpts.push({ source, startLine, endLine, text, score });
+    };
+    lines.forEach((line, index) => {
+      if (!line.trim()) { flush(index); startLine = index + 2; }
+      else { if (paragraph.length === 0) startLine = index + 1; paragraph.push(line); }
+    });
+    flush(lines.length);
+  }
+  const selected = excerpts.sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 10);
+  if (!selected.length) return "Verified SRD 5.2.1 source is enabled, but no relevant paragraph matched the action. RULE UNCERTAINTY: do not invent exact rule text.";
+  let budget = 14000;
+  const output: string[] = [];
+  for (const item of selected) {
+    const excerpt = item.text.slice(0, Math.min(item.text.length, budget));
+    if (!excerpt) break;
+    output.push(`[RULE SOURCE: ${item.source.title}; sourceId=${item.source.id}; lines ${item.startLine}–${item.endLine}]${item.text.length > excerpt.length ? " (excerpt truncated)" : ""}\\n${excerpt}`);
+    budget -= excerpt.length;
+    if (budget <= 0) break;
+  }
+  return output.join("\\n\\n");
+}
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
   const record = payload as Record<string, unknown>;
