@@ -37,18 +37,18 @@ function Value({ label, value }: { label: string; value: string | number | null 
 }
 
 function extractDossierSection(content: string, start: RegExp, end: RegExp): string {
- const lines = content.split(/\\r?\\n/);
+ const lines = content.split(/\r?\n/);
  const first = lines.findIndex(line => start.test(line.trim()));
  if (first < 0) return '';
  const last = lines.findIndex((line, index) => index > first && end.test(line.trim()));
- return lines.slice(first + 1, last < 0 ? lines.length : last).filter(line => !/^<PARSED TEXT FOR PAGE:/i.test(line.trim())).join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
+ return lines.slice(first + 1, last < 0 ? lines.length : last).filter(line => !/^<PARSED TEXT FOR PAGE:/i.test(line.trim())).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 function CharacterPage() {
   const { sources, worldState, character, updateCharacterResource } = useObsidianStore();
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const dossier = sources.find((source) => source.id === character.sourceDossierId);
-  const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\\.\\s*Подробная биография/i, /^6\\.\\s*Области опыта/i) : ''; 
-  const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\\.\\s*Внешность и экипировка/i, /^2\\.\\s*Прозвища/i) : '';
+  const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\.\s*Подробная биография/i, /^6\.\s*Области опыта/i) : ''; 
+  const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\.\s*Внешность и экипировка/i, /^2\.\s*Прозвища/i) : '';
   const load = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
   const stats = character.abilityScores;
 
@@ -73,13 +73,13 @@ function CharacterPage() {
         </div>
       </header>
 
-      {!character.biography?.biography && dossierLifeHistory && (
+      {dossierLifeHistory && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">История жизни до кампании</h2>
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierLifeHistory)}</div>
         </section>
       )}
-      {character.biography && (
+      {character.biography && !dossierLifeHistory && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">История жизни до кампании</h2>
           <p className="text-sm leading-relaxed">{ru(character.biography.biography)}</p>
@@ -105,13 +105,13 @@ function CharacterPage() {
           </details>
         </section>
       )}
-      {!character.biography?.appearanceDetails && dossierAppearance && (
+      {dossierAppearance && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
           <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierAppearance)}</div>
         </section>
       )}
-      {character.biography?.appearanceDetails && (
+      {character.biography?.appearanceDetails && !dossierAppearance && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
           <p className="text-sm leading-relaxed">{ru(character.biography.appearance)}</p>
