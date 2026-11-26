@@ -196,7 +196,13 @@ Deno.serve(async (req: Request) => {
   const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
   const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
     ? privateSources.SRD_5_2_1.content : "";
-  const ruleParagraphs = rulesDoc.split(/\\n\\s*\\n/g).map((part) => part.trim()).filter((part) => part.length > 80);
+  const ruleParagraphs = rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80);
+  if (!rulesDoc.trim()) {
+    return json({ error: {
+      code: "SRD_SOURCE_NOT_CONFIGURED",
+      message: "В закрытое хранилище мастера ещё не загружен текст SRD 5.2.1. Игровой запрос не отправлен.",
+    } }, 503, cors);
+  }
   let actionText = body.input.toLowerCase();
   try {
     const parsedInput = JSON.parse(body.input);
@@ -210,7 +216,7 @@ Deno.serve(async (req: Request) => {
     .slice(0, 12)
     .map((item) => item.paragraph);
   const rulesContext = selectedRules.length
-    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:\\n" + selectedRules.join("\\n\\n")
+    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
   const serverInstructions = [
     masterPrompt,
@@ -218,7 +224,7 @@ Deno.serve(async (req: Request) => {
     body.instructions,
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
-  ].join("\\n\\n");
+  ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
     { role: "system", content: serverInstructions },
     { role: "user", content: body.input },
