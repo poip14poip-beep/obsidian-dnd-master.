@@ -42,6 +42,8 @@ describe("player dossier summary extraction", () => {
       "Second Wind: четыре использования; Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
       "2–3 дня | Сухой паёк | Пополняется в пути",
       "1 | Катана в ножнах | Основное оружие",
+      "## 11.3. Инструменты, исследования и медицина",
+      "1 | Инструменты кузнеца | Осмотр и мелкий ремонт",
     ].join("\n"));
     expect(result.level).toBe(21);
     expect(result.hitPointMaximum).toBe(184);
@@ -58,9 +60,10 @@ describe("player dossier summary extraction", () => {
     expect(result.classFeaturesByLevel).toHaveLength(2);
     expect(result.weaponAttacks).toHaveLength(2);
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
-    expect(result.inventory).toHaveLength(3);
+    expect(result.inventory).toHaveLength(4);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "OTHER", startPolicy: "KEEP_FROM_DOSSIER" });
+    expect(result.inventory[3]).toMatchObject({ name: "Инструменты кузнеца", location: "OTHER", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
       { name: "Action Surge", current: null, max: 2, recovery: "UNKNOWN", certainty: "KNOWN" },
