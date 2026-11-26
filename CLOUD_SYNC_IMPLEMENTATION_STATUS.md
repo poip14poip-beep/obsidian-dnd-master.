@@ -50,6 +50,7 @@ Added:
 - `public.obsidian_api_save_campaign_snapshot`: service-role-only RPC. Validates the complete backup envelope, collection separation, turn number and all 11 collection checksums; uses a per-campaign advisory lock and optimistic revision checks; stores a SHA-256 digest; verifies the saved row by reading it back; appends an audit record.
 - `public.obsidian_api_get_latest_campaign_snapshot`: service-role-only RPC. Checks campaign ownership and verifies the stored SHA-256 before returning the latest snapshot.
 - The authenticated `obsidian-api` Edge Function exposes `save_snapshot` and `latest_snapshot`. It is ACTIVE version 6 with JWT verification enabled.
+- Snapshot writes now enforce monotonic turn numbers, at most one new committed turn per revision, and exact preservation of the previous session-log and audit-log prefixes. Rewriting or truncating committed history is rejected server-side.
 - Settings now supports creating a cloud campaign, loading the latest snapshot, and explicitly restoring it. Restore downloads a backup of the current local state first and requires player acknowledgement before replacing all 11 local collections.
 - After every locally confirmed game turn, the store attempts to append a full cloud snapshot. The game and journal screens show saving/success/failure status and allow retry.
 - A local cloud-campaign pointer stores only campaign UUID and last known revision. Revision conflicts block overwriting a newer snapshot from another device.
@@ -65,16 +66,18 @@ Important boundary: cloud snapshots are full backup archives of all 11 local col
 - `obsidian-gm`: ACTIVE v14, JWT required.
 - `obsidian-api`: ACTIVE v6, JWT required.
 - `obsidian-app`: ACTIVE v8, serves the public app shell; JWT disabled only for this static public endpoint.
+- GitHub Actions now publishes both GitHub Pages and the `static-site` branch used by `obsidian-app`. The static-site branch was read back after deployment: its HTML has the correct Supabase-host base path and no build-time “Supabase Auth not configured” error shell.
 - Supabase service-role credentials and RouterAI key remain server-side; no service-role secret is placed in browser code or `VITE_*` variables.
 - Security advisor currently reports three RLS-enabled private tables with no policies (`campaign_snapshots`, `gm_base_documents`, `gm_source_documents`). This is intentional: the schema is not directly exposed to browser roles and access is mediated by server functions.
 - Leaked-password protection in Supabase Auth is still disabled and should be enabled as a separate account-security hardening task.
 
 ## Verification status
 
-- GitHub Actions CI runs: `bun run test`, `bunx tsc --noEmit`, and `bun run build`.
+- GitHub Actions CI runs: `bun run test`, `bunx tsc --noEmit`, and `bun run build`. The latest CI on commit `bdd12d42008263d0a27b18928f579862808f31c1` passed; GitHub Pages deployment and Supabase static-host publication also passed.
 - Cloud snapshot client validation and local-only mode have unit coverage.
 - Database migration application, private table/RLS state, RPC existence and service-role-only execution grants were checked.
 - `obsidian-gm` v14 was deployed and its deployed source was read back to verify the expected changes.
+- The GitHub Pages artifact from the build was inspected: both `index.html` and `_shell.html` render the app title, do not contain the previous auth-configuration error, and reference the expected GitHub Pages asset base path. The client bundle contains the public Supabase publishable key and no Lovable telemetry URL.
 - No authenticated end-to-end cloud save/restore test has yet been completed using a real player session.
 - No full Android-device acceptance run has yet been completed.
 - No claim of complete production-ready autonomous gameplay is made at this stage.

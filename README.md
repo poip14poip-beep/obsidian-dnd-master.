@@ -4,7 +4,12 @@
 
 ## Запуск
 
-Публичная сборка: [GitHub Pages](https://poip14poip-beep.github.io/obsidian-dnd-master./).
+Публичные сборки:
+
+- [GitHub Pages](https://poip14poip-beep.github.io/obsidian-dnd-master./)
+- [Supabase static host](https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app/)
+
+Обе сборки автоматически публикуются из ветки `cloud-api-client` средствами GitHub Actions.
 
 Рабочая ветка: `cloud-api-client`.
 
