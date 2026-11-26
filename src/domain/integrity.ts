@@ -283,7 +283,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     (f) => !f.sourceId || (!sourceIds.has(f.sourceId) && f.sourceId !== "MANUAL_GM_ENTRY"),
   );
   const npcKnowledgeMissingPath = npcs.flatMap((npc) =>
-    npc.knowledge
+    [...npc.knowledge, ...(npc.playerKnowledge ?? [])]
       .filter((k) => !k.acquisitionPath.trim() || !k.sourceId.trim())
       .map((k) => `${npc.name}: ${k.factSummary}`),
   );
@@ -293,7 +293,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     label: "Происхождение фактов и путей знания NPC",
     passed: provenanceOk,
     details: provenanceOk
-      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC: ${npcs.reduce((acc, n) => acc + n.knowledge.length, 0)}.`
+      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC и игрока: ${npcs.reduce((acc, n) => acc + n.knowledge.length + (n.playerKnowledge?.length ?? 0), 0)}.`
       : `Фактов без источника: ${factsWithoutSource.length}; знаний NPC без пути получения: ${npcKnowledgeMissingPath.length}.`,
   });
 
