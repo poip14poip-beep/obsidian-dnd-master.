@@ -384,6 +384,10 @@ function PlayPage() {
         processing: processed.processing,
       });
       if (!attached.ok) throw new Error(attached.error);
+      const reviewed = verifySource(source.id);
+      if (!reviewed.ok) throw new Error(reviewed.error);
+      const enabled = setSourceContextEnabled(source.id, true);
+      if (!enabled.ok) throw new Error(enabled.error);
       setImportError(null);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось загрузить лист персонажа.");
@@ -471,7 +475,7 @@ function PlayPage() {
     {mode === "DOSSIER" && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Проверка досье перед импортом</h2>
       {!parsed ? <div className="space-y-2"><p className="text-sm text-muted-foreground">Лист персонажа загружается отдельно для этой кампании. Он не входит в канон Экдрасиля и не является частью системных правил мастера.</p><label className="block space-y-1.5 text-sm font-medium"><span>Файл персонажа (.docx, .txt, .md)</span><input type="file" accept=".docx,.txt,.md,.json,.csv" disabled={dossierUploadBusy || locked} onChange={handleDossierUpload} className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-primary-foreground" /></label>{dossierUploadBusy && <p className="text-xs text-muted-foreground">Читаю и обрабатываю лист персонажа…</p>}</div> : <>
-        <p className="text-sm">Файл: <strong>{dossier?.fileName ?? "UNKNOWN"}</strong> · статус: {dossier?.reviewStatus ?? "UNKNOWN"}</p>{dossier?.reviewStatus !== "VERIFIED" && <Button type="button" variant="outline" onClick={verifyDossierSource} disabled={dossier?.processing?.status !== "PROCESSED"}>Подтвердить проверку листа</Button>}{dossier?.reviewStatus === "VERIFIED" && dossier.contextEnabled !== true && <Button type="button" variant="outline" onClick={enableDossierContext}>Разрешить мастеру учитывать этот лист</Button>}{dossier?.contextEnabled === true && <p className="text-xs text-emerald-500">Лист проверен и доступен мастеру в контексте текущей кампании.</p>}
+        <p className="text-sm">Файл: <strong>{dossier?.fileName ?? "UNKNOWN"}</strong> · статус: {dossier?.reviewStatus ?? "UNKNOWN"}</p>{dossier?.reviewStatus === "VERIFIED" && dossier.contextEnabled === true && <p className="text-xs text-emerald-500">✓ Лист автоматически обработан и подключён к проверке мастера.</p>}
         <dl className="grid grid-cols-2 gap-2 text-sm">{[
           ["Имя",parsed.name],["Вид и класс",parsed.speciesAndClass],["Уровень",parsed.level],["Макс. HP",parsed.hitPointMaximum],["КД без плаща",parsed.armorClass === null ? null : parsed.armorClass - 1],["КД с настроенным плащом",parsed.armorClass],["Бонус мастерства",parsed.proficiencyBonus],["Скорость",parsed.speedFeet],["Навыков",parsed.skillBonuses.length],["Атак",parsed.weaponAttacks.length],["Классовых уровней с особенностями",parsed.classFeaturesByLevel.length],["Предметов",parsed.inventory.length],["Ресурсов",parsed.resources.length]
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
