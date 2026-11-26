@@ -86,7 +86,7 @@ export function createInitialSources(): SourceDocument[] {
     },
     {
       id: DEFAULT_SOURCE_IDS.DOSSIER,
-      title: "Досье Лии Вейн",
+      title: "Досье персонажа игрока",
       type: "PLAYER_DOSSIER",
       targetPartition: "PLAYER_CHARACTER_STATE",
       originLabel: "Отдельный лист персонажа игрока (файл не прикреплён)",
@@ -99,7 +99,7 @@ export function createInitialSources(): SourceDocument[] {
       checksum: "EMPTY",
       attachedAt: null,
       notes:
-        "Изолированный источник для PLAYER_CHARACTER_STATE. Никогда не вкладывается в CAMPAIGN_STATE.",
+        "Изолированный источник для текущего персонажа игрока. Персонаж выбирается игроком отдельно; источник никогда не вкладывается в CAMPAIGN_STATE.",
       processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
   ];
