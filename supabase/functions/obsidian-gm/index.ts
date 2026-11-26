@@ -104,27 +104,9 @@ const identitySchema: JsonRecord = {
     bond: { type: "string" },
     flaw: { type: "string" },
     motivation: { type: "string" },
-    preCampaignDesire: { type: "string" },
-    appearance: { type: "string" },
-    appearanceDetails: {
-      type: "object", additionalProperties: false,
-      properties: {
-        height: { type: "string" }, build: { type: "string" }, skin: { type: "string" },
-        hair: { type: "string" }, eyes: { type: "string" }, face: { type: "string" },
-        clothing: { type: "string" }, footwear: { type: "string" }, accessories: { type: "string" },
-        distinctiveFeatures: { type: "string" }, firstImpression: { type: "string" }
-      },
-      required: ["height","build","skin","hair","eyes","face","clothing","footwear","accessories","distinctiveFeatures","firstImpression"]
-    },
-    birthplaceSource: { type: "string" },
-    biography: { type: "string" },
-    skillOrigins: { type: "array", items: { type: "string" } },
-    weaponBackground: { type: "string" },
-    equipmentBackground: { type: "string" },
-    canonBasis: { type: "array", items: { type: "string" } },
-    inventedDetailsNotice: { type: "string" }
+    preCampaignDesire: { type: "string" }
   },
-  required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire","appearance","appearanceDetails","birthplaceSource","biography","skillOrigins","weaponBackground","equipmentBackground","canonBasis","inventedDetailsNotice"]
+  required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire"]
 };
 const biographySchema: JsonRecord = {
   type: "object", additionalProperties: false,
