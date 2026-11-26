@@ -1,4 +1,4 @@
-import type { InventoryItem, LocationRecord, PlayerCharacterState } from "./types";
+import type { LocationRecord, PlayerCharacterState } from "./types";
 
 export interface CanonStartCity { name: string; region: string; continent: string; population: number; }
 export interface RandomStartResult {
@@ -52,62 +52,6 @@ function secureIndex(length: number): number {
   return value % length;
 }
 
-function item(name: string, quantity: number, notes: string, location: NonNullable<InventoryItem["location"]>, certainty: InventoryItem["certainty"] = "KNOWN"): InventoryItem {
-  return { id: `start-${name.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-")}`, name, quantity, notes, location, certainty };
-}
-
-function inventory(): InventoryItem[] {
-  return [
-    item("Кожа Последнего Часа",1,"Авторский проклятый лёгкий доспех; +3 к КБ; бесшумный; надет.","WORN"),
-    item("Cloak of Protection",1,"Светлая дорожная мантия; +1 КБ и +1 ко всем спасброскам; требует настройки.","WORN"),
-    item("Boots of Elvenkind",1,"Преимущество на проверки Скрытности, связанные с тихим передвижением.","WORN"),
-    item("Дорожная одежда",1,"Рубаха, штаны, нижний слой, пояс, обмотки и запасные застёжки.","WORN"),
-    item("Кожаные перчатки",1,"Для работы с оружием, металлом и инструментами.","WORN"),
-    item("Катана в ножнах",1,"Механически Longsword; закреплена по диагонали на спине.","WORN"),
-    item("Кинжал",1,"Резервный клинок и хозяйственный инструмент; ножны на поясе.","WORN"),
-    item("Дорожная сумка или рюкзак",1,"Точная модель UNKNOWN.","CARRIED","APPROXIMATE"),
-    item("Точильный камень",1,"Обслуживание кромки клинка.","CARRIED"),
-    item("Масло для клинка",1,"Флакон для защиты стали и металлических деталей от влаги.","CARRIED"),
-    item("Комплект чистки оружия",1,"Ткань, щётка, небольшие инструменты и ветошь.","CARRIED"),
-    item("Ремкомплект ножен",1,"Шнур, кожаная полоска, игла, запасная петля и заклёпки.","CARRIED"),
-    item("Верёвка",1,"15 метров, прочная походная.","CARRIED"),
-    item("Крюк-кошка",1,"Для закрепления верёвки там, где это возможно.","CARRIED"),
-    item("Инструменты кузнеца",1,"Осмотр и мелкий ремонт металлических деталей.","CARRIED"),
-    item("Кожевенные инструменты",1,"Ремонт ремней, ножен, обуви и креплений.","CARRIED"),
-    item("Полевой медицинский набор",1,"Перевязки, игла, нить, ткань, щипцы и ножницы.","CARRIED"),
-    item("Высушенные травы",1,"Небольшой запас; свойства зависят от местности и требуют проверки.","CARRIED","APPROXIMATE"),
-    item("Блокнот наблюдений",1,"Чудовища, следы, повадки и слабые места.","CARRIED"),
-    item("Исторический журнал",1,"Даты, города, договоры и свидетельства.","CARRIED"),
-    item("Тетрадь ритуальных схем",1,"Известные Лии ритуалы; не универсальные заклинания.","CARRIED"),
-    item("Лупа",1,"Исследование мелких деталей и надписей.","CARRIED"),
-    item("Письменные принадлежности",1,"Чернила, перо, бумага и нож для пера.","CARRIED"),
-    item("Мел и уголь",1,"Несколько кусков для разметки и схем.","CARRIED","APPROXIMATE"),
-    item("Спальный мешок или плотное одеяло",1,"Походное снаряжение; точный вариант APPROXIMATE.","CARRIED","APPROXIMATE"),
-    item("Лёгкий тент или палатка",1,"Походное снаряжение; точный вариант UNKNOWN.","CARRIED","APPROXIMATE"),
-    item("Фляга",1,"Содержимое на момент старта UNKNOWN.","CARRIED","APPROXIMATE"),
-    item("Котелок и столовые принадлежности",1,"Походный комплект.","CARRIED"),
-    item("Огниво",1,"Для разведения огня.","CARRIED"),
-    item("Факелы или запасные источники света",6,"Количество по досье.","CARRIED"),
-    item("Сухой паёк",1,"Запас на 2–3 дня; точный остаток APPROXIMATE.","CARRIED","APPROXIMATE"),
-    item("Запасная одежда и нижнее бельё",1,"Один комплект.","CARRIED"),
-    item("Дождевой чехол для сумки",1,"Для защиты дорожной сумки.","CARRIED"),
-    item("Небольшой замок с ключом",1,"Для дорожной сумки или поклажи.","CARRIED"),
-    item("Иглы, нитки и заплатки",1,"Небольшой ремонтный набор.","CARRIED"),
-    item("Личный дневник",1,"Не все периоды жизни записаны.","CARRIED"),
-    item("Старые письма",1,"Несколько писем; по досье обычно остаются в комнате, мастерской или тайнике. Точное место UNKNOWN.","STORED","APPROXIMATE"),
-    item("Памятная вещь",1,"Небольшой личный предмет; по досье обычно хранится отдельно от дорожного набора. Точное место UNKNOWN.","STORED","APPROXIMATE"),
-    item("Кошелёк",1,"Текущая сумма денег UNKNOWN; баланс не выдумывается.","CARRIED","UNKNOWN"),
-    item("Рабочая карта Вальтерры",1,"Пометки дорог и переправ; карта неполная.","CARRIED"),
-    item("Старые региональные карты",1,"Несколько карт с несовпадающими границами.","CARRIED","APPROXIMATE"),
-    item("Схемы Кхар-Дорна, Аэлиндора, Греймарка и Элиона",1,"Отдельные схемы; актуальность требует проверки.","CARRIED"),
-    item("Копии договоров и свидетельств",1,"Некоторые документы; полный перечень UNKNOWN.","CARRIED","APPROXIMATE"),
-    item("Каталог источников",1,"Пометки о личных наблюдениях, свидетельствах, архивных копиях и непроверенных данных.","CARRIED"),
-    item("Свёрток ритуальных принадлежностей",1,"Схемы защитных кругов, мел, шнур, металлические метки, уголь, соль и компоненты; не универсальный инструмент.","CARRIED","APPROXIMATE"),
-    item("Медицинский и полевой комплект",1,"Ткань, бинты, игла, нить, щипцы, ножницы, настойка, пузырьки, шина, мыло и повязки.","CARRIED","APPROXIMATE"),
-    item("Складной ремонтный набор",1,"Шило, иглы, нить, куски кожи, пряжки, заклёпки, проволока, напильник и запасные детали.","CARRIED","APPROXIMATE"),
-  ];
-}
-
 export function generateRandomStart(index = secureIndex): RandomStartResult {
   const cityIndex = index(CITIES.length);
   const sceneIndex = index(SCENES.length);
@@ -130,22 +74,10 @@ export function generateRandomStart(index = secureIndex): RandomStartResult {
   const generatedAt = new Date().toISOString();
   return {
     city, scene: scene.label, narrative, date, hpCurrent, healthLabel: profile.label,
-    healthDescription: profile.description, inventory: inventory(),
+    healthDescription: profile.description, inventory: [],
     characterPatch: {
-      name: "Лия Вейн", nameCertainty: "KNOWN",
-      speciesAndClass: "Человек · Fighter 20 / Champion + 1 отдельный эпический уровень кампании",
-      level: 21, classLevel: 20, epicCampaignLevels: 1,
-      hpCurrent, hpMax: 184, hpTemp: 0, armorClass: 20,
-      abilityScores: { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 },
-      proficiencyBonus: 6, speedFeet: 30, hitDice: "20d10",
-      baseSavingThrowBonuses: { strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 },
-      savingThrowBonuses: { strength: 12, dexterity: 4, constitution: 10, intelligence: 5, wisdom: 3, charisma: 4 },
-      weaponAttacks: [
-        { weapon: "Катана (Longsword)", attackBonus: 11, damage: "1d8+7 одной рукой с Dueling; 1d10+5 двумя руками", mastery: "Sap" },
-        { weapon: "Кинжал", attackBonus: 11, damage: "1d4+5", mastery: "Nick" },
-      ],
-      statsCertainty: "KNOWN", currentLocationLabel: city.name, conditions: [], inventory: inventory(),
-      notes: `Начальное состояние создано генератором. ${profile.label}: ${profile.description} Деньги: UNKNOWN; баланс не выдумывается. Тайники и имущество вне дорожной сумки не считаются находящимися при Лии.`,
+      // A generated starting condition may set current HP, but must never rebuild or overwrite the imported character.
+      hpCurrent, hpTemp: 0, currentLocationLabel: city.name,
     },
     location: {
       name: city.name, region: city.region,
