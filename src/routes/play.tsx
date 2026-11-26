@@ -274,12 +274,12 @@ function PlayPage() {
       }));
       const skillOrigins = skillNames.map((name) => skillOriginMap.get(name) ?? "");
       if (skillOrigins.some((origin) => origin.length < 20) ||
-          !biography["appearance"]Details || Object.values(biography["appearance"]Details).some((value) => typeof value !== "string" || value.length < 25) ||
+          !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.length < 25) ||
           typeof biography["biography"] !== "string" || biography["biography"].length < 350 ||
           !Array.isArray(biography["canonBasis"]) || biography["canonBasis"].length < 1) {
         throw new Error("Полное досье не прошло проверку внешности, биографии, навыков или канона. Ничего не сохранено.");
       }
-      const completeBiography: CharacterBiography = { ..["biography"], skillOrigins };
+      const completeBiography: CharacterBiography = { ...biography, skillOrigins };
       setCandidate({ ...generated, character: { ...generated.character, biography: completeBiography } });
       setBiographyReady(true);
     } catch (error) {
@@ -468,20 +468,20 @@ function PlayPage() {
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character["biography"]["appearance"]}</p>
           </div>
         )}
-        {biographyReady && candidate.character["biography"]?["appearance"]Details ? (
+        {biographyReady && candidate.character["biography"]?.appearanceDetails ? (
           <div className="overflow-hidden rounded-lg border">
             {([
-              ["Рост", candidate.character["biography"]["appearance"]Details.height],
-              ["Телосложение", candidate.character["biography"]["appearance"]Details.build],
-              ["Кожа", candidate.character["biography"]["appearance"]Details.skin],
-              ["Волосы", candidate.character["biography"]["appearance"]Details.hair],
-              ["Глаза", candidate.character["biography"]["appearance"]Details.eyes],
-              ["Лицо", candidate.character["biography"]["appearance"]Details.face],
-              ["Одежда", candidate.character["biography"]["appearance"]Details.clothing],
-              ["Обувь", candidate.character["biography"]["appearance"]Details.footwear],
-              ["Аксессуары", candidate.character["biography"]["appearance"]Details.accessories],
-              ["Отличительные особенности", candidate.character["biography"]["appearance"]Details.distinctiveFeatures],
-              ["Первое впечатление", candidate.character["biography"]["appearance"]Details.firstImpression],
+              ["Рост", candidate.character["biography"].appearanceDetails.height],
+              ["Телосложение", candidate.character["biography"].appearanceDetails.build],
+              ["Кожа", candidate.character["biography"].appearanceDetails.skin],
+              ["Волосы", candidate.character["biography"].appearanceDetails.hair],
+              ["Глаза", candidate.character["biography"].appearanceDetails.eyes],
+              ["Лицо", candidate.character["biography"].appearanceDetails.face],
+              ["Одежда", candidate.character["biography"].appearanceDetails.clothing],
+              ["Обувь", candidate.character["biography"].appearanceDetails.footwear],
+              ["Аксессуары", candidate.character["biography"].appearanceDetails.accessories],
+              ["Отличительные особенности", candidate.character["biography"].appearanceDetails.distinctiveFeatures],
+              ["Первое впечатление", candidate.character["biography"].appearanceDetails.firstImpression],
             ] as const).map(([label, value]) => (
               <div key={label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 border-b last:border-b-0 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">{label}</span><span className="text-right">{value || "UNKNOWN"}</span>
