@@ -160,6 +160,15 @@ export function validateTurnDraft(
       }
     }
     for (const resource of changes.resources) {
+      const existingResource = character.resources.find((item) => item.name.toLocaleLowerCase() === resource.name.toLocaleLowerCase());
+      if (existingResource?.current === null && resource.current !== null) {
+        errors.push(`Нельзя подставить текущее значение ресурса «${resource.name}»: оно UNKNOWN. Сначала игрок должен указать фактический остаток.`);
+        break;
+      }
+      if (existingResource?.max !== null && existingResource?.max !== undefined && resource.max !== null && resource.max !== existingResource.max) {
+        errors.push(`Нельзя менять максимум ресурса «${resource.name}» без подтверждённого изменения листа персонажа.`);
+        break;
+      }
       if (!resource.name.trim() || (resource.current !== null && (!Number.isInteger(resource.current) || resource.current < 0)) ||
           (resource.max !== null && (!Number.isInteger(resource.max) || resource.max < 0)) ||
           (resource.current !== null && resource.max !== null && resource.current > resource.max)) {
