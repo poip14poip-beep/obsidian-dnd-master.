@@ -1,4 +1,5 @@
 import type { InventoryItem, LocationRecord, PlayerCharacterState } from "./types";
+import { resolveTechnicalDate } from "./technical-calendar";
 
 export interface CanonStartCity { name: string; region: string; continent: string; population: number; }
 export interface RandomStartResult {
@@ -169,7 +170,8 @@ export function generateRandomStart(
   const city = CITIES[cityIndex]!;
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
-  const date = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
+  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000, index(24), index(60));
+  const date = technicalDate.formatted;
   const background = options.generateBackgroundKit ? resolveBackground(options.background, index) : "Acolyte";
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
   const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
@@ -188,7 +190,7 @@ export function generateRandomStart(
       ? `Случайный стартовый капитал: ${currency.gp} зм, ${currency.sp} см, ${currency.cp} мм.`
       : "Денежный баланс сохранён без изменения.",
     `Место: ${city.name}, ${city.region}, ${city.continent}. В Хронике это один из шестнадцати главных городов; население — ${city.population.toLocaleString("ru-RU")}.`,
-    `Дата: ${date}. Предыдущий маршрут персонажа и причина прибытия сюда UNKNOWN; они не додумываются.`,
+    `Дата и время: ${date}. Сезон: ${technicalDate.season ?? "межсезонные дни"}. Используется технический календарь приложения, а не каноническое летоисчисление Хроники. Предыдущий маршрут персонажа и причина прибытия сюда UNKNOWN; они не додумываются.`,
     sceneText,
     `Здоровье: ${profile.label}, ${hpCurrent}/${hpMaximum} HP. ${profile.description}`,
     "Это бытовая стартовая ситуация, а не задание: нет заказчика, обязательной встречи, квеста или скрытого требования следовать сюжету. Игрок свободен действовать как хочет.",
