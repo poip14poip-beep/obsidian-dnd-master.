@@ -26,6 +26,22 @@ describe("game master resolver", () => {
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
+
+  it("creates a non-mutating opening scene without requiring a player action", async () => {
+    const openingTurn = { ...validTurn, timeDeltaMinutes: 0, newInGameDate: context.world.currentInGameDate };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(openingTurn) }), { status: 200 }));
+    const result = await resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch });
+    expect(result.turn.timeDeltaMinutes).toBe(0);
+    const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
+    expect(request.instructions).toContain("СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING");
+    expect(request.input).toContain('"mode":"OPENING"');
+  });
+  it("rejects an opening response that tries to advance time or mutate the world", async () => {
+    const invalidOpening = { ...validTurn, timeDeltaMinutes: 5, newInGameDate: context.world.currentInGameDate };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidOpening) }), { status: 200 }));
+    await expect(resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "OPENING_MUTATION_REJECTED" });
+  });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
