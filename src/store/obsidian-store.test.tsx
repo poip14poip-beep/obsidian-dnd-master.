@@ -83,7 +83,9 @@ describe("source visibility and campaign separation", () => {
     const dossier = initial.sources.find((source) => source.type === "PLAYER_DOSSIER");
 
     expect(governing?.playerVisible).toBe(false);
+    expect(governing?.serverManaged).toBe(true);
     expect(rules?.playerVisible).toBe(false);
+    expect(rules?.serverManaged).toBe(true);
     expect(dossier?.playerVisible).toBe(false);
     expect(dossier?.id).toBe("src-player-character-dossier");
     expect(dossier?.title).toBe("Лист персонажа текущей кампании");
