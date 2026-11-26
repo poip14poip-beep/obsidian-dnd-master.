@@ -267,6 +267,7 @@ function GamePage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
           <span>Календарь: {worldState.calendarSystem || "НЕ УСТАНОВЛЕН"}</span>
           <span>Сохранено ходов: {sessionLog.lastTurnNumber}</span>
+          <span>Следующий ход: #{String(nextTurnNumber).padStart(4, "0")}</span>
           <span>HP: {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"}</span>
           <span>Температура: {worldState.environment?.temperatureC == null ? "НЕ УСТАНОВЛЕНО" : worldState.environment.temperatureC + " °C"}</span>
           <span>Погода: {worldState.environment?.weather || "НЕ УСТАНОВЛЕНО"}</span>
