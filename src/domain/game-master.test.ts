@@ -40,6 +40,33 @@ describe("game master resolver", () => {
       .rejects.toMatchObject({ code: "PLAYER_DOSSIER_NOT_READY" });
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it("compacts long journal prose but preserves structured campaign consequences", async () => {
+    const longText = "x".repeat(5000);
+    const journalEntry = {
+      id: "turn-1", entryType: "GAME_TURN" as const, turnNumber: 1,
+      committedAt: "2026-01-01T00:00:00Z", inGameDateBefore: "before", inGameDateAfter: "after",
+      timeDeltaMinutes: 1, summary: longText, playerIntent: longText, worldOutcome: longText,
+      gmNarration: longText, campaignMemory: longText, locationIdAfter: null, hpDelta: 0,
+      rolls: [], affectedCampaignVersion: 1, affectedCharacterVersion: 1, entryChecksum: "checksum",
+      questChanges: [{ action: "CREATE" as const, title: "Важная зацепка" }],
+      npcChanges: [{ action: "UPDATE" as const, name: "Страж" }],
+      characterChanges: { inventory: [{ action: "ADD" as const, name: "Ключ" }] },
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction("test-user-jwt", { ...context, journal: [journalEntry] }, testOptions(fetcher as unknown as typeof fetch));
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const sent = JSON.parse(request.input);
+    const compacted = sent.recentJournal[0];
+    expect(compacted.summary).toHaveLength(180);
+    expect(compacted.playerIntent).toHaveLength(240);
+    expect(compacted.worldOutcome).toHaveLength(360);
+    expect(compacted.gmNarration).toHaveLength(1_200);
+    expect(compacted.campaignMemory).toHaveLength(600);
+    expect(compacted.questChanges).toEqual(journalEntry.questChanges);
+    expect(compacted.npcChanges).toEqual(journalEntry.npcChanges);
+    expect(compacted.characterChanges).toEqual(journalEntry.characterChanges);
+  });
+
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
