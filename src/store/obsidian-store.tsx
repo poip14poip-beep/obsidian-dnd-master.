@@ -1138,12 +1138,14 @@ export function ObsidianStoreProvider({
     const pc = collections.player_character_state;
     const s = ws.setup;
     const isVerifiedContextSource = (source: SourceDocument, type: SourceDocument["type"]) =>
-      source.type === type &&
-      source.contentStatus === "ATTACHED" &&
-      source.content.trim().length > 0 &&
-      source.processing?.status === "PROCESSED" &&
-      source.reviewStatus === "VERIFIED" &&
-      source.contextEnabled === true;
+      type === "GOVERNING_DOC"
+        ? source.type === type && source.serverManaged === true
+        : source.type === type &&
+          source.contentStatus === "ATTACHED" &&
+          source.content.trim().length > 0 &&
+          source.processing?.status === "PROCESSED" &&
+          source.reviewStatus === "VERIFIED" &&
+          source.contextEnabled === true;
     const governingReady = collections.sources.some((source) => isVerifiedContextSource(source, "GOVERNING_DOC"));
     const canonReady = collections.sources.some((source) => isVerifiedContextSource(source, "WORLD_CANON"));
     const dossierReady = collections.sources.some((source) => isVerifiedContextSource(source, "PLAYER_DOSSIER"));
@@ -1152,8 +1154,8 @@ export function ObsidianStoreProvider({
       return {
         ok: false,
         error: dossierRequired
-          ? "Для запуска нужны проверенные и включённые в контекст версии ОБСИДИАН 4.1, Хроники Экдрасиля и досье загруженного персонажа."
-          : "Для запуска случайного персонажа нужны проверенные и включённые в контекст версии ОБСИДИАН 4.1 и Хроники Экдрасиля. Отдельное досье для случайного персонажа не требуется.",
+          ? "Для запуска нужны серверный ОБСИДИАН 4.1, проверенная Хроника Экдрасиля и отдельный проверенный лист персонажа."
+          : "Для запуска случайного персонажа нужны серверный ОБСИДИАН 4.1 и проверенная Хроника Экдрасиля. Отдельное досье для случайного персонажа не требуется.",
         report: lastIntegrityReport,
       };
     }
