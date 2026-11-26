@@ -73,12 +73,6 @@ function GamePage() {
     : "";
 
   useEffect(() => {
-    if (worldState.startNarrative?.trim() && !opening) {
-      setOpening(worldState.startNarrative);
-    }
-  }, [worldState.startNarrative, opening]);
-
-  useEffect(() => {
     if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
       setDraftReady(true);
       setDraftChecked(Boolean(turnDraft.checkedAt));
@@ -109,12 +103,6 @@ function GamePage() {
     }
     if (!session?.access_token) {
       setGmError("Для работы мастера войди в аккаунт. Локальный гостевой режим не может обращаться к защищённому API.");
-      return;
-    }
-    if (worldState.startNarrative?.trim()) {
-      setOpening(worldState.startNarrative);
-      setGmTurn(null);
-      toast.success("Восстановлена подтверждённая вступительная сцена. Ход не создан, время не изменено.");
       return;
     }
     setOpeningBusy(true);
