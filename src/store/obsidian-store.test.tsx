@@ -221,8 +221,9 @@ describe("clean trial campaign reset", () => {
     expect(result.current.npcs).toHaveLength(0);
     expect(result.current.locations).toHaveLength(0);
     expect(result.current.character.name).toBe("Лия Вейн");
-    expect(result.current.character.hpCurrent).toBe(120);
-    expect(result.current.character.inventory[0]?.name).toBe("Катана в ножнах");
+    expect(result.current.character.hpCurrent).toBeNull();
+    expect(result.current.character.inventory).toHaveLength(0);
+    expect(result.current.character.currentLocationLabel).toBe("UNKNOWN");
     expect(result.current.sources.every((source) => source.contentStatus === "ATTACHED")).toBe(true);
     expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
   });
