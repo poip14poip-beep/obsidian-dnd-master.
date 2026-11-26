@@ -113,7 +113,7 @@ function weightedRetained(items: InventoryItem[], index: RandomIndex): Inventory
   });
 }
 
-function generateStartingConsumables(background: StarterBackground | null, retained: InventoryItem[], index: RandomIndex): InventoryItem[] {
+function generateStartingConsumables(retained: InventoryItem[], index: RandomIndex): InventoryItem[] {
   const items = [
     createItem("Рационы", 1 + index(4), 2, "Запас еды на дорогу; количество определено случайно при старте кампании."),
     createItem("Факелы", 1 + index(4), 1, "Расходуемый источник света; количество определено случайно при старте кампании."),
@@ -155,7 +155,7 @@ export function generateRandomStart(
   const background = options.generateStartingSupplies ? resolveBackground(options.background) : null;
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
   const generatedConsumables = options.generateStartingSupplies
-    ? generateStartingConsumables(background, retainedInventory, index)
+    ? generateStartingConsumables(retainedInventory, index)
     : [];
   const inventory = [...retainedInventory, ...generatedConsumables];
   const currency = options.generateStartingSupplies ? generateBackgroundCurrency(background, index) : undefined;
