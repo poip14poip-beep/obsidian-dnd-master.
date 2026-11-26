@@ -7,6 +7,7 @@ export interface DossierInventoryItem {
 export interface DossierBasics {
   name: string | null;
   speciesAndClass: string | null;
+  background: string | null;
   level: number | null;
   classLevel: number | null;
   epicCampaignLevels: number;
@@ -41,6 +42,8 @@ export function extractDossierBasics(text: string): DossierBasics {
   const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\r\n]{0,120})/i)
     ?? summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[\s\S]{0,120}?(Fighter\s*\d+[^\r\n]{0,100})/i);
   const speciesAndClass = classMatch ? `${classMatch[1]!}. ${classMatch[2]!.trim()}` : null;
+  const backgroundMatch = normalizedText.match(/(?:Предыстория|Background)\s*(?:\|\s*|:\s*)([^|\r\n]{2,80})/i);
+  const background = backgroundMatch?.[1]?.trim() ?? null;
   const levelMatch = normalizedText.match(/(?:общий\s+уровень\s*\|\s*)(\d{1,2})\b/i)
     ?? normalizedText.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
     ?? normalizedText.match(/общий\s+(\d{1,2})-й\s+уровень/i);
@@ -179,7 +182,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     skillBonuses.length ? `Навыков распознано: ${skillBonuses.length}` : "",
     weaponAttacks.length ? `Атак распознано: ${weaponAttacks.length}` : "",
   ].filter(Boolean);
-  return { name, speciesAndClass, level, classLevel, epicCampaignLevels, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
+  return { name, speciesAndClass, background, level, classLevel, epicCampaignLevels, hitPointMaximum: hpMatch ? Number(hpMatch[1]) : null,
     armorClass: acMatch ? Number(acMatch[1]) : null, abilityScores, proficiencyBonus: proficiencyMatch ? Number(proficiencyMatch[1]) : null,
     speedFeet: speedMatch ? Number(speedMatch[1]) : null, hitDice: hitDiceMatch?.[1] ?? null,
     savingThrowBonuses, baseSavingThrowBonuses, skillBonuses, classFeaturesByLevel, weaponAttacks, inventory, resources, evidence };
