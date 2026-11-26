@@ -198,7 +198,10 @@ function PlayPage() {
           typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
         throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
       }
-      setCandidate((current) => current?.generationSeed === target.generationSeed ? { ...current, character: { ...current.character, biography } } : current);
+      setCandidate((current) => {
+        if (!current || current.generationSeed !== target.generationSeed) return current;
+        return { ...current, character: { ...current.character, biography } };
+      });
       setBiographyReady(true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
