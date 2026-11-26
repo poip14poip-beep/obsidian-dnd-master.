@@ -7,6 +7,7 @@ import {
   FileText,
   ScrollText,
   ShieldCheck,
+  Swords,
   SlidersHorizontal,
   User,
   Users,
@@ -220,7 +221,7 @@ function OverviewPage() {
         />
         <QuickTile
           to="/game"
-          icon={ScrollText}
+          icon={Swords}
           label={worldState.setup.confirmed ? "Продолжить игру" : "Подготовить игру"}
           count={worldState.setup.confirmed ? `Ход #${sessionLog.lastTurnNumber + 1}` : "СТАРТ ЗАБЛОКИРОВАН"}
         />
