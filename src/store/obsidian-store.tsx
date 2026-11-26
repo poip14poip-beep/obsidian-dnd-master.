@@ -1,3 +1,4 @@
+import { isCampaignActive } from "@/domain/campaign-state";
 import {
   createContext,
   useCallback,
@@ -984,7 +985,7 @@ export function ObsidianStoreProvider({
     (explicitConfirmation) => {
       const ws = collections.world_state;
       const pc = collections.player_character_state;
-      if (!ws.setup.confirmed && collections.session_log.lastTurnNumber === 0) {
+      if (!isCampaignActive(ws.setup.confirmed, collections.session_log.lastTurnNumber)) {
         return { ok: false, error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.", report: lastIntegrityReport };
       }
       if (!activeDraft.checkedAt) {
