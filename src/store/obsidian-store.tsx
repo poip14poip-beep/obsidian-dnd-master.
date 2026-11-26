@@ -1354,10 +1354,15 @@ export function ObsidianStoreProvider({
           id: makeId("know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
           acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
         }));
+        const playerKnowledge = change.playerKnowledgeAdditions.map((entry) => ({
+          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
+          acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
+        }));
         if (change.action === "CREATE") {
           nextNpcs.unshift({
             id: makeId("npc"), name: change.name, role: change.role, locationId, factionId,
             goals: change.goals, resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            playerVisible: change.playerVisible || playerKnowledge.length > 0, playerKnowledge,
             sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [],
           });
         } else if (existingIndex >= 0) {
@@ -1366,6 +1371,8 @@ export function ObsidianStoreProvider({
             ...existing, role: change.role, locationId: locationId ?? existing.locationId,
             factionId: factionId ?? existing.factionId, goals: change.goals, resources: change.resources,
             attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            playerVisible: Boolean(existing.playerVisible || change.playerVisible || playerKnowledge.length > 0),
+            playerKnowledge: [...(existing.playerKnowledge ?? []), ...playerKnowledge],
             knowledge: [...existing.knowledge, ...knowledge], version: existing.version + 1,
             history: [...existing.history, {
               version: existing.version, changedAt: now, inGameDate: nextDate,
@@ -1415,8 +1422,24 @@ export function ObsidianStoreProvider({
           ]
         : ws.consequences;
 
+      const nextQuests = [...(ws.quests ?? [])];
+      for (const change of activeDraft.questChanges ?? []) {
+        const existingIndex = nextQuests.findIndex((quest) => quest.title.toLocaleLowerCase() === change.title.toLocaleLowerCase());
+        const quest = {
+          id: existingIndex >= 0 ? nextQuests[existingIndex]!.id : makeId("quest"),
+          title: change.title, description: change.description, objectives: change.objectives,
+          status: change.status, giverName: change.giverName, locationName: change.locationName,
+          deadline: change.deadline, reward: change.reward, sourcePath: change.sourcePath,
+          certainty: change.certainty, lastUpdatedInGameDate: nextDate, playerVisible: true as const,
+        };
+        if (existingIndex >= 0) nextQuests[existingIndex] = quest;
+        else nextQuests.unshift(quest);
+      }
+
       const nextWorld: WorldState = {
         ...ws,
+        quests: nextQuests,
+        ...(activeDraft.environment ? { environment: activeDraft.environment } : {}),
         stateVersion: nextWorldVersion,
         updatedAt: now,
         currentInGameDate: nextDate,
@@ -1496,6 +1519,8 @@ export function ObsidianStoreProvider({
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
         campaignMemory: activeDraft.campaignMemory?.trim() ?? "",
+        environment: activeDraft.environment,
+        questChanges: activeDraft.questChanges ?? [],
         characterChanges,
         npcChanges: activeDraft.npcChanges ?? [],
         locationIdAfter: nextLocationId,
