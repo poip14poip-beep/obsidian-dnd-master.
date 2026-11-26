@@ -315,7 +315,7 @@ function GamePage() {
       );
     }
     const dateText = entry.inGameDateAfter || "НЕ УСТАНОВЛЕНО";
-    const clockMatch = dateText.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
+    const clockMatch = dateText.match(/([01]\d|2[0-3]):([0-5]\d)/);
     const hour = clockMatch ? Number(clockMatch[1]) : null;
     const timeOfDay = hour === null ? "время суток не установлено" : hour < 5 ? "ночь" : hour < 12 ? "утро" : hour < 17 ? "день" : hour < 22 ? "вечер" : "ночь";
     const place = locations.find((location) => location.id === entry.locationIdAfter)?.name ?? "место не установлено";
