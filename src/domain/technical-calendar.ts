@@ -31,30 +31,24 @@ export interface TechnicalDate {
   month: string | null;
   dayOfMonth: number | null;
   intercalaryDay: string | null;
-  hour: number;
-  minute: number;
+  /** Time is deliberately unset until the game establishes it. */
+  hour: null;
+  minute: null;
   formatted: string;
 }
 
-export function resolveTechnicalDate(
-  dayOfYear: number,
-  year: number,
-  hour: number,
-  minute: number,
-): TechnicalDate {
+export function resolveTechnicalDate(dayOfYear: number, year: number): TechnicalDate {
   if (!Number.isInteger(dayOfYear) || dayOfYear < 1 || dayOfYear > TECHNICAL_CALENDAR_DAYS_PER_YEAR) {
     throw new Error("День года должен быть в диапазоне от 1 до 365.");
   }
   if (!Number.isInteger(year) || year < 0) throw new Error("Год должен быть целым неотрицательным числом.");
-  if (!Number.isInteger(hour) || hour < 0 || hour > 23) throw new Error("Час должен быть в диапазоне от 0 до 23.");
-  if (!Number.isInteger(minute) || minute < 0 || minute > 59) throw new Error("Минута должна быть в диапазоне от 0 до 59.");
 
-  const clock = `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   if (dayOfYear > TECHNICAL_CALENDAR_MONTH_COUNT * TECHNICAL_CALENDAR_DAYS_PER_MONTH) {
     const intercalaryDay = INTERCALARY_DAYS[dayOfYear - 361]!;
     return {
-      year, dayOfYear, season: null, month: null, dayOfMonth: null, intercalaryDay, hour, minute,
-      formatted: `${intercalaryDay}, ${year} год · ${clock} · ${TECHNICAL_CALENDAR_NAME}`,
+      year, dayOfYear, season: null, month: null, dayOfMonth: null, intercalaryDay,
+      hour: null, minute: null,
+      formatted: `${intercalaryDay}, ${year} год · время не установлено · ${TECHNICAL_CALENDAR_NAME}`,
     };
   }
 
@@ -63,7 +57,8 @@ export function resolveTechnicalDate(
   const season = TECHNICAL_SEASONS[Math.floor(monthIndex / 3)]!;
   const month = season.months[monthIndex % 3]!;
   return {
-    year, dayOfYear, season: season.name, month, dayOfMonth, intercalaryDay: null, hour, minute,
-    formatted: `${dayOfMonth} ${month}, ${year} год · ${clock} · ${TECHNICAL_CALENDAR_NAME}`,
+    year, dayOfYear, season: season.name, month, dayOfMonth, intercalaryDay: null,
+    hour: null, minute: null,
+    formatted: `${dayOfMonth} ${month}, ${year} год · время не установлено · ${TECHNICAL_CALENDAR_NAME}`,
   };
 }
