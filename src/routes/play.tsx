@@ -488,6 +488,7 @@ function PlayPage() {
     setBiographyBusy(true);
     setImportError(null);
     setCompatibilityReport(null);
+    let auditWarning: string | null = null;
     try {
       // Send the parsed dossier only. The original file can contain a large amount
       // of repeated prose and is not needed for a rules/canon compatibility check.
@@ -495,16 +496,23 @@ function PlayPage() {
       setCompatibilityReport(report as CharacterCompatibilityReport);
     } catch (error) {
       setCompatibilityReport(null);
-      setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
-      setBiographyBusy(false);
-      return;
+      const detail = error instanceof Error ? error.message : "Проверка совместимости не пройдена.";
+      // A provider outage must not make a user-approved, locally parsed dossier
+      // impossible to import. Actual incompatibility and all other errors still block.
+      if (detail.startsWith("ROUTERAI_MODEL_UNAVAILABLE:")) {
+        auditWarning = "AI-аудит временно недоступен (RouterAI). Персонаж будет импортирован по распознанным данным без заключения AI-аудита.";
+      } else {
+        setImportError(detail);
+        setBiographyBusy(false);
+        return;
+      }
     }
     setBiographyBusy(false);
     if (dossier.reviewStatus !== "VERIFIED" || dossier.contextEnabled !== true) {
       setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
       return;
     }
-    setImportError(null);
+    setImportError(auditWarning);
     const result = updatePlayerCharacter({
       sourceDossierId: dossier.id,
       name: parsed.name ?? "UNKNOWN",
