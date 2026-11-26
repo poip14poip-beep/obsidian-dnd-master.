@@ -325,29 +325,29 @@ export function ObsidianStoreProvider({
     (sourceId, payload) => {
       const now = new Date().toISOString();
       const hasText = payload.content.trim().length > 0;
-      const nextSources = collections.sources.map((src) =>
-        src.id === sourceId
-          ? {
-              ...src,
-              fileName: payload.fileName,
-              content: payload.content,
-              originLabel: payload.originLabel.trim() || src.originLabel,
-              notes: payload.notes,
-              contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
-              reviewStatus: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256)
-                ? ("VERIFIED" as const) : ("UNREVIEWED" as const),
-              contextEnabled: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256),
-              certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
-              checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
-              attachedAt: hasText ? now : null,
-              ...(hasText
-                ? (payload.processing ? { processing: payload.processing } : src.processing ? { processing: src.processing } : {})
-                : { processing: undefined }),
-              ...(payload.canonSections ? { canonSections: payload.canonSections } : src.type === "WORLD_CANON" ? { canonSections: [] } : src.canonSections ? { canonSections: src.canonSections } : {}),
-              ...(payload.dateMentions ? { dateMentions: payload.dateMentions } : src.type === "WORLD_CANON" ? { dateMentions: [] } : src.dateMentions ? { dateMentions: src.dateMentions } : {}),
-            }
-          : src,
-      );
+      const nextSources = collections.sources.map((src) => {
+        if (src.id !== sourceId) return src;
+        const { processing: previousProcessing, ...sourceWithoutProcessing } = src;
+        return {
+          ...(hasText ? src : sourceWithoutProcessing),
+          fileName: payload.fileName,
+          content: payload.content,
+          originLabel: payload.originLabel.trim() || src.originLabel,
+          notes: payload.notes,
+          contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
+          reviewStatus: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256)
+            ? ("VERIFIED" as const) : ("UNREVIEWED" as const),
+          contextEnabled: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256),
+          certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
+          checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
+          attachedAt: hasText ? now : null,
+          ...(hasText
+            ? (payload.processing ? { processing: payload.processing } : previousProcessing ? { processing: previousProcessing } : {})
+            : {}),
+          ...(payload.canonSections ? { canonSections: payload.canonSections } : src.type === "WORLD_CANON" ? { canonSections: [] } : src.canonSections ? { canonSections: src.canonSections } : {}),
+          ...(payload.dateMentions ? { dateMentions: payload.dateMentions } : src.type === "WORLD_CANON" ? { dateMentions: [] } : src.dateMentions ? { dateMentions: src.dateMentions } : {}),
+        };
+      });
       const nextWorld: WorldState = {
         ...collections.world_state,
         stateVersion: collections.world_state.stateVersion + 1,
