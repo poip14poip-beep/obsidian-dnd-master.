@@ -365,6 +365,30 @@ function PlayPage() {
         </div>
       </section>
       <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
+        {candidate.character.biography?.appearanceDetails ? (
+          <div className="overflow-hidden rounded-lg border">
+            {([
+              ["Рост", candidate.character.biography.appearanceDetails.height],
+              ["Телосложение", candidate.character.biography.appearanceDetails.build],
+              ["Кожа", candidate.character.biography.appearanceDetails.skin],
+              ["Волосы", candidate.character.biography.appearanceDetails.hair],
+              ["Глаза", candidate.character.biography.appearanceDetails.eyes],
+              ["Лицо", candidate.character.biography.appearanceDetails.face],
+              ["Одежда", candidate.character.biography.appearanceDetails.clothing],
+              ["Обувь", candidate.character.biography.appearanceDetails.footwear],
+              ["Аксессуары", candidate.character.biography.appearanceDetails.accessories],
+              ["Отличительные особенности", candidate.character.biography.appearanceDetails.distinctiveFeatures],
+              ["Первое впечатление", candidate.character.biography.appearanceDetails.firstImpression],
+            ] as const).map(([label, value]) => (
+              <div key={label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 border-b last:border-b-0 px-3 py-2 text-sm">
+                <span className="text-muted-foreground">{label}</span><span className="text-right">{value || "UNKNOWN"}</span>
+              </div>
+            ))}
+          </div>
+        ) : <p className="rounded-lg border p-3 text-sm text-muted-foreground">{candidate.character.biography?.appearance ?? "Внешность будет подробно создана мастером вместе с биографией."}</p>}
+      </section>
+      <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">4. Инвентарь и снаряжение</h3>
         <div className="rounded-lg border p-3">
           <p className="mb-2 text-xs text-muted-foreground">Оружие и боеприпасы</p>
