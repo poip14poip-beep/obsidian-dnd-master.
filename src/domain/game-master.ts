@@ -425,7 +425,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     source.type === "GOVERNING_DOC" && source.serverManaged === true
   );
   if (!governing) throw new GameMasterError(
-    "ОБСИДИАН 4.1 должен быть загружен, обработан, проверен пользователем и включён в контекст ИИ.",
+    "ОБСИДИАН 4.1 должен быть настроен в закрытом серверном хранилище мастера.",
     "GOVERNING_SOURCE_NOT_READY",
   );
   const dossier = context.sources.find((source) =>
