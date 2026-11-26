@@ -86,6 +86,28 @@ function outputText(message: JsonRecord): string {
   }
   return "";
 }
+const identitySchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    name: { type: "string" },
+    species: { type: "string", enum: ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] },
+    className: { type: "string", enum: ["Fighter","Rogue","Barbarian"] },
+    background: { type: "string", enum: ["Acolyte","Criminal","Sage","Soldier"] },
+    birthplace: { type: "string", enum: ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"] },
+    ageYears: { type: "integer" },
+    genderPresentation: { type: "string" },
+    family: { type: "string" },
+    upbringing: { type: "string" },
+    lifeEvents: { type: "array", items: { type: "string" } },
+    personalityTraits: { type: "array", items: { type: "string" } },
+    ideal: { type: "string" },
+    bond: { type: "string" },
+    flaw: { type: "string" },
+    motivation: { type: "string" },
+    preCampaignDesire: { type: "string" }
+  },
+  required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire"]
+};
 const biographySchema: JsonRecord = {
   type: "object", additionalProperties: false,
   properties: {
@@ -197,6 +219,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const isBiographyRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_BIOGRAPHY";
+  const isIdentityRequest = isRecord(body) && body.operation === "GENERATE_RANDOM_CHARACTER_IDENTITY";
   const requestBody: JsonRecord = isRecord(body) ? body : {};
   if (!ROUTERAI_API_KEY) {
     return json({ error: {
@@ -211,13 +234,13 @@ Deno.serve(async (req: Request) => {
   const turnRequestValid = isRecord(requestBody.text) && isRecord(requestBody.text.format) &&
     requestBody.text.format.type === "json_schema" && requestBody.text.format.name === "obsidian_game_turn" &&
     requestBody.text.format.strict === true && isRecord(requestBody.text.format.schema);
-  if (!commonRequestValid || (!isBiographyRequest && !turnRequestValid)) {
+  if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
   const inputText = requestBody.input as string;
   const instructionText = requestBody.instructions as string;
-  const schema: JsonRecord = isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
-  const schemaName = isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
+  const schema: JsonRecord = isIdentityRequest ? identitySchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const schemaName = isIdentityRequest ? "obsidian_random_character_identity" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
   }
@@ -262,7 +285,7 @@ Deno.serve(async (req: Request) => {
     const parsedInput = JSON.parse(inputText);
     if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText = parsedInput.action.toLowerCase();
   } catch { /* use raw input for matching */ }
-  if (isBiographyRequest) actionText = inputText.toLowerCase();
+  if (isBiographyRequest || isIdentityRequest) actionText = inputText.toLowerCase();
   const mappedTerms: string[] = [];
   if (/атак|удар|оруж|бой|инициатив/.test(actionText)) mappedTerms.push("attack", "combat", "weapon", "initiative", "attack roll");
   if (/урон|поврежден/.test(actionText)) mappedTerms.push("damage", "damage roll", "resistance", "vulnerability");
@@ -323,8 +346,8 @@ Deno.serve(async (req: Request) => {
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
-  const isCharacterGeneration = isBiographyRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
-  const highImpactTurn = isBiographyRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
+  const isCharacterGeneration = isBiographyRequest || isIdentityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   const orderedModelAttempts = highImpactTurn
     ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
     : MODEL_ATTEMPTS;
@@ -345,7 +368,9 @@ Deno.serve(async (req: Request) => {
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
     isBiographyRequest ? canonContext : canonContext,
-    ...(isBiographyRequest ? [
+    ...(isIdentityRequest ? [
+      "РЕЖИМ ВЫБОРА ЛИЧНОСТИ СЛУЧАЙНОГО ПЕРСОНАЖА: создай уникальную личность с нуля. Ты самостоятельно выбираешь имя, народ, класс, предысторию, возраст, подтверждённый город рождения и все личные детали. Не используй имя/народ/класс/предысторию как уже заданные: их ещё нет. Доступные механические профили ограничены enum схемы; не выбирай ничего вне списка. Имя должно соответствовать культурному и языковому звучанию выбранного народа и региона. Город рождения выбирай только из enum; не придумывай географию, государство или организацию. Используй закрытую хронику Экдрасиля и руководство генерации; не приписывай персонажу участие в крупных исторических событиях, знакомства с каноническими NPC или членство во фракциях без основания. Семья, воспитание, личные события, черты, идеал, привязанность, слабость и желание — индивидуальная выдуманная биография нового героя, а не факты мировой хроники. Возраст 18–80. Не делай шаблонную трагедию обязательной; допускаются обычные, неоднозначные и счастливые обстоятельства. Верни все поля, на русском, без заглушек и общих фраз.",
+    ] : isBiographyRequest ? [
       "РЕЖИМ ГЕНЕРАЦИИ БИОГРАФИИ: не изменяй механику, имя, народ, класс, предысторию, место рождения, источник места рождения или canonBasis, переданные в JSON. Возвращай те же birthplace, birthplaceSource и canonBasis дословно.",
       "Создай индивидуальное полное досье на русском языке. Обязательно заполни appearanceDetails как отдельную подробную таблицу внешности: рост, телосложение, кожа, волосы, глаза, лицо, одежда с конкретными предметами и состоянием, обувь, аксессуары, отличительные особенности и первое впечатление. Значения должны быть конкретными, согласованными с народом, возрастом, профессией, климатом и достатком; не используй общие заглушки. Поле appearance оставь кратким сводным описанием. Обязательно заполни preCampaignDesire: конкретное личное желание персонажа в Экдрасиле непосредственно перед началом кампании, не глобальную судьбу и не навязанный квест. Помимо биографии заполни skillOrigins: по одному содержательному объяснению происхождения каждого уже имеющегося навыка из skillBonuses входного персонажа; не добавляй и не удаляй навыки. Заполни weaponBackground: объясни, откуда персонаж получил именно переданное оружие, как научился им пользоваться и почему носит его; не меняй название оружия, атаку, урон или mastery. Заполни equipmentBackground: объясни происхождение и практическую роль каждого предмета переданного inventory; не добавляй, не удаляй и не меняй предметы, количество или свойства. Свяжи эти детали с предысторией, профессией, жизненными событиями и местом происхождения. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
       "В Экдрасиле нет свободной повседневной магии. Не добавляй заклинания, заговоры, магические навыки, магическую защиту, сопротивление магии или сверхъестественные расовые черты без конкретного подтверждённого источника в каноне и явного основания в профиле персонажа. Не переноси автоматически Fey Ancestry, магические заговоры вроде Prestidigitation и другие магические черты SRD в Экдрасиль. Мутация и проклятие различны и редки; не добавляй их без явного разрешения во входных параметрах. Обычный персонаж не должен иметь мутацию или проклятие по умолчанию.",
@@ -376,7 +401,7 @@ Deno.serve(async (req: Request) => {
           messages,
           response_format: responseFormat,
           structured_outputs: true,
-          temperature: isBiographyRequest ? 0.78 : 0.25,
+          temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: 8192,
         }),
         signal: AbortSignal.timeout(55_000),
