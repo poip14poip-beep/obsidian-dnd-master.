@@ -60,12 +60,11 @@ const BACKGROUND_LABELS: Record<StarterBackground, string[]> = {
   Soldier: ["солдат", "воин", "ветеран", "soldier"],
 };
 
-function resolveBackground(value: string | undefined, index: RandomIndex): StarterBackground {
+function resolveBackground(value: string | undefined): StarterBackground | null {
   const normalized = (value ?? "").toLocaleLowerCase("ru-RU");
-  const found = (Object.keys(BACKGROUND_LABELS) as StarterBackground[]).find((key) =>
+  return (Object.keys(BACKGROUND_LABELS) as StarterBackground[]).find((key) =>
     BACKGROUND_LABELS[key].some((label) => normalized.includes(label)),
-  );
-  return found ?? (["Acolyte", "Criminal", "Sage", "Soldier"] as const)[index(4)]!;
+  ) ?? null;
 }
 
 function createItem(name: string, quantity: number, weight: number, notes: string): InventoryItem {
@@ -83,7 +82,8 @@ function itemWeight(name: string, index: RandomIndex, notes = ""): { weight: num
     [/чешуйчат|scale mail/, 45], [/клёпан|клепан|studded leather/, 13], [/кожан.*доспех|leather armor/, 10],
     [/катан|длинный меч|longsword/, 3], [/кинжал|dagger/, 1], [/короткий меч|shortsword/, 2],
     [/короткий лук|shortbow/, 2], [/длинный лук|longbow/, 2], [/арбалет|crossbow/, 5],
-    [/стрел|arrow/, 0.05], [/болт|bolt/, 0.075], [/щит|shield/, 6],
+    [/стрел|arrow/, 0.05], [/болт|bolt/, 0.075], [/рацион|паёк|паек|rations?/, 2],
+    [/факел|torch/, 1], [/щит|shield/, 6],
     [/плащ|cloak/, 4], [/сапог|ботин|boots/, 2], [/одежд|роб|robe|clothing/, 4],
     [/пояс|belt/, 1], [/перчат|gloves/, 0.25], [/накидк|hood|tunic/, 2],
     [/книга|book/, 5], [/пергамент/, 0.01], [/каллиграф|инструмент/, 2],
@@ -113,42 +113,22 @@ function weightedRetained(items: InventoryItem[], index: RandomIndex): Inventory
   });
 }
 
-function generateBackgroundKit(background: StarterBackground, index: RandomIndex): InventoryItem[] {
-  const rations = 1 + index(4);
-  const packs: Record<StarterBackground, InventoryItem[]> = {
-    Acolyte: [
-      createItem("Книга молитв", 1, 2, "Личная книга обрядов и молитв; происхождение связано с предысторией."),
-      createItem("Священный символ", 1, 1, "Обычный символ веры; сам по себе не создаёт магических эффектов."),
-      createItem("Пергамент", 6 + index(5), 0.01, "Листы для записей."),
-      createItem("Роба", 1, 4, "Повседневная одежда служителя."),
-      createItem("Рационы", rations, 2, "Запас провизии."),
-    ],
-    Criminal: [
-      createItem("Воровские инструменты", 1, 2, "Набор инструментов; наличие не даёт владение без соответствующего навыка."),
-      createItem("Ломик", 1, 5, "Небольшой ломик."),
-      createItem("Мешочек", 1, 1, "Для мелких вещей и монет."),
-      createItem("Дорожная одежда", 1, 4, "Повседневная одежда."),
-      createItem("Рационы", rations, 2, "Запас провизии."),
-    ],
-    Sage: [
-      createItem("Книга заметок", 1, 5, "Личные записи и справочные заметки; не является каноническим источником."),
-      createItem("Каллиграфические принадлежности", 1, 2, "Перо, чернила и простые принадлежности."),
-      createItem("Пергамент", 6 + index(7), 0.01, "Листы для записей."),
-      createItem("Роба", 1, 4, "Повседневная одежда."),
-      createItem("Рационы", rations, 2, "Запас провизии."),
-    ],
-    Soldier: [
-      createItem("Игровой набор", 1, 1, "Небольшой набор для простой игры."),
-      createItem("Набор целителя", 1, 3, "Перевязочные материалы и базовые принадлежности."),
-      createItem("Дорожная одежда", 1, 4, "Повседневная одежда."),
-      createItem("Рационы", rations, 2, "Запас провизии."),
-      createItem("Фляга с водой", 1, 5, "Заполненная фляга."),
-    ],
-  };
-  return packs[background];
+function generateStartingConsumables(background: StarterBackground | null, retained: InventoryItem[], index: RandomIndex): InventoryItem[] {
+  const items = [
+    createItem("Рационы", 1 + index(4), 2, "Запас еды на дорогу; количество определено случайно при старте кампании."),
+    createItem("Факелы", 1 + index(4), 1, "Расходуемый источник света; количество определено случайно при старте кампании."),
+  ];
+  const names = retained.map((item) => item.name.toLocaleLowerCase("ru-RU"));
+  if (/лук|bow/.test(names.join(" " )) && !/стрел|arrow/.test(names.join(" "))) {
+    items.push(createItem("Стрелы", 10 + index(11), 0.05, "Боеприпасы для имеющегося лука; добавлены случайно при старте."));
+  }
+  if (/арбалет|crossbow/.test(names.join(" ")) && !/болт|bolt/.test(names.join(" "))) {
+    items.push(createItem("Арбалетные болты", 10 + index(11), 0.075, "Боеприпасы для имеющегося арбалета; добавлены случайно при старте."));
+  }
+  return items;
 }
 
-function generateBackgroundCurrency(background: StarterBackground, index: RandomIndex) {
+function generateBackgroundCurrency(background: StarterBackground | null, index: RandomIndex) {
   const multiplier = background === "Criminal" ? 10 : 5;
   return { cp: index(6) + 1, sp: index(6) + 1, ep: 0, gp: (index(6) + index(6) + 2) * multiplier, pp: 0 };
 }
@@ -156,7 +136,7 @@ function generateBackgroundCurrency(background: StarterBackground, index: Random
 export function generateRandomStart(
   hpMaximum: number,
   index = secureIndex,
-  options: { background?: string; retainedInventory?: InventoryItem[]; generateBackgroundKit?: boolean } = {},
+  options: { background?: string; retainedInventory?: InventoryItem[]; generateStartingSupplies?: boolean } = {},
 ): RandomStartResult {
   const cityIndex = index(CITIES.length);
   const sceneIndex = index(SCENES.length);
@@ -172,19 +152,17 @@ export function generateRandomStart(
   const sceneText = scene.text(city.name);
   const technicalDate = resolveTechnicalDate(index(365) + 1, 2000);
   const date = technicalDate.formatted;
-  const background = options.generateBackgroundKit ? resolveBackground(options.background, index) : "Acolyte";
+  const background = options.generateStartingSupplies ? resolveBackground(options.background) : null;
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
-  const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
-  const alreadyHasClothing = retainedInventory.some((item) => /одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name));
-  const backgroundKit = alreadyHasClothing
-    ? generatedKit.filter((item) => !/одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name))
-    : generatedKit;
-  const inventory = [...retainedInventory, ...backgroundKit];
-  const currency = options.generateBackgroundKit ? generateBackgroundCurrency(background, index) : undefined;
+  const generatedConsumables = options.generateStartingSupplies
+    ? generateStartingConsumables(background, retainedInventory, index)
+    : [];
+  const inventory = [...retainedInventory, ...generatedConsumables];
+  const currency = options.generateStartingSupplies ? generateBackgroundCurrency(background, index) : undefined;
   const narrative = [
     "Стартовая сцена сгенерирована случайно для новой кампании. Метод: Web Crypto, равномерный выбор без смещения. Персонаж начинает с полными HP; случайные ранения без причины не назначаются.",
-    options.generateBackgroundKit
-      ? `Стартовый комплект сгенерирован по предыстории «${background}». Сохранены только подтверждённые одежда, броня и оружие; остальные вещи досье не переносятся.`
+    options.generateStartingSupplies
+      ? `Подтверждённые предметы из листа сохранены. Случайно добавлены только расходники; предыстория для расчёта денег: ${background ?? "не распознана, применён базовый диапазон"}.`
       : "Подтверждённый инвентарь сохранён; новых предметов не добавлено.",
     currency
       ? `Случайный стартовый капитал: ${currency.gp} зм, ${currency.sp} см, ${currency.cp} мм.`
@@ -203,7 +181,7 @@ export function generateRandomStart(
       // A generated starting condition may set current HP, but must never rebuild or overwrite the imported character.
       hpCurrent, hpTemp: 0, currentLocationLabel: city.name,
       ...(currency ? { currency } : {}),
-      ...(options.generateBackgroundKit ? { background } : {}),
+
     },
     location: {
       name: city.name, region: city.region,
