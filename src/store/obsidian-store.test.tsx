@@ -196,3 +196,34 @@ describe("random free-roam start", () => {
     expect(result.current.worldState.setup.confirmed).toBe(true);
   });
 });
+
+
+describe("clean trial campaign reset", () => {
+  it("archives old campaign state from the active collections while preserving verified sources and the player character", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.campaignName = "Старая кампания";
+    initial.world_state.setup.confirmed = true;
+    initial.locations = [{ id: "old-location", name: "Старое место", region: "UNKNOWN", description: "Старое состояние", certainty: "KNOWN", sourceId: "src-ekdrasil-chronicle" }];
+    initial.npcs = [{ id: "old-npc", name: "Старый NPC", role: "UNKNOWN", locationId: "old-location", factionId: null, goals: "UNKNOWN", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN", sourceId: "src-ekdrasil-chronicle", locked: false, knowledge: [], version: 1, history: [] }];
+    initial.session_log.lastTurnNumber = 0;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    let reset: ReturnType<typeof result.current.resetForTrialCampaign>;
+    act(() => { reset = result.current.resetForTrialCampaign(); });
+
+    expect(reset!.ok).toBe(true);
+    expect(result.current.worldState.campaignName).toBe("");
+    expect(result.current.worldState.setup.confirmed).toBe(false);
+    expect(result.current.sessionLog.lastTurnNumber).toBe(0);
+    expect(result.current.sessionLog.entries).toHaveLength(0);
+    expect(result.current.npcs).toHaveLength(0);
+    expect(result.current.locations).toHaveLength(0);
+    expect(result.current.character.name).toBe("Лия Вейн");
+    expect(result.current.character.hpCurrent).toBe(120);
+    expect(result.current.character.inventory[0]?.name).toBe("Катана в ножнах");
+    expect(result.current.sources.every((source) => source.contentStatus === "ATTACHED")).toBe(true);
+    expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
+  });
+});
