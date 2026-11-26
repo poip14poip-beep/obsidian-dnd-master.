@@ -5,7 +5,7 @@ import { createInitialPlayerCharacterState } from "./defaults";
 
 describe("generateRandomStart", () => {
   it("uses deterministic draws for city and scene while preserving full HP", () => {
-    const draws = [7, 2, 0];
+    const draws = [7, 2, 0, 9, 5];
     const result = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
@@ -14,6 +14,8 @@ describe("generateRandomStart", () => {
     expect(result.city.name).toBe("Морвейн");
     expect(result.city.region).toBe("Эстерваль");
     expect(result.scene).toBe("На городском рынке");
+    expect(result.placeName).toBe("На городском рынке");
+    expect(result.date).toContain("09:05");
     expect(result.hpCurrent).toBe(184);
     expect(result.healthLabel).toBe("Без заметных ранений");
     expect(result.characterPatch.hpMax).toBeUndefined();
@@ -30,11 +32,10 @@ describe("generateRandomStart", () => {
     }
   });
 
-  it("uses the technical calendar without inventing a clock time or quest", () => {
+  it("uses the technical calendar with a generated clock and no invented quest", () => {
     const result = generateRandomStart(184, () => 0);
     expect(result.date).toContain("2000 год");
-    expect(result.date).toContain("время не установлено");
-    expect(result.date).not.toContain(":");
+    expect(result.date).toContain("00:00");
     expect(result.date).toContain("Технический календарь мастера 1.0");
     expect(result.narrative).toContain("не задание");
     expect(result.inventory).toEqual([]);
