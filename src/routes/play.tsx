@@ -81,7 +81,7 @@ function PlayPage() {
       return;
     }
     try {
-      const generated = generateRandomStart();
+      const generated = generateRandomStart(undefined, character.hpMax ?? undefined);
       const result = applyGeneratedStart({
         city: generated.city,
         date: generated.date,
