@@ -218,6 +218,7 @@ export interface InventoryItem {
   notes: string;
   certainty: CertaintyStatus;
   location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER" | "UNKNOWN";
+  attunement?: "ATTUNED" | "NOT_ATTUNED" | "UNKNOWN";
   unitWeightLb?: number | null;
   /** Whether this item is fixed character equipment or is recreated for each campaign start. */
   startPolicy?: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
