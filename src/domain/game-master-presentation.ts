@@ -19,6 +19,16 @@ export function formatGameMasterAnswer(
   const date = known(world.currentInGameDate);
   const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
+  const yearMatch = date.match(/(?:год|year)\s*[:№]?\s*(\d{1,4})|(?:^|\D)(\d{1,4})\s*(?:год|г\.?|year)\b/i);
+  const yearValue = yearMatch ? (yearMatch[1] ?? yearMatch[2]) : null;
+  const year = yearValue ? `${yearValue}${/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : ""}` : "НЕ УСТАНОВЛЕНО";
+  const monthMatch = date.match(/\b(январ(?:ь|я)|феврал(?:ь|я)|март(?:а)?|апрел(?:ь|я)|ма(?:й|я)|июн(?:ь|я)|июл(?:ь|я)|август(?:а)?|сентябр(?:ь|я)|октябр(?:ь|я)|ноябр(?:ь|я)|декабр(?:ь|я))\b/i);
+  const month = monthMatch?.[1] ?? "НЕ УСТАНОВЛЕНО";
+  const day = monthMatch?.index !== undefined
+    ? (date.slice(0, monthMatch.index).match(/(?:^|\D)(\d{1,2})\s*$/)?.[1] ?? "НЕ УСТАНОВЛЕНО")
+    : "НЕ УСТАНОВЛЕНО";
+  const hour = timeMatch ? Number(timeMatch[1]) : null;
+  const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
   const lines = [
     "════════════════════════════════════",
     `ХОД #${String(turnNumber).padStart(4, "0")} · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА`,
@@ -29,12 +39,12 @@ export function formatGameMasterAnswer(
     known(world.campaignName),
     "ИГРОВАЯ ДАТА:",
     date,
-    "ИГРОВОЙ ГОД: НЕ УСТАНОВЛЕНО",
-    "МЕСЯЦ: НЕ УСТАНОВЛЕНО",
-    "ДЕНЬ: НЕ УСТАНОВЛЕНО",
+    `ИГРОВОЙ ГОД: ${year}`,
+    `МЕСЯЦ: ${month}`,
+    `ДЕНЬ: ${day}`,
     "ДЕНЬ НЕДЕЛИ: НЕ УСТАНОВЛЕНО",
     `ВРЕМЯ: ${time}`,
-    "ВРЕМЯ СУТОК: НЕ УСТАНОВЛЕНО",
+    `ВРЕМЯ СУТОК: ${timeOfDay}`,
     `МЕСТО: ${place}`,
     `РЕГИОН / ГОРОД / РАЙОН: ${region}`,
     `ТОЧНАЯ ЛОКАЦИЯ: ${place}`,
@@ -86,4 +96,30 @@ export function formatGameMasterAnswer(
     turn.nextAction || "Что делает персонаж?",
   ];
   return lines.join("\n");
+}
+
+
+/** Formats the non-turn opening scene; it never consumes turn #0001. */
+export function formatCampaignOpening(
+  turn: GameMasterTurn,
+  world: WorldState,
+  character: PlayerCharacterState,
+  locations: LocationRecord[],
+): string {
+  return formatGameMasterAnswer(turn, world, character, locations, 1)
+    .replace("ХОД #0001 · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", "ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001")
+    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "НЕ ИГРОВОЙ ХОД · ВРЕМЯ И СОСТОЯНИЕ НЕ ИЗМЕНЕНЫ");
+}
+
+/** Stores a structured answer without a misleading pending/unsaved label in the append-only journal. */
+export function formatArchivedGameMasterAnswer(
+  turn: GameMasterTurn,
+  world: WorldState,
+  character: PlayerCharacterState,
+  locations: LocationRecord[],
+  turnNumber: number,
+): string {
+  return formatGameMasterAnswer(turn, world, character, locations, turnNumber)
+    .replace(" · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", " · ОТВЕТ МАСТЕРА")
+    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "");
 }

@@ -42,6 +42,23 @@ describe("game master resolver", () => {
     expect(request.instructions).toContain("Fighter 20"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
+
+  it("creates a structured opening scene without a player action or state mutation", async () => {
+    const openingTurn = { ...validTurn, timeDeltaMinutes: 0, newInGameDate: context.world.currentInGameDate };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(openingTurn) }), { status: 200 }));
+    const result = await resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch });
+    expect(result.turn.timeDeltaMinutes).toBe(0);
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    expect(request.instructions).toContain("СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING");
+    expect(request.input).toContain('"mode":"OPENING"');
+    expect(request.input).toContain("Служебный запрос мастеру");
+  });
+  it("rejects opening output that mutates the campaign", async () => {
+    const invalidOpening = { ...validTurn, timeDeltaMinutes: 1, newInGameDate: context.world.currentInGameDate };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidOpening) }), { status: 200 }));
+    await expect(resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch }))
+      .rejects.toMatchObject({ code: "OPENING_MUTATION_REJECTED" });
+  });
   it("does not send a verified but context-disabled world source to the model", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
     const sources = context.sources.map((item) => item.type === "WORLD_CANON"
