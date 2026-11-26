@@ -13,9 +13,11 @@ const context: GameMasterContext = {
   canonFacts: [], npcs: [], factions: [], locations: [], timelineEvents: [], journal: [],
 };
 const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
+const testOptions = (fetcher: typeof fetch) => ({ fetcher, supabaseUrl: "https://test.supabase.co", publishableKey: "sb_publishable_test" });
+
 describe("game master resolver", () => {
   it("requires the governing source before a model request", async () => {
-    await expect(resolvePlayerAction("sk-test", { ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, sources: [] }, testOptions(vi.fn() as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
   });
   it("blocks unverified or context-disabled source content before calling the model", async () => {
@@ -23,18 +25,18 @@ describe("game master resolver", () => {
     const unverified = context.sources.map((item) => item.type === "GOVERNING_DOC"
       ? { ...item, reviewStatus: "UNREVIEWED" as const }
       : item);
-    await expect(resolvePlayerAction("sk-test", { ...context, sources: unverified }, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, sources: unverified }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
     const disabledDossier = context.sources.map((item) => item.type === "PLAYER_DOSSIER"
       ? { ...item, contextEnabled: false }
       : item);
-    await expect(resolvePlayerAction("sk-test", { ...context, sources: disabledDossier }, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, sources: disabledDossier }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "PLAYER_DOSSIER_NOT_READY" });
     expect(fetcher).not.toHaveBeenCalled();
   });
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
-    const result = await resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch });
+    const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1");
@@ -46,7 +48,7 @@ describe("game master resolver", () => {
   it("creates a structured opening scene without a player action or state mutation", async () => {
     const openingTurn = { ...validTurn, timeDeltaMinutes: 0, newInGameDate: context.world.currentInGameDate };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(openingTurn) }), { status: 200 }));
-    const result = await resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch });
+    const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.timeDeltaMinutes).toBe(0);
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     expect(request.instructions).toContain("СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING");
@@ -56,7 +58,7 @@ describe("game master resolver", () => {
   it("rejects opening output that mutates the campaign", async () => {
     const invalidOpening = { ...validTurn, timeDeltaMinutes: 1, newInGameDate: context.world.currentInGameDate };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidOpening) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", { ...context, action: "", mode: "OPENING" }, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "OPENING_MUTATION_REJECTED" });
   });
   it("does not send a verified but context-disabled world source to the model", async () => {
@@ -64,13 +66,13 @@ describe("game master resolver", () => {
     const sources = context.sources.map((item) => item.type === "WORLD_CANON"
       ? { ...item, contextEnabled: false }
       : item);
-    await resolvePlayerAction("sk-test", { ...context, sources }, { fetcher: fetcher as unknown as typeof fetch });
+    await resolvePlayerAction("test-user-jwt", { ...context, sources }, testOptions(fetcher as unknown as typeof fetch));
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     expect(request.input).not.toContain("Каменная дверь у старого города");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_TURN" });
   });
   it("rejects creation of an NPC that already exists in the campaign registry", async () => {
@@ -80,19 +82,19 @@ describe("game master resolver", () => {
     const duplicate = { ...validTurn, npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN",
       attitudeToPlayer: "UNKNOWN", locationName: null, factionName: null, certainty: "KNOWN", reason: "test", knowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(duplicate) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", { ...context, npcs: [existingNpc] }, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, npcs: [existingNpc] }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "DUPLICATE_NPC" });
   });
   it("rejects a location ID that is not in the known location registry", async () => {
     const unknownLocation = { ...validTurn, newLocationId: "not-registered" };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(unknownLocation) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "UNKNOWN_LOCATION_ID" });
   });
   it("rejects model-invented dice results", async () => {
     const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
   it("rejects NPC or location changes while a player roll is pending", async () => {
@@ -100,12 +102,12 @@ describe("game master resolver", () => {
       npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", attitudeToPlayer: "UNKNOWN",
         locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", knowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidPending) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_CLARIFICATION_DELTA" });
   });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "MODEL_API_ERROR" });
   });
 });
