@@ -156,7 +156,7 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
   const terms = [...new Set([...actionTerms, ...mappedTerms].map((term) => term.toLocaleLowerCase()))];
   const excerpts: Array<{ source: SourceDocument; startLine: number; endLine: number; text: string; score: number }> = [];
   for (const source of verified) {
-    const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
+    const lines = source.content.replace(/\r\n?/g, "\n").replace(/\f/g, "\n\n").split("\n");
     let paragraph: string[] = [];
     let startLine = 1;
     const flush = (endLine: number) => {
