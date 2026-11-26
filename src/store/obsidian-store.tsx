@@ -984,7 +984,7 @@ export function ObsidianStoreProvider({
     (explicitConfirmation) => {
       const ws = collections.world_state;
       const pc = collections.player_character_state;
-      if (!ws.setup.confirmed) {
+      if (!ws.setup.confirmed && collections.session_log.lastTurnNumber === 0) {
         return { ok: false, error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.", report: lastIntegrityReport };
       }
       if (!activeDraft.checkedAt) {
