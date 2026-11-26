@@ -182,7 +182,8 @@ function PlayPage() {
           !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
           !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
           !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (candidate.character.skillBonuses?.length ?? 0) ||
-          typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
+          !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || !value.trim()) ||
+           typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
           typeof biography.weaponBackground !== "string" || biography.weaponBackground.trim().length < 30 ||
           typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
         throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
