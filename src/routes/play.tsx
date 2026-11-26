@@ -236,7 +236,7 @@ function PlayPage() {
       const storyPart = await invokeDossierPart(
         "GENERATE_CHARACTER_STORY",
         "Биография персонажа до начала кампании",
-        "Напиши цельную индивидуальную биографию на русском 350–500 слов. Добавь источник места рождения, 2–4 подтверждённых пункта канона и отметку, какие личные детали вымышлены. Не меняй личность и не выдумывай мировой канон."
+        "Напиши индивидуальную биографию на русском 220–280 слов, 3–4 абзаца. Добавь короткий источник места рождения, ровно 2 подтверждённых пункта канона и короткую отметку о вымышленных личных деталях. Не меняй личность и не выдумывай мировой канон."
       );
       const originsPart = await invokeDossierPart(
         "GENERATE_CHARACTER_ORIGINS",
@@ -275,7 +275,7 @@ function PlayPage() {
       const skillOrigins = skillNames.map((name) => skillOriginMap.get(name) ?? "");
       if (skillOrigins.some((origin) => origin.length < 20) ||
           !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.length < 25) ||
-          typeof biography["biography"] !== "string" || biography["biography"].length < 350 ||
+          typeof biography["biography"] !== "string" || biography["biography"].length < 200 ||
           !Array.isArray(biography["canonBasis"]) || biography["canonBasis"].length < 1) {
         throw new Error("Полное досье не прошло проверку внешности, биографии, навыков или канона. Ничего не сохранено.");
       }
