@@ -37,6 +37,7 @@ jobs:
           GITHUB_PAGES: "true"
           VITE_SUPABASE_URL: "https://dbchfgkdrqpjspptoezh.supabase.co"
           VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_DSbvWZk4wHJ3CAcXeqwuUA_9F-FzB7J"
+          VITE_GITHUB_PAGES: "true"
         run: bun run build
       - name: Prepare SPA fallback
         run: |
