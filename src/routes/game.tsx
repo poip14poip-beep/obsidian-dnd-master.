@@ -257,14 +257,6 @@ function GamePage() {
         <p className="text-xs text-muted-foreground">Живой мастер · ОБСИДИАН 4.1 · D&D 5e (2024) · SRD 5.2.1</p>
       </header>
 
-      <nav aria-label="Игровые вкладки" className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-1">
-        {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
-          <Button key={key} type="button" size="sm" variant={activePanel === key ? "default" : "ghost"} className="min-w-0 px-1 text-[11px] sm:text-xs" onClick={() => setActivePanel(key)}><Icon className="mr-1 h-3.5 w-3.5 shrink-0" />{label}</Button>
-        ))}
-      </nav>
-
-      {activePanel === "chat" && (
-      <div className="space-y-4">
       <section className="panel-surface space-y-3 p-3">
         <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
           <div><p className="text-muted-foreground">Кампания</p><p className="mt-0.5 font-semibold text-foreground">{worldState.campaignName || "UNKNOWN"}</p></div>
@@ -283,6 +275,14 @@ function GamePage() {
         </div>
       </section>
 
+      <nav aria-label="Игровые вкладки" className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-1">
+        {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
+          <Button key={key} type="button" size="sm" variant={activePanel === key ? "default" : "ghost"} className="min-w-0 px-1 text-[11px] sm:text-xs" onClick={() => setActivePanel(key)}><Icon className="mr-1 h-3.5 w-3.5 shrink-0" />{label}</Button>
+        ))}
+      </nav>
+
+      {activePanel === "chat" && (
+      <div className="space-y-4">
       {!setupReady && (
         <section className="panel-surface space-y-3 border-status-approx/40 p-4">
           <div className="flex items-center gap-2"><Lock className="h-5 w-5 text-status-approx" /><h2 className="font-semibold text-foreground">Кампания не готова к игре</h2></div>
