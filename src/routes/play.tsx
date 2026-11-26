@@ -174,9 +174,10 @@ function PlayPage() {
           instructions: "Создай полную индивидуальную биографию персонажа Экдрасиля по закрытым источникам. Верни только структурированный JSON по схеме сервера. Не меняй механику персонажа. ОСОБО ВАЖНО: внешность должна быть конкретной, кинематографичной и пригодной для однозначного представления персонажа художником и мастером, без общих фраз вроде «обычная внешность» или «внимательный взгляд». Заполни КАЖДОЕ поле appearanceDetails развёрнутыми 2–3 предложениями (не менее 35 символов на поле): height — точный рост/диапазон и пропорции; build — плечи, осанка, руки и характер движений; skin — оттенок, фактура и заметные особенности; hair — цвет, длина, текстура, стрижка и уход; eyes — цвет, форма, посадка и выражение; face — форма лица, лоб, скулы, нос, губы, подбородок, брови, мимические линии и возрастные особенности; clothing — слои одежды, крой, материал, цвета, износ и практические детали; footwear — тип, материал, состояние и следы носки; accessories — конкретные украшения, ремни, сумки и предметы; distinctiveFeatures — шрамы, родинки, татуировки, ожоги, необычные детали (если их нет, так и объясни конкретно); firstImpression — цельный портрет в 3–4 предложениях, включая позу, манеру держаться, голос/манеру речи и впечатление при первой встрече. Все детали должны соответствовать народу, возрасту, происхождению, классу, предыстории и снаряжению; не противоречь друг другу и не повторяй одну и ту же фразу в разных полях.",
           input: JSON.stringify({
             action: "Создание биографии случайного персонажа Экдрасиля",
-            character: candidate.character,
-            mechanicalSummary: candidate.summary,
-            randomRolls: candidate.rolls,
+            character: target.character,
+            mechanicalSummary: target.summary,
+            randomRolls: target.rolls,
+            generationSeed: target.generationSeed,
           }),
         }),
       });
@@ -184,12 +185,12 @@ function PlayPage() {
       if (!response.ok || !payload?.output_text) throw new Error(payload?.error?.message ?? "Мастер не вернул биографию.");
       const biography = JSON.parse(payload.output_text) as CharacterBiography;
       if (!biography || typeof biography.biography !== "string" ||
-          biography.birthplace !== candidate.character.biography?.birthplace ||
-          biography.birthplaceSource !== candidate.character.biography?.birthplaceSource ||
-          JSON.stringify(biography.canonBasis) !== JSON.stringify(candidate.character.biography?.canonBasis) ||
+          biography.birthplace !== target.character.biography?.birthplace ||
+          biography.birthplaceSource !== target.character.biography?.birthplaceSource ||
+          JSON.stringify(biography.canonBasis) !== JSON.stringify(target.character.biography?.canonBasis) ||
           !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
           !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
-          !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (candidate.character.skillBonuses?.length ?? 0) ||
+          !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (target.character.skillBonuses?.length ?? 0) ||
           !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.trim().length < 35) ||
           typeof biography.appearance !== "string" || biography.appearance.trim().length < 100 ||
            typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
@@ -197,7 +198,8 @@ function PlayPage() {
           typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
         throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
       }
-      setCandidate((current) => current?.generationSeed === target.generationSeed ? { ...current, character: { ...current.character, biography } } : current);\n      setBiographyReady(true);
+      setCandidate((current) => current?.generationSeed === target.generationSeed ? { ...current, character: { ...current.character, biography } } : current);
+      setBiographyReady(true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
     } finally {
