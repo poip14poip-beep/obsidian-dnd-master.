@@ -63,8 +63,6 @@ export function extractDossierBasics(text: string): DossierBasics {
   const hitDiceMatch = normalizedText.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
   let inventoryLocation: "WORN" | "CARRIED" | null = null;
-  const weaponOrArmorOrClothing = (name: string, details = "") =>
-    /катан|меч|кинжал|лук|арбалет|копь|топор|секир|посох|щит|стрел|болт|дротик|пращ|дубин|рапир|шпаг|молот|цеп|боеприпас|weapon|sword|katana|dagger|bow|crossbow|arrow|bolt|spear|axe|shield|staff|rapier|mace|chain|armor|armour|доспех|брон|кольчуг|латы|панцир|кожан|одежд|роб|плащ|сапог|ботин|перчат|пояс|шляп|капюшон|обув|туник|куртк|накидк|cloak|boots|clothing|robe|coat|gloves|belt|hood|tunic/i.test(name + " " + details);
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
     if (/^11\.1\./.test(heading)) inventoryLocation = "WORN";
@@ -80,8 +78,9 @@ export function extractDossierBasics(text: string): DossierBasics {
     const name = cells[1]!.replace(/^["«]|["»]$/g, "").trim();
     const unitNote = cells[0]!.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
-    const explicitlyPrimary = /основное снаряжение|сохранить при старте|обязательное снаряжение/i.test(name + " " + notes);
-    if (!name || (!weaponOrArmorOrClothing(name, notes) && !explicitlyPrimary)) continue;
+    // Every explicitly listed item in the equipment sections belongs to the sheet.
+    // Do not silently discard tools, consumables, kits, valuables or unusual gear.
+    if (!name) continue;
     const explicitLocation = /^(?:Катана в ножнах|Кинжал)$/i.test(name) ? "CARRIED" as const : inventoryLocation;
     const explicitLocationNote = explicitLocation === "CARRIED" && name === "Катана в ножнах"
       ? "Досье указывает: закреплена по диагонали на спине."
