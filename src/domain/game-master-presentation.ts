@@ -44,7 +44,22 @@ function formatEnvironment(environment: WorldEnvironment | undefined): string[] 
   ];
 }
 
-/** Formats the AI result using the mandatory OBSIDIAN 4.1 turn structure without inventing missing data. */
+function sceneMetadata(turn: GameMasterTurn, world: WorldState, character: PlayerCharacterState, locations: LocationRecord[]) {
+  const location = locations.find((item) => item.id === (turn.newLocationId ?? world.currentLocationId));
+  const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
+  const date = known(turn.newInGameDate) === "НЕ УСТАНОВЛЕНО" ? known(world.currentInGameDate) : known(turn.newInGameDate);
+  const timeMatch = date.match(/([01]\\d|2[0-3]):([0-5]\\d)/);
+  const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
+  const hour = timeMatch ? Number(timeMatch[1]) : null;
+  const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
+  const environment = turn.environment ?? world.environment;
+  const temperature = !environment || environment.temperatureC === null || environment.temperatureC === undefined
+    ? "НЕ УСТАНОВЛЕНО"
+    : `${environment.temperatureC} °C${environment.temperatureCertainty === "APPROXIMATE" ? " (приблизительно)" : ""}`;
+  return { place, date, time, timeOfDay, temperature };
+}
+
+/** Player-facing chat message: compact scene metadata, sensory details and narrative, not a technical report. */
 export function formatGameMasterAnswer(
   turn: GameMasterTurn,
   world: WorldState,
@@ -52,101 +67,52 @@ export function formatGameMasterAnswer(
   locations: LocationRecord[],
   turnNumber: number,
 ): string {
-  const location = locations.find((item) => item.id === (turn.newLocationId ?? world.currentLocationId));
-  const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
-  const region = known(location?.region);
-  const proposedDate = known(turn.newInGameDate);
-  const date = proposedDate === "НЕ УСТАНОВЛЕНО" ? known(world.currentInGameDate) : proposedDate;
-  const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
-  const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
-  const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
-  const fallbackYear = date.match(/(?:год|year)\s*[:№]?\s*(\d{1,4})|(?:^|\s|[,(])(\d{1,4})\s*(?:год|г\.?|year)(?:\s|[,(]|$)/i);
-  const year = numericDate ? String(numericDate.year) : fallbackYear ? (fallbackYear[1] ?? fallbackYear[2]) + (/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : "") : "НЕ УСТАНОВЛЕНО";
-  const month = numericDate ? (numericDate.month === 13 ? "ДОПОЛНИТЕЛЬНЫЕ ДНИ" : String(numericDate.month).padStart(2, "0")) : "НЕ УСТАНОВЛЕНО";
-  const day = numericDate ? String(numericDate.day).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
-  const week = numericDate ? String(numericDate.week) : "НЕ УСТАНОВЛЕНО";
-  const weekday = numericDate ? String(numericDate.weekday) : "НЕ УСТАНОВЛЕНО";
-  const hour = timeMatch ? Number(timeMatch[1]) : null;
-  const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
-  const envLines = formatEnvironment(turn.environment ?? world.environment);
-  const lines = [
-    "════════════════════════════════════",
-    `ХОД #${String(turnNumber).padStart(4, "0")} · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА`,
-    "НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока",
-    "════════════════════════════════════",
+  const meta = sceneMetadata(turn, world, character, locations);
+  return [
+    `ХОД #${String(turnNumber).padStart(4, "0")}`,
+    `МЕСТО: ${meta.place}`,
+    `ДАТА: ${meta.date}`,
+    `ВРЕМЯ: ${meta.time} · ${meta.timeOfDay}`,
+    `ТЕМПЕРАТУРА: ${meta.temperature}`,
     "",
-    "КАМПАНИЯ:",
-    known(world.campaignName),
-    `ИГРОВОЙ ГОД: ${year}`,
-    `МЕСЯЦ: ${month}`,
-    `ДЕНЬ: ${day}`,
-    `НЕДЕЛЯ ГОДА: ${week}`,
-    `ДЕНЬ НЕДЕЛИ: ${weekday}`,
-    `ВРЕМЯ: ${time}`,
-    `ВРЕМЯ СУТОК: ${timeOfDay}`,
-    `МЕСТО: ${place}`,
-    `РЕГИОН / ГОРОД / РАЙОН: ${region}`,
-    `ТОЧНАЯ ЛОКАЦИЯ: ${place}`,
-    ...envLines,
+    "СЕНСОРНОЕ ВОСПРИЯТИЕ",
+    turn.sensoryDescription || "Новые ощущения не установлены.",
     "",
-    "────────────────────────────────────",
-    "ПРЕДЫСТОРИЯ СЦЕНЫ / ПАМЯТЬ КАМПАНИИ",
-    "────────────────────────────────────",
-    turn.campaignMemory || "Нет дополнительных значимых событий, релевантных этой сцене.",
-    "",
-    "────────────────────────────────────",
     "ОПИСАНИЕ СЦЕНЫ",
-    "────────────────────────────────────",
     turn.narration,
     "",
-    "────────────────────────────────────",
-    "СЕНСОРНОЕ ВОСПРИЯТИЕ",
-    "────────────────────────────────────",
-    turn.sensoryDescription || "Без новых заметных изменений.",
-    "",
-    "────────────────────────────────────",
-    "ПРОСТРАНСТВО И ПОЗИЦИИ",
-    "────────────────────────────────────",
-    turn.spatialAccounting || "Точные позиции и расстояния не установлены.",
-    "",
-    "────────────────────────────────────",
-    "RAW / МЕХАНИКА",
-    "────────────────────────────────────",
-    turn.mechanics || "Дополнительная проверка не требуется; причина должна быть указана мастером.",
-    "",
-    "────────────────────────────────────",
-    "РЕЗУЛЬТАТ И ПОСЛЕДСТВИЯ",
-    "────────────────────────────────────",
-    `Непосредственный результат: ${turn.worldOutcome}`,
-    turn.consequences || "Дополнительные последствия не установлены.",
-    `Изменение времени: ${turn.timeDeltaMinutes} мин.`,
-    `Новая внутриигровая дата: ${known(turn.newInGameDate)}`,
-    `Изменение позиции: ${turn.newLocationId ? (locations.find((item) => item.id === turn.newLocationId)?.name ?? "UNKNOWN — локация не найдена в реестре") : "не заявлено"}`,
-    turn.environmentReason ? `Изменение среды: ${turn.environmentReason}` : "",
-    "",
-    "────────────────────────────────────",
-    "УЧЁТ РЕСУРСОВ",
-    "────────────────────────────────────",
-    turn.resourceAccounting || "Изменения ресурсов не заявлены.",
-    "",
-    "────────────────────────────────────",
-    "СЛЕДУЮЩЕЕ ДЕЙСТВИЕ",
-    "────────────────────────────────────",
-    turn.nextAction || "Что делает персонаж?",
-  ];
-  return lines.filter((line) => line !== "").join("\n");
+    "РЕЗУЛЬТАТ ДЕЙСТВИЯ",
+    turn.worldOutcome,
+    turn.consequences || turn.consequenceText || "",
+    turn.nextAction || "Что делаешь дальше?",
+  ].filter(Boolean).join("\\n");
 }
 
-/** Formats the non-turn opening scene; it never consumes turn #0001. */
+/** One-time campaign prehistory. It is saved separately and does not consume a numbered turn. */
 export function formatCampaignOpening(
   turn: GameMasterTurn,
   world: WorldState,
   character: PlayerCharacterState,
   locations: LocationRecord[],
 ): string {
-  return formatGameMasterAnswer(turn, world, character, locations, 1)
-    .replace("ХОД #0001 · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", "ХОД #0001 · НАЧАЛО КАМПАНИИ")
-    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "НАЧАЛЬНАЯ СЦЕНА · ИГРОВОЕ ВРЕМЯ НЕ ПРОДВИНУТО");
+  const meta = sceneMetadata(turn, world, character, locations);
+  return [
+    "ПРЕДЫСТОРИЯ · КАК ТЫ ОКАЗАЛСЯ ЗДЕСЬ",
+    turn.campaignMemory || "Подтверждённые сведения о том, как персонаж прибыл в эту локацию, отсутствуют; мастер не будет выдумывать их.",
+    "",
+    `МЕСТО: ${meta.place}`,
+    `ДАТА: ${meta.date}`,
+    `ВРЕМЯ: ${meta.time} · ${meta.timeOfDay}`,
+    `ТЕМПЕРАТУРА: ${meta.temperature}`,
+    "",
+    "СЕНСОРНОЕ ВОСПРИЯТИЕ",
+    turn.sensoryDescription || "Новые ощущения не установлены.",
+    "",
+    "ТЕКУЩАЯ СЦЕНА",
+    turn.narration,
+    "",
+    "Что будешь делать?",
+  ].filter(Boolean).join("\\n");
 }
 
 /** Stores a structured answer without a misleading pending/unsaved label in the append-only journal. */
