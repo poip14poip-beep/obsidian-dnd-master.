@@ -81,6 +81,7 @@ function SettingsPage() {
       const generated = generateRandomStart(character.hpMax ?? 0);
       const result = applyGeneratedStart({
         city: generated.city,
+        placeName: generated.placeName,
         date: generated.date,
         narrative: generated.narrative,
         locationDescription: generated.location.description,
