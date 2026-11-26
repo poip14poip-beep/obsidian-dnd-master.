@@ -1,5 +1,6 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange } from "./types";
 import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
+import { readSupabaseEnv } from "@/lib/supabase-auth";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -302,9 +303,13 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   }
   return turn as unknown as GameMasterTurn;
 }
-export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
-  options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
-  if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
+export async function resolvePlayerAction(sessionToken: string, context: GameMasterContext,
+  options: { model?: string; fetcher?: typeof fetch; supabaseUrl?: string; publishableKey?: string } = {}): Promise<GameMasterResult> {
+  if (!sessionToken.trim()) throw new GameMasterError("Войди в аккаунт, чтобы использовать игрового мастера.", "AUTH_REQUIRED");
+  const envResult = readSupabaseEnv();
+  const supabaseUrl = options.supabaseUrl ?? (envResult.ok ? envResult.config.url : "");
+  const publishableKey = options.publishableKey ?? (envResult.ok ? envResult.config.publishableKey : "");
+  if (!supabaseUrl || !publishableKey) throw new GameMasterError("Не настроено подключение к защищённому серверу Supabase.", "SUPABASE_CONFIG_MISSING");
   if (context.mode !== "OPENING" && !context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
   const governing = context.sources.find((source) =>
     source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" &&
@@ -390,8 +395,13 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   const model = options.model ?? "gpt-4.1-mini";
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)("https://api.openai.com/v1/responses", {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+        apikey: publishableKey,
+      },
       body: JSON.stringify({ model, instructions: system, input: JSON.stringify(user),
         text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } } }),
     });
