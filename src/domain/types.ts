@@ -109,6 +109,8 @@ export interface NpcRecord {
   certainty: CertaintyStatus;
   sourceId: string;
   locked: boolean;
+  /** What the player character has personally learned about this NPC. Never mix with the NPC's own knowledge. */
+  playerKnowledge?: NpcKnowledgeEntry[];
   knowledge: NpcKnowledgeEntry[];
   version: number;
   history: EntityRevision[];
@@ -197,6 +199,10 @@ export interface WorldState {
   elapsedMinutes: number;
   encumbranceMode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT";
   campaignPreferences?: CampaignPreferences;
+  /** Current observable environment. Unknown values stay explicit; no automatic weather guessing. */
+  environment?: WorldEnvironment;
+  /** Quests and leads that have actually become known to the player character. */
+  quests?: CampaignQuest[];
   startLocationName: string;
   startNarrative?: string;
   startGeneration?: {
@@ -292,6 +298,7 @@ export interface RollRecord {
 
 export interface NpcTurnChange {
   action: "CREATE" | "UPDATE";
+  playerVisible: boolean;
   name: string;
   role: string;
   goals: string;
@@ -302,6 +309,51 @@ export interface NpcTurnChange {
   certainty: CertaintyStatus;
   reason: string;
   knowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
+  playerKnowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
+}
+
+export interface CampaignQuest {
+  id: string;
+  title: string;
+  description: string;
+  objectives: string[];
+  status: "RUMOR" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "FAILED";
+  giverName: string | null;
+  locationName: string | null;
+  deadline: string | null;
+  reward: string;
+  sourcePath: string;
+  certainty: CertaintyStatus;
+  lastUpdatedInGameDate: string;
+  playerVisible: true;
+}
+
+export interface QuestTurnChange {
+  action: "CREATE" | "UPDATE";
+  title: string;
+  description: string;
+  objectives: string[];
+  status: "RUMOR" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "FAILED";
+  giverName: string | null;
+  locationName: string | null;
+  deadline: string | null;
+  reward: string;
+  sourcePath: string;
+  certainty: CertaintyStatus;
+  reason: string;
+}
+
+export interface WorldEnvironment {
+  temperatureC: number | null;
+  temperatureCertainty: CertaintyStatus;
+  weather: string;
+  lighting: string;
+  visibility: string;
+  wind: string;
+  precipitation: string;
+  ambientSounds: string;
+  ambientSmells: string;
+  notes: string;
 }
 
 export interface TurnDraft {
@@ -314,6 +366,9 @@ export interface TurnDraft {
   gmNarration?: string;
   /** Compact campaign memory produced for retrieval in future turns. */
   campaignMemory?: string;
+  environment?: WorldEnvironment;
+  environmentReason?: string;
+  questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
   timeDeltaMinutes: number;
@@ -345,6 +400,8 @@ export interface GameTurnEntry {
   worldOutcome: string;
   gmNarration?: string;
   campaignMemory?: string;
+  environment?: WorldEnvironment;
+  questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
   locationIdAfter: string | null;
