@@ -9,8 +9,19 @@ export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
 type RandomCandidate = { strength:number; dexterity:number; constitution:number; intelligence:number; wisdom:number; charisma:number; classChoice:string; speciesChoice:string };
+function secureIndex(length: number): number {
+  if (!Number.isInteger(length) || length < 1 || !globalThis.crypto?.getRandomValues) {
+    throw new Error("Криптографический генератор случайных чисел недоступен.");
+  }
+  const range = 0x1_0000_0000;
+  const limit = Math.floor(range / length) * length;
+  const buffer = new Uint32Array(1);
+  let value = 0;
+  do { globalThis.crypto.getRandomValues(buffer); value = buffer[0]!; } while (value >= limit);
+  return value % length;
+}
 function rollAbility(): number {
-  const dice = [0, 1, 2, 3].map(() => Math.floor(Math.random() * 6) + 1).sort((a,b) => b-a);
+  const dice = [0, 1, 2, 3].map(() => secureIndex(6) + 1).sort((a,b) => b-a);
   return dice[0]! + dice[1]! + dice[2]!;
 }
 function PlayPage() {
@@ -25,7 +36,7 @@ function PlayPage() {
     const stats = { strength: rollAbility(), dexterity: rollAbility(), constitution: rollAbility(), intelligence: rollAbility(), wisdom: rollAbility(), charisma: rollAbility() };
     const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
     const speciesList = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
-    const draw = (list: string[]) => list[Math.floor(Math.random() * list.length)]!;
+    const draw = (list: string[]) => list[secureIndex(list.length)]!;
     setCandidate({ ...stats, classChoice: draw(classes), speciesChoice: draw(speciesList) });
     setMode("RANDOM");
     setConfirmed(false);
