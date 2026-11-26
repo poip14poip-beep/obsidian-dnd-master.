@@ -10,16 +10,19 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
-  "https://id-preview--f1a28b3c-1045-4cea-a6be-745d1ef02a64.lovable.app",
-  "http://localhost:3000",
+    "http://localhost:3000",
   "http://localhost:5173",
 ]);
 
 type JsonRecord = Record<string, unknown>;
 type ModelAttempt = { id: string; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
-  // DeepSeek V4.1 Flash: economical long-context reasoning model on RouterAI.
+  // Cost-efficient default for ordinary narration and low-risk turns.
   { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
+  // Stronger narrative/reasoning route for character dossiers and consequential turns.
+  { id: "anthropic/claude-sonnet-5.5", format: "schema" },
+  // Independent provider fallback if both primary routes are unavailable.
+  { id: "google/gemini-4-argon", format: "schema" },
 ];
 
 function corsHeaders(origin: string | null): HeadersInit {
@@ -90,6 +93,16 @@ const biographySchema: JsonRecord = {
     ageCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
     genderPresentation: { type: "string" },
     appearance: { type: "string" },
+    appearanceDetails: {
+      type: "object", additionalProperties: false,
+      properties: {
+        height: { type: "string" }, build: { type: "string" }, skin: { type: "string" },
+        hair: { type: "string" }, eyes: { type: "string" }, face: { type: "string" },
+        clothing: { type: "string" }, footwear: { type: "string" }, accessories: { type: "string" },
+        distinctiveFeatures: { type: "string" }, firstImpression: { type: "string" }
+      },
+      required: ["height","build","skin","hair","eyes","face","clothing","footwear","accessories","distinctiveFeatures","firstImpression"]
+    },
     birthplace: { type: "string" },
     birthplaceSource: { type: "string" },
     family: { type: "string" },
@@ -108,7 +121,7 @@ const biographySchema: JsonRecord = {
     canonBasis: { type: "array", items: { type: "string" } },
     inventedDetailsNotice: { type: "string" },
   },
-  required: ["ageYears","ageCertainty","genderPresentation","appearance","birthplace","birthplaceSource","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire","biography","skillOrigins","weaponBackground","equipmentBackground","canonBasis","inventedDetailsNotice"],
+  required: ["ageYears","ageCertainty","genderPresentation","appearance","appearanceDetails","birthplace","birthplaceSource","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire","biography","skillOrigins","weaponBackground","equipmentBackground","canonBasis","inventedDetailsNotice"],
 };
 
 function tokens(usage: unknown): { input_tokens?: number; output_tokens?: number } | undefined {
@@ -286,6 +299,10 @@ Deno.serve(async (req: Request) => {
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
   const isCharacterGeneration = isBiographyRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const highImpactTurn = isBiographyRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
+  const orderedModelAttempts = highImpactTurn
+    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
+    : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
@@ -302,7 +319,7 @@ Deno.serve(async (req: Request) => {
     isBiographyRequest ? canonContext : canonContext,
     ...(isBiographyRequest ? [
       "РЕЖИМ ГЕНЕРАЦИИ БИОГРАФИИ: не изменяй механику, имя, народ, класс, предысторию, место рождения, источник места рождения или canonBasis, переданные в JSON. Возвращай те же birthplace, birthplaceSource и canonBasis дословно.",
-      "Создай индивидуальное полное досье на русском языке. Обязательно заполни preCampaignDesire: конкретное личное желание персонажа в Экдрасиле непосредственно перед началом кампании, не глобальную судьбу и не навязанный квест. Помимо биографии заполни skillOrigins: по одному содержательному объяснению происхождения каждого уже имеющегося навыка из skillBonuses входного персонажа; не добавляй и не удаляй навыки. Заполни weaponBackground: объясни, откуда персонаж получил именно переданное оружие, как научился им пользоваться и почему носит его; не меняй название оружия, атаку, урон или mastery. Заполни equipmentBackground: объясни происхождение и практическую роль каждого предмета переданного inventory; не добавляй, не удаляй и не меняй предметы, количество или свойства. Свяжи эти детали с предысторией, профессией, жизненными событиями и местом происхождения. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
+      "Создай индивидуальное полное досье на русском языке. Обязательно заполни appearanceDetails как отдельную подробную таблицу внешности: рост, телосложение, кожа, волосы, глаза, лицо, одежда с конкретными предметами и состоянием, обувь, аксессуары, отличительные особенности и первое впечатление. Значения должны быть конкретными, согласованными с народом, возрастом, профессией, климатом и достатком; не используй общие заглушки. Поле appearance оставь кратким сводным описанием. Обязательно заполни preCampaignDesire: конкретное личное желание персонажа в Экдрасиле непосредственно перед началом кампании, не глобальную судьбу и не навязанный квест. Помимо биографии заполни skillOrigins: по одному содержательному объяснению происхождения каждого уже имеющегося навыка из skillBonuses входного персонажа; не добавляй и не удаляй навыки. Заполни weaponBackground: объясни, откуда персонаж получил именно переданное оружие, как научился им пользоваться и почему носит его; не меняй название оружия, атаку, урон или mastery. Заполни equipmentBackground: объясни происхождение и практическую роль каждого предмета переданного inventory; не добавляй, не удаляй и не меняй предметы, количество или свойства. Свяжи эти детали с предысторией, профессией, жизненными событиями и местом происхождения. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
       "В Экдрасиле нет свободной повседневной магии. Не добавляй заклинания, заговоры, магические навыки, магическую защиту, сопротивление магии или сверхъестественные расовые черты без конкретного подтверждённого источника в каноне и явного основания в профиле персонажа. Не переноси автоматически Fey Ancestry, магические заговоры вроде Prestidigitation и другие магические черты SRD в Экдрасиль. Мутация и проклятие различны и редки; не добавляй их без явного разрешения во входных параметрах. Обычный персонаж не должен иметь мутацию или проклятие по умолчанию.",
       "Возраст, семья, воспитание и события биографии — индивидуально сгенерированные детали, а не канон. Если неизвестно — UNKNOWN. Не добавляй механические эффекты.",
       "Не создавай новые города, страны, организации, исторические события или NPC. Сведения о происхождении должны соответствовать переданным подтверждённым данным.",
@@ -313,7 +330,7 @@ Deno.serve(async (req: Request) => {
     { role: "user", content: inputText },
   ];
   const failures: string[] = [];
-  for (const attempt of MODEL_ATTEMPTS) {
+  for (const attempt of orderedModelAttempts) {
     try {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
