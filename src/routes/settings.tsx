@@ -10,7 +10,17 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { buildCampaignStateMarkdown, buildPlayerCharacterStateMarkdown, buildSessionLogMarkdown } from "@/domain/save-files";
+import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
+
+function resolveCampaignPreferences(value: typeof DEFAULT_CAMPAIGN_PREFERENCES | undefined) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_CAMPAIGN_PREFERENCES).map(([key, fallback]) => {
+      const current = value?.[key as keyof typeof DEFAULT_CAMPAIGN_PREFERENCES];
+      return [key, typeof current === "string" && current.trim() ? current : fallback];
+    }),
+  ) as typeof DEFAULT_CAMPAIGN_PREFERENCES;
+}
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -46,10 +56,10 @@ function SettingsPage() {
     importBackupJson,
   } = useObsidianStore();
 
-  const [campaignName, setCampaignName] = useState(worldState.campaignName);
-  const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem);
-  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode ?? "UNSET");
-  const [campaignPreferences, setCampaignPreferences] = useState(worldState.campaignPreferences ?? { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" });
+  const [campaignName, setCampaignName] = useState(worldState.campaignName || "Экдрасиль — свободная кампания");
+  const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem === "UNKNOWN" ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN" : worldState.calendarSystem);
+  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode === "UNSET" || !worldState.encumbranceMode ? "STANDARD" : worldState.encumbranceMode);
+  const [campaignPreferences, setCampaignPreferences] = useState(resolveCampaignPreferences(worldState.campaignPreferences));
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [startNarrative, setStartNarrative] = useState(worldState.startNarrative ?? "");
@@ -57,10 +67,10 @@ function SettingsPage() {
   const [backupAcknowledged, setBackupAcknowledged] = useState(false);
 
   useEffect(() => {
-    setCampaignName(worldState.campaignName);
-    setCalendarSystem(worldState.calendarSystem);
-    setEncumbranceMode(worldState.encumbranceMode ?? "UNSET");
-    setCampaignPreferences(worldState.campaignPreferences ?? { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" });
+    setCampaignName(worldState.campaignName || "Экдрасиль — свободная кампания");
+    setCalendarSystem(worldState.calendarSystem === "UNKNOWN" ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN" : worldState.calendarSystem);
+    setEncumbranceMode(worldState.encumbranceMode === "UNSET" || !worldState.encumbranceMode ? "STANDARD" : worldState.encumbranceMode);
+    setCampaignPreferences(resolveCampaignPreferences(worldState.campaignPreferences));
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
     setStartNarrative(worldState.startNarrative ?? "");
