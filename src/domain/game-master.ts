@@ -469,6 +469,18 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
     npcSimulationReference: selectNpcSimulationContext(context.sources),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
+    // Compact chronicle index includes every committed game turn; recentJournal
+    // separately carries full detail for recent and query-matched historical turns.
+    fullCampaignChronicle: context.journal
+      .filter((entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN")
+      .map((entry) => ({
+        turnNumber: entry.turnNumber,
+        inGameDate: entry.inGameDateAfter,
+        summary: entry.summary.slice(0, 500),
+        playerIntent: entry.playerIntent.slice(0, 500),
+        worldOutcome: entry.worldOutcome.slice(0, 700),
+        campaignMemory: entry.campaignMemory.slice(0, 900),
+      })),
     recentJournal: selectRelevantJournal(context.journal, context.action),
     requirements: [
       ...(context.mode === "OPENING" ? [
