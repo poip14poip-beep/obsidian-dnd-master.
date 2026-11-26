@@ -47,6 +47,7 @@ function GamePage() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
   const [explicitConfirm, setExplicitConfirm] = useState(false);
+  const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge">("chat");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
@@ -77,6 +78,22 @@ function GamePage() {
   }, [worldState.openingScene]);
 
   useEffect(() => {
+    if (openingCommitStage === "CHECK") {
+      const checked = checkTurnDraft();
+      if (checked.ok) setOpeningCommitStage("COMMIT");
+      else {
+        setOpeningCommitStage(null);
+        setGmError(`Не удалось проверить вступительный ход: ${checked.errors.join(" ")}`);
+      }
+    } else if (openingCommitStage === "COMMIT" && turnDraft.checkedAt) {
+      const committed = commitTurnDraft(true);
+      setOpeningCommitStage(null);
+      if (!committed.ok) setGmError(committed.error);
+      else toast.success("Кампания началась. Вступление записано как игровой ход №0001.");
+    }
+  }, [openingCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft]);
+
+  useEffect(() => {
     if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
       setDraftReady(true);
       setDraftChecked(Boolean(turnDraft.checkedAt));
@@ -99,6 +116,35 @@ function GamePage() {
     };
   }
 
+  function stageOpeningTurn(openingText: string, turn?: GameMasterTurn) {
+    if (sessionLog.lastTurnNumber > 0 || openingCommitStage) return;
+    updateTurnDraft({
+      summary: "Начало кампании — вступительная сцена",
+      playerIntent: "Начало кампании (служебное открытие; действие персонажа не совершено)",
+      worldOutcome: "Вступительная сцена представлена игроку; действие персонажа ещё не совершено.",
+      gmNarration: openingText,
+      campaignMemory: turn?.campaignMemory ?? "Начальная сцена кампании. Игровые действия ещё не совершались.",
+      environment: turn?.environment ?? worldState.environment,
+      environmentReason: turn?.environmentReason ?? "Начальное состояние среды зафиксировано при открытии кампании.",
+      questChanges: [],
+      timeDeltaMinutes: 0,
+      newInGameDate: turn?.newInGameDate ?? worldState.currentInGameDate,
+      newLocationId: turn?.newLocationId ?? worldState.currentLocationId ?? "",
+      hpDelta: 0,
+      consequenceText: "",
+      newFactTitle: "",
+      newFactStatement: "",
+      newFactRationale: "",
+      rolls: [],
+      characterChanges: {
+        inventory: [], resources: [], conditions: [],
+        currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+      },
+      npcChanges: [],
+    });
+    setOpeningCommitStage("CHECK");
+  }
+
   async function handleOpenCampaign() {
     setGmError(null);
     if (!setupReady) {
@@ -107,6 +153,7 @@ function GamePage() {
     }
     if (worldState.openingScene?.trim()) {
       setOpening(worldState.openingScene);
+      if (sessionLog.lastTurnNumber === 0) stageOpeningTurn(worldState.openingScene);
       return;
     }
     if (!session?.access_token) {
@@ -121,7 +168,7 @@ function GamePage() {
       if (!saved.ok) throw new Error(saved.error ?? "Не удалось сохранить вступительную сцену.");
       setOpening(openingText);
       setGmTurn(null);
-      toast.success("Вступление сохранено. Игровой ход и игровое время не изменены.");
+      stageOpeningTurn(openingText, result.turn);
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось подготовить вступительную сцену.");
     } finally {
