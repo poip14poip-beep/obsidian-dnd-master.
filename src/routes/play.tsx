@@ -367,14 +367,14 @@ function PlayPage() {
       </section>
             <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">3. Предыстория и жизнь до кампании</h3>
-        <div className="space-y-3 rounded-lg border p-3 text-sm">
+        {biographyReady ? <div className="space-y-3 rounded-lg border p-3 text-sm">
           <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character.biography?.birthplace ?? "UNKNOWN"}</p></div>
           <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character.biography?.family ?? "UNKNOWN"}</p></div>
           <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character.biography?.upbringing ?? "UNKNOWN"}</p></div>
           <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character.biography?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character.biography?.preCampaignDesire ?? "Будет сформулировано мастером."}</p></div>
+          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character.biography?.preCampaignDesire ?? "UNKNOWN"}</p></div>
           <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character.biography?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
-        </div>
+        </div> : <p className="rounded-lg border p-3 text-sm text-muted-foreground">Мастер создаёт биографию по канону Экдрасиля. Шаблонная история пока не показывается.</p>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
@@ -415,7 +415,7 @@ function PlayPage() {
           <div className="space-y-2">{candidate.character.inventory?.filter((item)=>!/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}<span className="block text-xs text-muted-foreground">{item.notes}</span></span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
           <div className="mt-3 border-t pt-3 text-sm">Деньги: <strong>{candidate.character.currency?.gp ?? 0} зм</strong></div>
         </div>
-        <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character.biography?.weaponBackground || "Будет описано мастером."}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character.biography?.equipmentBackground || "Будет описано мастером."}</p></div>
+        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character.biography?.weaponBackground || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character.biography?.equipmentBackground || "UNKNOWN"}</p></div>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">5. Навыки</h3>
