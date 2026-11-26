@@ -120,7 +120,7 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
       source.processing?.status === "PROCESSED" &&
       source.reviewStatus === "VERIFIED" && source.contextEnabled === true;
   });
-  if (!verified.length) return "UNKNOWN: verified SRD 5.2.1 text source is not attached and enabled.";
+  if (!verified.length) return "UNKNOWN: full SRD 5.2.1 supplemental text is not attached and enabled. Use only the built-in compact SRD digest; exact mechanics outside it require RULE UNCERTAINTY.";
   const russian = action.toLocaleLowerCase();
   const mappedTerms = [
     ...( /атак|удар|оруж|бой|инициатив/.test(russian) ? ["attack", "combat", "weapon", "initiative", "attack roll"] : []),
