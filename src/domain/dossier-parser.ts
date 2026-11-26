@@ -68,7 +68,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
     if (/^11\.1\./.test(heading)) inventoryLocation = "WORN";
-    else if (/^11\.2\./.test(heading)) inventoryLocation = "CARRIED";
+    else if (/^11\.2\./.test(heading) || /^11\.3\./.test(heading)) inventoryLocation = "CARRIED";
     else if (/^11\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
     if (!inventoryLocation || !line.includes("|")) continue;
     const cells = line.split("|").map((cell) => cell.trim());
@@ -80,7 +80,8 @@ export function extractDossierBasics(text: string): DossierBasics {
     const name = cells[1]!.replace(/^["«]|["»]$/g, "").trim();
     const unitNote = cells[0]!.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
-    if (!name || !weaponOrArmorOrClothing(name, notes)) continue;
+    const explicitlyPrimary = /основное снаряжение|сохранить при старте|обязательное снаряжение/i.test(name + " " + notes);
+    if (!name || (!weaponOrArmorOrClothing(name, notes) && !explicitlyPrimary)) continue;
     const explicitLocation = /^(?:Катана в ножнах|Кинжал)$/i.test(name) ? "CARRIED" as const : inventoryLocation;
     const explicitLocationNote = explicitLocation === "CARRIED" && name === "Катана в ножнах"
       ? "Досье указывает: закреплена по диагонали на спине."
