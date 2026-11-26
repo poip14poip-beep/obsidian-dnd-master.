@@ -487,12 +487,13 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     requirements: [
       ...(context.mode === "OPENING" ? [
         "Это начальная сцена кампании и служебное открытие мира. Она фиксируется как игровой ход #0001, но не является действием персонажа: summary = «Начало кампании — вступительная сцена»; worldOutcome = «Вступительная сцена представлена игроку; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
-        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], questChanges=[], environment в точности повторяет campaign.environment или сохраняет UNKNOWN для неизвестных полей, characterChanges содержит пустые массивы и нулевую currencyDelta.",
-        "Не придумывай новые сведения о мире, NPC, фракциях, истории или событиях. Используй startNarrative и подтверждённые источники. Неизвестные поля оставь UNKNOWN/НЕ УСТАНОВЛЕНО.",
+        "Вступительная сцена инициализирует календарь и погоду кампании. Самостоятельно выбери случайный, но правдоподобный момент старта в рамках года 2000 технического календаря: day-of-year 1–365, час 00:00–23:59. Верни newInGameDate строго в формате календаря приложения: «день НазваниеМесяца, 2000 год · HH:MM · Технический календарь мастера 1.0» либо точное название одного из пяти межсезонных дней вместо дня и месяца. Не используй UNKNOWN и не копируй пустую дату из campaign.currentInGameDate. Это игровое решение мастера, не утверждение о канонической дате Экдрасиля.",
+        "Самостоятельно установи стартовое состояние среды по выбранному сезону, региону, высоте, типу местности и времени суток. Обязательно укажи числовую temperatureC и temperatureCertainty=APPROXIMATE, если нет прямого канонического источника; также заполни погоду, освещение, видимость, ветер, осадки, звуки и запахи конкретными правдоподобными значениями. Не оставляй поля UNKNOWN только из-за отсутствия точной канонической записи. environmentReason объясняет оценку. Это не действие персонажа: timeDeltaMinutes=0, hpDelta=0, newLocationId=null, rolls=[], npcChanges=[], questChanges=[], characterChanges содержит пустые массивы и нулевую currencyDelta.",
+        "Не придумывай новые сведения о канонической истории, NPC или фракциях. Используй startNarrative и подтверждённые источники; случайная дата и оценка погоды являются игровыми решениями мастера, а не новыми каноническими фактами.",
         "campaignMemory — единственная предыстория кампании, показываемая только при первом запуске. sensoryDescription — полный сенсорный вод из девяти каналов. narration — только текущая сцена."
       ] : []),
       "Для игрока верни только два содержательных блока: sensoryDescription и narration. campaignMemory заполняй только в режиме OPENING; в ACTION верни пустую строку. Остальные поля заполняй для внутренней механики, но не включай их в narration или sensoryDescription.",
-      "Не придумывай дату, погоду, освещение, температуру, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE. Используй календарь world.calendarSystem. Для Технического календаря мастера Экдрасиля 1.0 не вводи несуществующие недели или дни недели и не придумывай время: календарная дата продвигается приложением по суммарной длительности действий.",
+      ...(context.mode === "OPENING" ? [] : ["Не придумывай дату, погоду, освещение, температуру, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE. Используй календарь world.calendarSystem. Для Технического календаря мастера Экдрасиля 1.0 не вводи несуществующие недели или дни недели и не придумывай время: календарная дата продвигается приложением по суммарной длительности действий."]),
       "Верни environment как полное текущее состояние окружающей среды: измеримая температура °C или null, certainty, погода, освещение, видимость, ветер, осадки, слышимые фоновые звуки и запахи. Не меняй неизменившиеся поля без причины. Изменения среды должны иметь причинное основание: время суток, место, высота, погода, сезон, укрытие или событие; environmentReason объясняет, почему состояние осталось прежним или изменилось. Не выдавай оценку за канонический факт.",
       ...(context.mode === "OPENING" ? ["Для стартовой сцены обязательно укажи ориентировочную температуру воздуха в °C, оценив её по сезону, региону и условиям сцены. Всегда ставь temperatureCertainty=APPROXIMATE, если температура не подтверждена прямым источником; не представляй оценку как точное измерение или канонический факт."] : []),
       "Журнал заданий содержит только поручения, слухи, обещания, цели или обязательства, которые персонаж действительно узнала через наблюдение, документ, разговор или иной установленный канал. Не создавай квест ради сюжета. Не превращай случайную сцену в задание. CREATE — только при первом фактическом обнаружении; UPDATE — только существующей записи. sourcePath обязателен и описывает конкретный канал получения информации. Не раскрывай скрытые задачи NPC, о которых персонаж не знает.",
@@ -546,7 +547,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   let turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
-  if (/technical calendar 1\.0/i.test(context.world.calendarSystem)) {
+  if (context.mode !== "OPENING" && /technical calendar 1\.0/i.test(context.world.calendarSystem)) {
     const before = parseTechnicalDateTime(context.world.currentInGameDate);
     const after = parseTechnicalDateTime(turn.newInGameDate);
     if (before !== null && (after === null || after - before !== turn.timeDeltaMinutes)) {
@@ -563,7 +564,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       clarificationQuestion: "",
       timeDeltaMinutes: 0,
       hpDelta: 0,
-      newInGameDate: context.world.currentInGameDate,
+      newInGameDate: turn.newInGameDate,
       newLocationId: null,
       consequenceText: "",
       npcChanges: [],
@@ -575,7 +576,8 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
         conditions: [],
         currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
       },
-      ...(context.world.environment ? { environment: context.world.environment } : {}),
+      // Opening is the one point where the GM initializes the campaign's starting environment.
+
     };
   }
   return { turn, model, ...(usage ? { usage } : {}) };
