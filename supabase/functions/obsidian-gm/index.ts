@@ -180,6 +180,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const isBiographyRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_BIOGRAPHY";
+  const requestBody: JsonRecord = isRecord(body) ? body : {};
   if (!ROUTERAI_API_KEY) {
     return json({ error: {
       code: "ROUTERAI_SECRET_MISSING",
@@ -187,17 +188,17 @@ Deno.serve(async (req: Request) => {
     } }, 503, cors);
   }
 
-  const commonRequestValid = isRecord(body) &&
-    typeof body.model === "string" && ALLOWED_MODELS.has(body.model) &&
-    typeof body.instructions === "string" && body.instructions.length >= 1 && body.instructions.length <= 250_000 &&
-    typeof body.input === "string" && body.input.length >= 1 && body.input.length <= 700_000;
-  const turnRequestValid = isRecord(body) && isRecord(body.text) && isRecord(body.text.format) &&
-    body.text.format.type === "json_schema" && body.text.format.name === "obsidian_game_turn" &&
-    body.text.format.strict === true && isRecord(body.text.format.schema);
+  const commonRequestValid = typeof requestBody.model === "string" && ALLOWED_MODELS.has(requestBody.model) &&
+    typeof requestBody.instructions === "string" && requestBody.instructions.length >= 1 && requestBody.instructions.length <= 250_000 &&
+    typeof requestBody.input === "string" && requestBody.input.length >= 1 && requestBody.input.length <= 700_000;
+  const turnRequestValid = isRecord(requestBody.text) && isRecord(requestBody.text.format) &&
+    requestBody.text.format.type === "json_schema" && requestBody.text.format.name === "obsidian_game_turn" &&
+    requestBody.text.format.strict === true && isRecord(requestBody.text.format.schema);
   if (!commonRequestValid || (!isBiographyRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
-  const requestBody = body as JsonRecord;
+  const inputText = requestBody.input as string;
+  const instructionText = requestBody.instructions as string;
   const schema: JsonRecord = isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
   const schemaName = isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
@@ -239,9 +240,9 @@ Deno.serve(async (req: Request) => {
       message: "В постоянную базу мастера ещё не добавлен SRD 5.2.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
-  let actionText = requestBody.input.toLowerCase();
+  let actionText = inputText.toLowerCase();
   try {
-    const parsedInput = JSON.parse(requestBody.input);
+    const parsedInput = JSON.parse(inputText);
     if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText = parsedInput.action.toLowerCase();
   } catch { /* use raw input for matching */ }
   const mappedTerms: string[] = [];
@@ -289,7 +290,7 @@ Deno.serve(async (req: Request) => {
     masterPrompt,
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
-    requestBody.instructions,
+    instructionText,
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
@@ -304,7 +305,7 @@ Deno.serve(async (req: Request) => {
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
     { role: "system", content: serverInstructions },
-    { role: "user", content: requestBody.input },
+    { role: "user", content: inputText },
   ];
   const failures: string[] = [];
   for (const attempt of MODEL_ATTEMPTS) {
