@@ -36,10 +36,19 @@ function Value({ label, value }: { label: string; value: string | number | null 
   );
 }
 
+function extractDossierSection(content: string, start: RegExp, end: RegExp): string {
+ const lines = content.split(/\\r?\\n/);
+ const first = lines.findIndex(line => start.test(line.trim()));
+ if (first < 0) return '';
+ const last = lines.findIndex((line, index) => index > first && end.test(line.trim()));
+ return lines.slice(first + 1, last < 0 ? lines.length : last).filter(line => !/^<PARSED TEXT FOR PAGE:/i.test(line.trim())).join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
+}
 function CharacterPage() {
   const { sources, worldState, character, updateCharacterResource } = useObsidianStore();
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
   const dossier = sources.find((source) => source.id === character.sourceDossierId);
+  const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\\.\\s*Подробная биография/i, /^6\\.\\s*Области опыта/i) : ''; 
+  const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\\.\\s*Внешность и экипировка/i, /^2\\.\\s*Прозвища/i) : '';
   const load = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
   const stats = character.abilityScores;
 
@@ -49,7 +58,7 @@ function CharacterPage() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-bold text-foreground">Лист персонажа</h1>
           <span className="mono-code rounded border border-layer-player/40 bg-layer-player/10 px-2 py-1 text-xs text-layer-player">
-            PLAYER_CHARACTER_STATE · v{character.stateVersion}
+            ЛИСТ ПЕРСОНАЖА · v{character.stateVersion}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
@@ -64,6 +73,12 @@ function CharacterPage() {
         </div>
       </header>
 
+      {!character.biography?.biography && dossierLifeHistory && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">История жизни до кампании</h2>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierLifeHistory)}</div>
+        </section>
+      )}
       {character.biography && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Биография</h2>
@@ -88,6 +103,12 @@ function CharacterPage() {
               <p className="text-xs text-muted-foreground">Основа канона: {ru(character.biography.canonBasis.join("; "))}</p>
             </div>
           </details>
+        </section>
+      )}
+      {!character.biography?.appearanceDetails && dossierAppearance && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierAppearance)}</div>
         </section>
       )}
       {character.biography?.appearanceDetails && (
@@ -129,12 +150,12 @@ function CharacterPage() {
           <Value label="Имя" value={character.name} />
           <Value label="Вид и класс" value={character.speciesAndClass} />
           <Value label="Уровень" value={character.level} />
-          <Value label="Текущие HP" value={character.hpCurrent} />
-          <Value label="Максимальные HP" value={character.hpMax} />
-          <Value label="Временные HP" value={character.hpTemp} />
+          <Value label="Текущие очки здоровья" value={character.hpCurrent} />
+          <Value label="Максимальные очки здоровья" value={character.hpMax} />
+          <Value label="Временные очки здоровья" value={character.hpTemp} />
           <Value label="Класс Доспеха (КД)" value={character.armorClass} />
           <Value label="Бонус мастерства" value={character.proficiencyBonus} />
-          <Value label="Размер существа" value={character.size ?? "UNKNOWN"} />
+          <Value label="Размер существа" value={ru(character.size ?? "UNKNOWN")} />
           <Value label="Скорость" value={character.speedFeet === null || character.speedFeet === undefined ? "UNKNOWN" : `${character.speedFeet} фут.`} />
         </div>
         {stats && (
@@ -224,7 +245,7 @@ function CharacterPage() {
                     type="number" min={0} max={resource.max ?? undefined} step={1}
                     value={resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current))}
                     onChange={(event) => setResourceDrafts((current) => ({ ...current, [resource.id]: event.target.value }))}
-                    placeholder="UNKNOWN"
+                    placeholder="Неизвестно"
                     className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs"
                   />
                   <button
@@ -257,13 +278,13 @@ function CharacterPage() {
         <h2 className="text-sm font-semibold text-foreground">Инвентарь ({character.inventory.length})</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Value label="Известный переносимый вес" value={`${load.knownCarriedWeightLb.toFixed(2)} фунт.`} />
-          <Value label="Вес монет" value={load.currencyWeightLb === null ? "UNKNOWN" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
-          <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "UNKNOWN" : `${load.carryingCapacityLb} фунт.`} />
+          <Value label="Вес монет" value={load.currencyWeightLb === null ? "Неизвестно" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "Неизвестно" : `${load.carryingCapacityLb} фунт.`} />
           <Value label="Статус нагрузки" value={load.encumbranceStatus} />
         </div>
         {load.unknownCarriedItems.length > 0 && (
           <p className="rounded border border-status-approx/30 bg-status-approx/5 p-2 text-xs">
-            Вес не установлен для предметов: {load.unknownCarriedItems.join(", ")}. Полная нагрузка остаётся UNKNOWN.
+            Вес не установлен для предметов: {load.unknownCarriedItems.join(", ")}. Полная нагрузка пока не определена.
           </p>
         )}
         {load.unknownLocationItems.length > 0 && (
@@ -284,7 +305,7 @@ function CharacterPage() {
                   {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {item.attunement}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} фунт/ед.`}
+                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес не установлен" : `${item.unitWeightLb} фунт/ед.`}
                 </span>
               </li>
             ))}
@@ -294,7 +315,7 @@ function CharacterPage() {
           <Value label="Хранится отдельно" value={`${load.storedWeightLb.toFixed(2)} фунт.`} />
           <Value label="Оставлено" value={`${load.droppedWeightLb.toFixed(2)} фунт.`} />
           <Value label="Режим нагрузки" value={worldState.encumbranceMode} />
-          <Value label="Перегруз" value={load.overCapacity === null ? "UNKNOWN" : load.overCapacity ? "Да" : "Нет"} />
+          <Value label="Перегруз" value={load.overCapacity === null ? "Неизвестно" : load.overCapacity ? "Да" : "Нет"} />
         </div>
       </section>
 
