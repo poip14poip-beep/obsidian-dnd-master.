@@ -432,8 +432,8 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" &&
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
   );
-  if (!dossier) throw new GameMasterError(
-    "Досье персонажа должно быть загружено, обработано, проверено пользователем и включено в контекст ИИ.",
+  if (!dossier && context.character.sourceDossierId !== "GENERATED_RANDOM") throw new GameMasterError(
+    "Лист персонажа должен быть загружен, проверен и разрешён для текущей кампании.",
     "PLAYER_DOSSIER_NOT_READY",
   );
   const openingContextQuery = `${context.world.startLocationName} ${context.world.calendarSystem} ${context.world.startNarrative ?? ""} стартовая локация город регион окружение`;
