@@ -49,7 +49,7 @@ function createReadySetupCollections() {
     sourcesConfirmed: true, parametersConfirmed: true, startPointConfirmed: true,
     characterConfirmed: true, noAutoImportAcknowledged: true, confirmed: false, confirmedAt: null,
   };
-  initial.player_character_state.name = "Лия Вейн";
+  initial.player_character_state.name = "Тестовый персонаж";
   initial.player_character_state.nameCertainty = "KNOWN";
   initial.player_character_state.hpCurrent = 120;
   initial.player_character_state.hpMax = 184;
