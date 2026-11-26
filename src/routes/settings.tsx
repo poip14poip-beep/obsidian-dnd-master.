@@ -158,7 +158,7 @@ function SettingsPage() {
     const result = resetForTrialCampaign();
     if (result.ok) {
       setBackupAcknowledged(false);
-      toast.success("Создана чистая пробная кампания. Источники и лист персонажа сохранены; старый игровой журнал не перенесён.");
+      toast.success("Создана чистая пробная кампания. Источники и лист персонажа сохранены; старый игровой журнал не перенесён. Импортируй досье заново перед подтверждением подготовки.");
     } else {
       toast.error(result.error);
     }
@@ -241,7 +241,7 @@ function SettingsPage() {
       <section className="panel-surface space-y-3 p-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Чистая пробная кампания</h2>
-          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Проверенные источники и отдельный лист персонажа сохраняются. Файлы в библиотеке не изменяются.</p>
+          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Проверенные источники и основные параметры персонажа сохраняются; HP, ресурсы, инвентарь, деньги и местоположение сбрасываются. После очистки заново импортируй досье Лии в разделе «Играть». Файлы в библиотеке не изменяются.</p>
         </div>
         <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleExportBackup}>
           <Download className="mr-1.5 h-4 w-4" />
