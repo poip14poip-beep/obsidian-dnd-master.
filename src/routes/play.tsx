@@ -462,7 +462,7 @@ function PlayPage() {
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
-        {biographyReady && candidate.character["biography"]?["appearance"] && (
+        {biographyReady && candidate.character["biography"]?.["appearance"] && (
           <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Общий портрет</p>
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character["biography"]["appearance"]}</p>
@@ -499,12 +499,12 @@ function PlayPage() {
           <div className="space-y-2">{candidate.character.inventory?.filter((item)=>!/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}<span className="block text-xs text-muted-foreground">{item.notes}</span></span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
           <div className="mt-3 border-t pt-3 text-sm">Деньги: <strong>{candidate.character.currency?.gp ?? 0} зм</strong></div>
         </div>
-        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character["biography"]?["weaponBackground"] || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character["biography"]?["equipmentBackground"] || "UNKNOWN"}</p></div>}
+        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character["biography"]?.["weaponBackground"] || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character["biography"]?.["equipmentBackground"] || "UNKNOWN"}</p></div>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">5. Навыки</h3>
         <div className="rounded-lg border p-3">{candidate.character.skillBonuses?.map((skill)=><div key={skill.name} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"><span>{skill.name}</span><strong className="tabular-nums">+{skill.bonus}</strong></div>)}</div>
-        {candidate.character["biography"]?["skillOrigins"]?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
+        {candidate.character["biography"]?.["skillOrigins"]?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
         <p className="text-xs text-muted-foreground">Навыки отражают обучение и практику. Они сами по себе не дают магических способностей или защиты от магии.</p>
       </section>
       <section className="space-y-2">
