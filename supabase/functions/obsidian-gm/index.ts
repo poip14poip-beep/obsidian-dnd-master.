@@ -412,9 +412,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: (isIdentityRequest || isBiographyRequest) ? 3200 : 8192,
+          max_tokens: isIdentityRequest ? 1800 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 48_000 : 35_000),
+        signal: AbortSignal.timeout(isIdentityRequest ? 30_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
@@ -452,7 +452,7 @@ Deno.serve(async (req: Request) => {
       const message = isRecord(choice.message) ? choice.message : {};
       const content = outputText(message);
       if (!content || choice.finish_reason === "length") {
-        failures.push(`${attempt.id}: empty or truncated output`);
+        failures.push(`${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`);
         continue;
       }
       let parsed: unknown;
