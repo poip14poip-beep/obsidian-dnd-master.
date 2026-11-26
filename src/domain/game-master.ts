@@ -242,7 +242,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   const rulesSources = context.sources.filter((source) =>
     source.type === "SUPPLEMENTAL" && source.contentStatus === "ATTACHED" &&
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
-    /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`)
+    /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`)
   );
   const dossier = context.sources.find((source) =>
     source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" &&
