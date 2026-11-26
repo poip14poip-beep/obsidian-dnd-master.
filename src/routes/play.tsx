@@ -136,6 +136,7 @@ function PlayPage() {
         generationRecord: generated.generationRecord,
         characterPatch: generated.characterPatch,
         inventory: generated.inventory,
+        replaceInventory: generated.replaceInventory,
       });
       if (!result.ok) {
         setStartError(result.error);
