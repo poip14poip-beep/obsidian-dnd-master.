@@ -125,7 +125,7 @@ function GamePage() {
       worldOutcome: "Вступительная сцена представлена игроку; действие персонажа ещё не совершено.",
       gmNarration: openingText,
       campaignMemory: turn?.campaignMemory ?? "Начальная сцена кампании. Игровые действия ещё не совершались.",
-      environment: turn?.environment ?? worldState.environment,
+      ...((turn?.environment ?? worldState.environment) ? { environment: turn?.environment ?? worldState.environment! } : {}),
       environmentReason: turn?.environmentReason ?? "Начальное состояние среды зафиксировано при открытии кампании.",
       questChanges: [],
       timeDeltaMinutes: 0,
