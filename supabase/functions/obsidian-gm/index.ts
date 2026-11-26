@@ -376,8 +376,10 @@ Deno.serve(async (req: Request) => {
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
+  // Character generation is one bounded upstream call. Sequential model fallbacks
+  // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isIdentityRequest || isBiographyRequest
-    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
+    ? [MODEL_ATTEMPTS[0]!]
     : highImpactTurn
       ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
       : MODEL_ATTEMPTS;
@@ -434,7 +436,7 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: (isIdentityRequest || isBiographyRequest) ? 3200 : 8192,
         }),
-        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 55_000 : 35_000),
+        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 48_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
