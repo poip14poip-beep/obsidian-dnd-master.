@@ -1,5 +1,6 @@
 import type {
   AuditLogState,
+  CampaignPreferences,
   ObsidianCollections,
   PlayerCharacterState,
   SessionLogState,
@@ -7,6 +8,19 @@ import type {
   TurnDraft,
   WorldState,
 } from "./types";
+
+export const DEFAULT_CAMPAIGN_PREFERENCES: CampaignPreferences = {
+  allowedBooksAndOptions: "Только D&D 5e (2024) и SRD 5.2.1. Материалы 2014 года и дополнительные книги/опциональные правила не применяются без отдельной записи в RULE_LEDGER.",
+  diceMethod: "Броски выполняются встроенным криптографическим генератором Web Crypto; мастер показывает формулу, результат и модификаторы. Если генератор недоступен, бросок выполняет игрок физическими кубиками.",
+  advancement: "XP по таблице прогрессии D&D 2024. Milestone не используется; переход уровня фиксируется по накопленному опыту.",
+  foodAndWater: "Применять базовые правила D&D 2024 по пище и воде, когда это имеет значение; дополнительных домашних штрафов не вводить.",
+  randomEncounters: "Универсальные таблицы не используются. Только региональные таблицы из источников кампании или официального материала; если подходящей таблицы нет, случайный бросок не проводится.",
+  pvp: "Не используется: кампания рассчитана на одного игрока и одного персонажа.",
+  deathAndResurrection: "Базовые правила D&D 2024. Индивидуальное проклятие Лии: возвращение ровно через 168 часов на месте гибели с восстановленным телом, но без имущества. Других исключений нет.",
+  economyDetail: "Детальный учёт денег, цен, сделок, запасов, владельца и местонахождения предметов. Изменения только при подтверждённых событиях.",
+  contentBoundaries: "Дополнительные личные ограничения игроком пока не заданы. Соблюдать системные ограничения платформы; при спорной или чувствительной сцене остановиться и уточнить границу до продолжения.",
+  houseRules: "Только явно зафиксированные правила: эпический уровень 21 Лии «Память веков» и её индивидуальное проклятие из досье. Новые домашние правила — только после согласования.",
+};
 
 export const DEFAULT_SOURCE_IDS = {
   GOVERNING: "src-obsidian-41",
@@ -95,14 +109,14 @@ export function createInitialWorldState(): WorldState {
   return {
     schemaVersion: 1,
     stateVersion: 1,
-    campaignName: "",
+    campaignName: "Экдрасиль — свободная кампания",
     ruleset: "D&D 5e (2024) · ОБСИДИАН 4.1",
-    calendarSystem: "UNKNOWN",
+    calendarSystem: "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN",
     startInGameDate: "UNKNOWN",
     currentInGameDate: "UNKNOWN",
     elapsedMinutes: 0,
-    encumbranceMode: "UNSET",
-    campaignPreferences: { allowedBooksAndOptions: "", diceMethod: "", advancement: "", foodAndWater: "", randomEncounters: "", pvp: "", deathAndResurrection: "", economyDetail: "", contentBoundaries: "", houseRules: "" },
+    encumbranceMode: "STANDARD",
+    campaignPreferences: DEFAULT_CAMPAIGN_PREFERENCES,
     startLocationName: "UNKNOWN",
     currentLocationId: null,
     setup: {
