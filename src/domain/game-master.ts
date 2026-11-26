@@ -397,6 +397,15 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   }
   return turn as unknown as GameMasterTurn;
 }
+function parseTechnicalDateTime(value: string): number | null {
+  const match = value.match(/(?:^|\\D)(\\d{1,4})\\s*(?:год)?\\s*,?\\s*месяц\\s*(\\d{1,2})\\s*,?\\s*день\\s*(\\d{1,2})\\s*[;, ]+([01]\\d|2[0-3]):([0-5]\\d)/i);
+  if (!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const hour = Number(match[4]), minute = Number(match[5]);
+  if (month < 1 || month > 13 || day < 1 || (month <= 12 ? day > 30 : day > 5)) return null;
+  const ordinal = month <= 12 ? (month - 1) * 30 + day : 360 + day;
+  return year * 365 * 1440 + (ordinal - 1) * 1440 + hour * 60 + minute;
+}
 export async function resolvePlayerAction(sessionToken: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch; supabaseUrl?: string; publishableKey?: string } = {}): Promise<GameMasterResult> {
   if (!sessionToken.trim()) throw new GameMasterError("Войди в аккаунт, чтобы использовать игрового мастера.", "AUTH_REQUIRED");
@@ -519,12 +528,20 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? []);
+  if (/technical calendar 1\\.0/i.test(context.world.calendarSystem)) {
+    const before = parseTechnicalDateTime(context.world.currentInGameDate);
+    const after = parseTechnicalDateTime(turn.newInGameDate);
+    if (before !== null && (after === null || after - before !== turn.timeDeltaMinutes)) {
+      throw new GameMasterError("Новая дата/время не совпадает с длительностью действия по Technical Calendar 1.0. Ход не принят.", "CALENDAR_DELTA_MISMATCH");
+    }
+  }
   if (context.mode === "OPENING") {
     const c = turn.characterChanges;
     const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
     if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
       turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null ||
-      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 ||
+      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 || turn.questChanges.length > 0 ||
+      (context.world.environment !== undefined && JSON.stringify(turn.environment) !== JSON.stringify(context.world.environment)) ||
       c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged) {
       throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены.", "OPENING_MUTATION_REJECTED");
     }
