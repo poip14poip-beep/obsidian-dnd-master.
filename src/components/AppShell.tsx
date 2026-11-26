@@ -235,6 +235,21 @@ export function AppShell({ children }: { children: ReactNode }) {
                   className="touch-target flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-card px-3 py-2 text-sm font-medium text-foreground"
                 >
                   <LogOut className="h-4 w-4" />
+                  {guestMode ? "Выйти из гостевого режима" : "Выйти из аккаунта"}
+                </button>
+                {guestMode && (
+                  <p className="mt-2 text-center text-[10px] leading-relaxed text-muted-foreground">
+                    После выхода откроется регистрация или вход. Локальные данные кампании не удаляются автоматически.
+                  </p>
+                )}
+              </div>
+              <div className="border-t border-sidebar-border p-3">
+                <button
+                  type="button"
+                  onClick={() => void handleLogout()}
+                  className="touch-target flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-card px-3 py-2 text-sm font-medium text-foreground"
+                >
+                  <LogOut className="h-4 w-4" />
                   Выйти из аккаунта
                 </button>
               </div>
