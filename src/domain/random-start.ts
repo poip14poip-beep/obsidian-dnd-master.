@@ -75,8 +75,8 @@ function createItem(name: string, quantity: number, weight: number, notes: strin
   };
 }
 
-function itemWeight(name: string, index: RandomIndex): { weight: number; approximate: boolean } {
-  const n = name.toLocaleLowerCase("ru-RU");
+function itemWeight(name: string, index: RandomIndex, notes = ""): { weight: number; approximate: boolean } {
+  const n = (name + " " + notes).toLocaleLowerCase("ru-RU");
   const exact: Array<[RegExp, number]> = [
     [/кольчуг|chain mail/, 55], [/латы|plate armor/, 65], [/стёган|стеган|padded armor/, 8],
     [/чешуйчат|scale mail/, 45], [/клёпан|клепан|studded leather/, 13], [/кожан.*доспех|leather armor/, 10],
@@ -104,7 +104,7 @@ function itemWeight(name: string, index: RandomIndex): { weight: number; approxi
 function weightedRetained(items: InventoryItem[], index: RandomIndex): InventoryItem[] {
   return items.map((item) => {
     if (item.unitWeightLb !== null && item.unitWeightLb !== undefined) return item;
-    const result = itemWeight(item.name, index);
+    const result = itemWeight(item.name, index, item.notes);
     return {
       ...item, unitWeightLb: result.weight,
       notes: [item.notes, result.approximate ? "Масса оценочная; назначена при подготовке старта." : "Масса по стандартному снаряжению."].filter(Boolean).join(" "),
