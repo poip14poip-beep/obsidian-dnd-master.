@@ -1,37 +1,67 @@
-import { useState } from "react";
-import { Cloud, Database, Download, Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Cloud, Database, Download, Plus, RefreshCw, Save } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { createCloudCampaign, loadCloudCampaign } from "@/lib/obsidian-api";
 import { mapCloudCampaignSettings } from "@/domain/cloud-mappers";
-import type { WorldState } from "@/domain/types";
+import type { BackupEnvelope, WorldState } from "@/domain/types";
+import type { PersistVerifyResult } from "@/domain/storage";
+import {
+  createCloudCampaign,
+  getCloudCampaignLink,
+  loadLatestCloudCampaignSnapshot,
+  saveCloudCampaignSnapshot,
+  setCloudCampaignLink,
+  type ObsidianCloudSnapshot,
+} from "@/lib/obsidian-api";
 
 interface CloudCampaignPanelProps {
   worldState: WorldState;
+  exportBackupJson: () => BackupEnvelope;
+  importBackupJson: (rawJson: string) => PersistVerifyResult;
 }
 
-const SNAPSHOT_COLLECTIONS = [
-  ["sources", "Источники"],
-  ["canon_facts", "Факты канона"],
-  ["world_state", "Состояние мира"],
-  ["player_character_state", "Персонаж"],
-  ["npcs", "NPC"],
-  ["npc_knowledge", "Знания NPC"],
-  ["factions", "Фракции"],
-  ["locations", "Локации"],
-  ["timeline_events", "События"],
-  ["turn_drafts", "Черновики ходов"],
-  ["session_log", "Журнал ходов"],
-  ["audit_log", "Аудит"],
-] as const;
+function downloadLocalBackup(envelope: BackupEnvelope) {
+  const blob = new Blob([JSON.stringify(envelope, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `obsidian-local-before-cloud-restore-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
 
-export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
+export function CloudCampaignPanel({
+  worldState,
+  exportBackupJson,
+  importBackupJson,
+}: CloudCampaignPanelProps) {
   const [campaignId, setCampaignId] = useState("");
-  const [snapshot, setSnapshot] = useState<Record<string, unknown> | null>(null);
-  const [busy, setBusy] = useState<"create" | "bootstrap" | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [latest, setLatest] = useState<ObsidianCloudSnapshot | null>(null);
+  const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
+  const [busy, setBusy] = useState<"create" | "load" | "save" | "restore" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    const link = getCloudCampaignLink();
+    if (link) {
+      setCampaignId(link.campaignId);
+      setRevision(link.revision);
+    }
+  }, []);
+
+  function updateCampaignId(value: string) {
+    setCampaignId(value);
+    setRevision(0);
+    setLatest(null);
+    setRestoreAcknowledged(false);
+    setNotice(null);
+    setError(null);
+    setCloudCampaignLink(value.trim() ? { campaignId: value.trim(), revision: 0 } : null);
+  }
 
   async function handleCreateCampaign() {
     if (!worldState.campaignName.trim()) {
@@ -41,7 +71,7 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
     setBusy("create");
     setError(null);
     setNotice(null);
-    setSnapshot(null);
+    setLatest(null);
     const result = await createCloudCampaign(
       worldState.campaignName,
       mapCloudCampaignSettings(worldState),
@@ -51,44 +81,115 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
       setBusy(null);
       return;
     }
-    setCampaignId(result.data.campaign.id);
-    setNotice("Облачная кампания создана. Её UUID заполнен ниже; локальные данные и игровые ходы не импортировались.");
+    const id = result.data.campaign.id;
+    setCampaignId(id);
+    setRevision(0);
+    setCloudCampaignLink({ campaignId: id, revision: 0 });
+    setNotice("Облачная кампания создана. Теперь можно сохранить в неё полный снимок текущего состояния.");
     setBusy(null);
   }
 
-  async function handleLoadSnapshot() {
-    const selectedId = campaignId.trim();
-    if (!selectedId) {
+  async function handleLoadLatest() {
+    const id = campaignId.trim();
+    if (!id) {
       setError("Введи UUID облачной кампании или сначала создай её.");
       return;
     }
-    setBusy("bootstrap");
+    setBusy("load");
     setError(null);
     setNotice(null);
-    const result = await loadCloudCampaign(selectedId);
+    setRestoreAcknowledged(false);
+    const result = await loadLatestCloudCampaignSnapshot(id);
     if (!result.ok) {
       setError(result.error.message);
       setBusy(null);
       return;
     }
-    setSnapshot(result.data.snapshot);
-    setNotice("Снимок загружен только для просмотра. Локальное состояние не изменено.");
+    const snapshot = result.data.snapshot;
+    setLatest(snapshot);
+    setRevision(snapshot.revision);
+    setCloudCampaignLink({ campaignId: id, revision: snapshot.revision });
+    if (!snapshot.found || !snapshot.payload) {
+      setNotice("В облачной кампании пока нет резервных снимков. Текущую локальную кампанию можно сохранить как первый снимок.");
+    } else {
+      setNotice(`Найден снимок №${snapshot.revision}, игровой ход ${snapshot.turn_number ?? 0}. Он загружен только для просмотра; локальные данные пока не изменены.`);
+    }
     setBusy(null);
   }
 
-  function collectionCount(key: string): number {
-    const value = snapshot?.[key];
-    return Array.isArray(value) ? value.length : 0;
+  async function handleSaveSnapshot() {
+    const id = campaignId.trim();
+    if (!id) {
+      setError("Сначала создай облачную кампанию или укажи её UUID.");
+      return;
+    }
+    setBusy("save");
+    setError(null);
+    setNotice(null);
+    try {
+      // Never overwrite a newer remote checkpoint that this browser has not loaded.
+      const latestResult = await loadLatestCloudCampaignSnapshot(id);
+      if (!latestResult.ok) throw new Error(latestResult.error.message);
+      const remote = latestResult.data.snapshot;
+      if (remote.found && remote.revision !== revision) {
+        setLatest(remote);
+        setRevision(remote.revision);
+        setCloudCampaignLink({ campaignId: id, revision: remote.revision });
+        throw new Error("В облаке есть более новая версия. Сначала загрузи её и восстанови локальное состояние; перезапись без сверки запрещена.");
+      }
+      if (!remote.found && revision !== 0) {
+        throw new Error("Облачная версия не найдена, хотя локальная ссылка ожидает сохранённый снимок. Проверь UUID кампании.");
+      }
+      const envelope = exportBackupJson();
+      const turnNumber = envelope.collections.session_log.lastTurnNumber;
+      const saved = await saveCloudCampaignSnapshot(
+        id,
+        revision,
+        turnNumber,
+        envelope as unknown as Record<string, unknown>,
+      );
+      if (!saved.ok) throw new Error(saved.error.message);
+      const metadata = saved.data.result;
+      setRevision(metadata.revision);
+      setCloudCampaignLink({ campaignId: id, revision: metadata.revision });
+      setNotice(`Снимок №${metadata.revision} сохранён и проверен обратным чтением. Игровой ход: ${metadata.turn_number}. SHA-256: ${metadata.payload_sha256 ?? "—"}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось сохранить облачный снимок.");
+    } finally {
+      setBusy(null);
+    }
   }
+
+  function handleRestoreLatest() {
+    if (!latest?.found || !latest.payload || !restoreAcknowledged) return;
+    setBusy("restore");
+    setError(null);
+    setNotice(null);
+    try {
+      // Protect the current browser state before replacing all local collections.
+      downloadLocalBackup(exportBackupJson());
+      const result = importBackupJson(JSON.stringify(latest.payload));
+      if (!result.ok) throw new Error(result.error);
+      setCloudCampaignLink({ campaignId, revision: latest.revision });
+      setNotice(`Снимок №${latest.revision} восстановлен. Локальные коллекции прошли проверку и обратное чтение. Перед восстановлением скачана резервная копия прежнего состояния.`);
+      setRestoreAcknowledged(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось восстановить облачный снимок.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const hasRestorableSnapshot = Boolean(latest?.found && latest.payload);
 
   return (
     <section className="panel-surface space-y-4 p-4">
       <div className="flex items-start gap-2.5">
         <Cloud className="mt-0.5 h-5 w-5 text-primary" />
         <div className="space-y-1">
-          <h2 className="text-base font-semibold text-foreground">Облачная кампания</h2>
+          <h2 className="text-base font-semibold text-foreground">Облачные сохранения кампании</h2>
           <p className="text-xs text-muted-foreground">
-            Введи UUID существующей кампании или создай новую. Загрузка снимка работает только на чтение.
+            Полные снимки всех 11 локальных коллекций. Каждая версия неизменяема, получает SHA-256 и проверяется обратным чтением на сервере.
           </p>
         </div>
       </div>
@@ -111,61 +212,57 @@ export function CloudCampaignPanel({ worldState }: CloudCampaignPanelProps) {
         <Input
           id="cloud-campaign-id"
           value={campaignId}
-          onChange={(event) => {
-            setCampaignId(event.target.value);
-            setSnapshot(null);
-            setNotice(null);
-          }}
+          onChange={(event) => updateCampaignId(event.target.value)}
           placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
           className="touch-target font-mono text-xs"
           autoComplete="off"
           spellCheck={false}
         />
+        <p className="mono-code text-[10px] text-muted-foreground">Текущая облачная ревизия: {revision}</p>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <Button
-          type="button"
-          className="touch-target"
-          onClick={() => void handleLoadSnapshot()}
-          disabled={!campaignId.trim() || busy !== null}
-        >
-          <Download className="mr-1.5 h-4 w-4" />
-          Загрузить снимок (только чтение)
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Button type="button" className="touch-target" onClick={() => void handleCreateCampaign()} disabled={!worldState.campaignName.trim() || busy !== null}>
+          <Plus className="mr-1.5 h-4 w-4" /> Создать облачную кампанию
         </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          className="touch-target"
-          onClick={() => void handleCreateCampaign()}
-          disabled={!worldState.campaignName.trim() || busy !== null}
-        >
-          <Plus className="mr-1.5 h-4 w-4" />
-          Создать облачную кампанию
+        <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleLoadLatest()} disabled={!campaignId.trim() || busy !== null}>
+          <RefreshCw className="mr-1.5 h-4 w-4" /> Загрузить последнее сохранение
+        </Button>
+        <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleSaveSnapshot()} disabled={!campaignId.trim() || busy !== null}>
+          <Save className="mr-1.5 h-4 w-4" /> Сохранить текущую кампанию
         </Button>
       </div>
 
-      {snapshot && (
+      {hasRestorableSnapshot && (
         <div className="space-y-3 rounded-md border border-border bg-background/50 p-3">
           <div className="flex items-center gap-2">
             <Database className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">Содержимое облачного снимка</h3>
+            <h3 className="text-sm font-semibold text-foreground">Найденное облачное сохранение</h3>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {SNAPSHOT_COLLECTIONS.map(([key, label]) => (
-              <div key={key} className="rounded-md border border-border p-2">
-                <span className="block text-[10px] text-muted-foreground">{label}</span>
-                <span className="mono-code text-sm font-semibold text-foreground">
-                  {collectionCount(key)}
-                </span>
-              </div>
-            ))}
+            <SnapshotField label="Ревизия" value={String(latest?.revision ?? 0)} />
+            <SnapshotField label="Игровой ход" value={String(latest?.turn_number ?? 0)} />
+            <SnapshotField label="Создано" value={latest?.created_at ? new Date(latest.created_at).toLocaleString("ru-RU") : "—"} />
           </div>
-          <p className="text-[10px] text-muted-foreground">
-            Это серверные данные выбранной кампании. Они не объединяются с локальным хранилищем и не перезаписывают его.
-          </p>
+          <p className="break-all font-mono text-[10px] text-muted-foreground">SHA-256: {latest?.payload_sha256 ?? "—"}</p>
+          <label className="flex items-start gap-2 text-xs text-foreground">
+            <Checkbox checked={restoreAcknowledged} onCheckedChange={(value) => setRestoreAcknowledged(value === true)} />
+            <span>Я понимаю, что восстановление заменит все 11 локальных коллекций данными облачного снимка. Перед заменой будет скачана резервная копия текущего состояния.</span>
+          </label>
+          <Button type="button" variant="destructive" className="touch-target w-full" onClick={handleRestoreLatest} disabled={!restoreAcknowledged || busy !== null}>
+            <Download className="mr-1.5 h-4 w-4" /> Восстановить эту версию на устройстве
+          </Button>
         </div>
       )}
     </section>
+  );
+}
+
+function SnapshotField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border p-2">
+      <span className="block text-[10px] text-muted-foreground">{label}</span>
+      <span className="text-xs font-semibold text-foreground">{value}</span>
+    </div>
   );
 }
