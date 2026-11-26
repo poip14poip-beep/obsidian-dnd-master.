@@ -170,12 +170,28 @@ function GamePage() {
     setOpeningBusy(true);
     try {
       const result = await resolvePlayerAction(session.access_token, makeContext("", "OPENING"), { model: gmModel });
-      const openingText = formatCampaignOpening(result.turn, worldState, character, locations);
+      const openingTurn: GameMasterTurn = {
+        ...result.turn,
+        timeDeltaMinutes: 0,
+        hpDelta: 0,
+        newInGameDate: worldState.currentInGameDate,
+        newLocationId: null,
+        consequenceText: "",
+        questChanges: [],
+        rolls: [],
+        npcChanges: [],
+        characterChanges: {
+          inventory: [], resources: [], conditions: [],
+          currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+        },
+        environment: worldState.environment ?? result.turn.environment,
+      };
+      const openingText = formatCampaignOpening(openingTurn, worldState, character, locations);
       const saved = saveOpeningScene(openingText);
       if (!saved.ok) throw new Error(saved.error ?? "Не удалось сохранить вступительную сцену.");
       setOpening(openingText);
       setGmTurn(null);
-      stageOpeningTurn(openingText, result.turn);
+      stageOpeningTurn(openingText, openingTurn);
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось подготовить вступительную сцену.");
     } finally {
