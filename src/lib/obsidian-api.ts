@@ -277,10 +277,10 @@ export function getCloudCampaignLink(): CloudCampaignLink | null {
     const raw = window.localStorage.getItem(CLOUD_CAMPAIGN_LINK_KEY);
     if (!raw) return null;
     const value: unknown = JSON.parse(raw);
-    if (!isRecord(value) || typeof value.campaignId !== "string" ||
-        !isUuid(value.campaignId) || !Number.isSafeInteger(value.revision) ||
-        Number(value.revision) < 0) return null;
-    return { campaignId: value.campaignId, revision: Number(value.revision) };
+    if (!isRecord(value) || typeof value["campaignId"] !== "string" ||
+        !isUuid(value["campaignId"]) || !Number.isSafeInteger(value["revision"]) ||
+        Number(value["revision"]) < 0) return null;
+    return { campaignId: value["campaignId"], revision: Number(value["revision"]) };
   } catch {
     return null;
   }
