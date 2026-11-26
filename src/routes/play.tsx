@@ -353,7 +353,42 @@ function PlayPage() {
           })}
         </div>
       </section>
-      <div className="space-y-1 text-sm"><p><strong>Навыки:</strong> {candidate.summary.skills.join(", ")}</p><p><strong>Снаряжение:</strong> {candidate.summary.equipment.join("; ")}</p><p><strong>Особенности:</strong> {candidate.summary.features.join(" ")}</p></div>
+            <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">3. Предыстория и жизнь до кампании</h3>
+        <div className="space-y-3 rounded-lg border p-3 text-sm">
+          <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character.biography?.birthplace ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character.biography?.family ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character.biography?.upbringing ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character.biography?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character.biography?.preCampaignDesire ?? "Будет сформулировано мастером."}</p></div>
+          <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character.biography?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
+        </div>
+      </section>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">4. Инвентарь и снаряжение</h3>
+        <div className="rounded-lg border p-3">
+          <p className="mb-2 text-xs text-muted-foreground">Оружие и боеприпасы</p>
+          <div className="space-y-2">{candidate.character.inventory?.filter((item)=>/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}</span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
+          <p className="mb-2 mt-4 text-xs text-muted-foreground">Остальное снаряжение</p>
+          <div className="space-y-2">{candidate.character.inventory?.filter((item)=>!/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}<span className="block text-xs text-muted-foreground">{item.notes}</span></span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
+          <div className="mt-3 border-t pt-3 text-sm">Деньги: <strong>{candidate.character.currency?.gp ?? 0} зм</strong></div>
+        </div>
+        <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character.biography?.weaponBackground || "Будет описано мастером."}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character.biography?.equipmentBackground || "Будет описано мастером."}</p></div>
+      </section>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">5. Навыки</h3>
+        <div className="rounded-lg border p-3">{candidate.character.skillBonuses?.map((skill)=><div key={skill.name} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"><span>{skill.name}</span><strong className="tabular-nums">+{skill.bonus}</strong></div>)}</div>
+        {candidate.character.biography?.skillOrigins?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
+        <p className="text-xs text-muted-foreground">Навыки отражают обучение и практику. Они сами по себе не дают магических способностей или защиты от магии.</p>
+      </section>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">6. Особенности и атаки</h3>
+        <div className="space-y-2 rounded-lg border p-3 text-sm">
+          {candidate.character.classFeaturesByLevel?.map((entry)=><div key={entry.level}>{entry.features.split(". ").map((part,index)=><p key={index} className="py-1">{part}{part.endsWith(".")?"":"."}</p>)}</div>)}
+          <div className="border-t pt-2"><p className="text-xs text-muted-foreground">Атаки</p>{candidate.character.weaponAttacks?.map((attack)=><p key={attack.weapon} className="py-1">{attack.weapon}: +{attack.attackBonus} к попаданию · {attack.damage} · mastery {attack.mastery}</p>)}</div>
+          <div className="border-t pt-2"><p className="text-xs text-muted-foreground">Спасброски</p>{candidate.character.baseSavingThrowBonuses ? Object.entries(candidate.character.baseSavingThrowBonuses).map(([key,value])=><p key={key}>{key}: {value>=0?"+":""}{value}</p>) : "UNKNOWN"}</div>
+        </div>
+      </section>
       <div className="rounded border border-primary/30 p-3 space-y-2">
         <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
         <p className="text-xs text-muted-foreground">Мастер создаст индивидуальную историю и объяснит происхождение каждого навыка, оружия и предмета снаряжения. Броски и механические параметры останутся неизменными.</p>
