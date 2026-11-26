@@ -183,131 +183,28 @@ function PlayPage() {
     if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
     const { data: sessionData, error: sessionError } = await client.auth.getSession();
     if (sessionError || !sessionData.session?.access_token) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
-    const requestBody = {
-      operation: "VALIDATE_CHARACTER_COMPATIBILITY",
-      model: "obsidian-free",
-      instructions: "Проведи независимую проверку персонажа на совместимость с каноном Экдрасиля и D&D 2024 / SRD 5.2.1. Используй закрытую хронику, ОБСИДИАН 4.1, SRD и руководство создания персонажей. Проверяй народ, место рождения, социальную среду, биографию, организационные/исторические ссылки, классовые особенности, навыки, оружие, броню, предметы и магические утверждения. Не считай неизвестное несовместимым: помести в unknowns. Не выдумывай подтверждение. INCOMPATIBLE только при прямом конфликте с источниками или запрещённой механике; COMPATIBLE_WITH_NOTES при устранимых/неподтверждённых деталях; INSUFFICIENT_DATA если не хватает ключевых сведений. Не исправляй персонажа сам. Для каждого конфликта укажи основание и нужное изменение. Ответ строго по схеме.",
-      input: JSON.stringify({ action: "Автоматическая проверка совместимости персонажа с миром Экдрасиль", character: characterData }),
-    };
-    let response: Response;
-    try {
-      response = await fetch((env.config.url.endsWith("/") ? env.config.url.slice(0, -1) : env.config.url) + "/functions/v1/obsidian-gm", {
-        method: "POST",
-        mode: "cors",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: env.config.publishableKey,
-          Authorization: "Bearer " + sessionData.session.access_token,
-        },
-        body: JSON.stringify(requestBody),
-      });
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
-      throw new Error("Сетевая ошибка при вызове obsidian-gm: " + reason + ". Проверь подключение и повтори попытку.");
-    }
-    const responseText = await response.text();
-    let data: { output_text?: string; error?: { code?: string; message?: string } } = {};
-    try { data = JSON.parse(responseText) as typeof data; }
-    catch { throw new Error("Edge Function вернула не JSON (HTTP " + response.status + "). " + responseText.slice(0, 300)); }
-    if (!response.ok) {
-      throw new Error([data.error?.code, data.error?.message].filter(Boolean).join(": ") || "Edge Function HTTP " + response.status);
-    }
-    if (!data.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
-    const report = JSON.parse(data.output_text) as { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
-    if (!["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"].includes(report.status)) throw new Error("Некорректный статус проверки персонажа.");
-    if (report.status === "INCOMPATIBLE" || report.status === "INSUFFICIENT_DATA") {
-      throw new Error("Проверка совместимости: " + report.summary + (report.conflicts?.length ? " Конфликты: " + report.conflicts.join("; ") : "") + (report.unknowns?.length ? " Неизвестно: " + report.unknowns.join("; ") : ""));
-    }
-    return report;
-  }
-  const randomize = () => {
-    if (biographyBusy || locked) return;
-    try {
-      const seed = Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join("-");
-      setGenerationSeed(seed);
-      setCandidate(null);
-      setMode("RANDOM");
-      setConfirmed(false);
-      setBiographyReady(false);
-      setImportError(null);
-      void generateRandomCharacterWithMaster(seed);
-    } catch (error) {
-      setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
-    }
-  };
-  async function generateRandomCharacterWithMaster(seed: string) {
-    if (biographyBusy || locked) return;
-    setBiographyBusy(true);
-    setBiographyReady(false);
-    setImportError(null);
-    try {
-      const env = readSupabaseEnv();
-      const { client, envResult } = getSupabaseAuthClient();
-      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
-      const { data: sessionData, error: sessionError } = await client.auth.getSession();
-      if (sessionError || !sessionData.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
-      const { data: identityData, error: identityError } = await client.functions.invoke("obsidian-gm", {
-        body: {
-          operation: "GENERATE_RANDOM_CHARACTER_IDENTITY",
-          model: "obsidian-free",
-          instructions: "Выбери только основу личности нового персонажа Экдрасиля: имя, народ, класс, предысторию, возраст, подтверждённый город рождения, гендерное представление, семью, воспитание, два-три события жизни, черты, идеал, привязанность, слабость, мотивацию и конкретное личное желание перед началом кампании. Используй только варианты строгой схемы и факты закрытой хроники. Не создавай внешность и длинную биографию на этом этапе. Не придумывай канонические факты, города, организации, NPC и исторические события. Возраст 18–80. Избегай клише. Все поля на русском, кратко и конкретно.",
-          input: JSON.stringify({ action: "Выбор личности случайного персонажа Экдрасиля", generationSeed: seed }),
-        },
-      });
-      if (identityError) {
-        let detail = identityError.message || "Не удалось вызвать мастера.";
-        if ("context" in identityError && identityError.context instanceof Response) {
-          const payload = await identityError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
-          detail = payload?.error?.message ?? detail;
+    const { data, error } = await client.functions.invoke("obsidian-gm", {
+      body: {
+        operation: "VALIDATE_CHARACTER_COMPATIBILITY",
+        model: "obsidian-free",
+        instructions: "Проведи независимую проверку персонажа на совместимость с каноном Экдрасиля и D&D 2024 / SRD 5.2.1. Используй закрытую хронику, ОБСИДИАН 4.1, SRD и руководство создания персонажей. Проверяй народ, место рождения, социальную среду, биографию, организационные/исторические ссылки, классовые особенности, навыки, оружие, броню, предметы и магические утверждения. Не считай неизвестное несовместимым: помести в unknowns. Не выдумывай подтверждение. INCOMPATIBLE только при прямом конфликте с источниками или запрещённой механике; COMPATIBLE_WITH_NOTES при устранимых/неподтверждённых деталях; INSUFFICIENT_DATA если не хватает ключевых сведений. Не исправляй персонажа сам. Для каждого конфликта укажи основание и нужное изменение. Ответ строго по схеме.",
+        input: JSON.stringify({ action: "Автоматическая проверка совместимости персонажа с миром Экдрасиль", character: characterData }),
+      },
+    });
+    if (error) {
+      let detail = error.message || "Не удалось проверить персонажа мастером.";
+      if ("context" in error && error.context instanceof Response) {
+        const responseText = await error.context.clone().text().catch(() => "");
+        try {
+          const payload = JSON.parse(responseText) as { error?: { message?: string; code?: string } };
+          detail = [payload.error?.code, payload.error?.message].filter(Boolean).join(": ") || detail;
+        } catch {
+          if (responseText) detail = responseText.slice(0, 500);
         }
-        throw new Error(detail);
       }
-      if (!identityData?.output_text) throw new Error("Мастер не вернул личность персонажа.");
-      const identity = JSON.parse(identityData.output_text) as RandomCharacterProfile & Partial<CharacterBiography>;
-      const supportedSpecies = ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"];
-      const supportedClasses = ["Fighter","Rogue","Barbarian"];
-      const supportedBackgrounds = ["Acolyte","Criminal","Sage","Soldier"];
-      const supportedBirthplaces = ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"];
-      if (!identity || typeof identity.name !== "string" || identity.name.trim().length < 2 ||
-          !supportedSpecies.includes(identity.species) || !supportedClasses.includes(identity.className) ||
-          !supportedBackgrounds.includes(identity.background) || !supportedBirthplaces.includes(identity.birthplace) ||
-          !Number.isInteger(identity.ageYears) || identity.ageYears! < 18 || identity.ageYears! > 80 ||
-          typeof identity.family !== "string" || identity.family.length < 20 ||
-          typeof identity.upbringing !== "string" || identity.upbringing.length < 20 ||
-          !Array.isArray(identity.lifeEvents) || identity.lifeEvents.length < 2 ||
-          !Array.isArray(identity.personalityTraits) || identity.personalityTraits.length < 2 ||
-          typeof identity.ideal !== "string" || identity.ideal.length < 8 ||
-          typeof identity.bond !== "string" || identity.bond.length < 8 ||
-          typeof identity.flaw !== "string" || identity.flaw.length < 8 ||
-          typeof identity.motivation !== "string" || identity.motivation.length < 15 ||
-          typeof identity.preCampaignDesire !== "string" || identity.preCampaignDesire.length < 15) {
-        throw new Error("Личность персонажа не прошла проверку. Мастер должен выбрать имя, народ, класс, предысторию и заполнить личную историю.");
-      }
-      const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
-      const invokeDossierPart = async (operation: string, action: string, extraInstructions: string) => {
-        const { data, error } = await client.functions.invoke("obsidian-gm", {
-          body: {
-            operation,
-            model: "obsidian-free",
-            instructions: extraInstructions,
-            input: JSON.stringify({
-              action,
-              generationSeed: seed,
-              character: generated.character,
-              mechanicalSummary: generated.summary,
-              randomRolls: generated.rolls,
-            }),
-          },
-        });
-        if (error) {
-          let detail = error.message || "Не удалось вызвать мастера.";
-          if ("context" in error && error.context instanceof Response) {
-            const payload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
-            detail = payload?.error?.message ?? detail;
-          }
-          throw new Error(detail);
-        }
-        if (!data?.output_text) throw new Error("Мастер не вернул часть досье: " + action);
+      throw new Error("Проверка через Supabase SDK: " + detail);
+    }
+    if (!data?.output_text) throw new Error("Мастер не вернул часть досье: " + action);
         return JSON.parse(data.output_text) as Record<string, unknown>;
       };
       const appearancePart = await invokeDossierPart(
