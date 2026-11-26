@@ -59,8 +59,8 @@ const rollStat = (random:Random) => {
   const dice=[0,1,2,3].map(()=>random(6)+1).sort((a,b)=>b-a);
   return dice[0]!+dice[1]!+dice[2]!;
 };
-const item = (name:string,quantity:number,notes:string):InventoryItem => ({
-  id:"generated-"+name.toLowerCase().replace(/[^a-zа-я0-9]+/gi,"-"),
+const item = (name:string,quantity:number,notes:string,slot:number):InventoryItem => ({
+  id:"generated-"+name.toLowerCase().replace(/[^a-zа-я0-9]+/gi,"-")+"-"+slot,
   name,quantity,notes,certainty:"KNOWN",location:"CARRIED",startPolicy:"KEEP_FROM_DOSSIER",
 });
 
@@ -78,7 +78,8 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const backgroundData=BACKGROUND_DATA[background];
   const speciesData=SPECIES_DATA[species];
   const elfLineage: ElfLineage | null = species === "Elf" ? choose(["Drow","High Elf","Wood Elf"] as const,random) : null;
-  const elfKeenSkill = species === "Elf" ? choose(["Insight","Perception","Survival"] as const,random) : null;
+  // SRD 5.2.1: Keen Senses grants proficiency in Perception; it is not a choice among skills.
+  const elfKeenSkill = species === "Elf" ? "Perception" : null;
   const rolls=ABILITIES.map((ability)=>({ability,total:rollStat(random)}));
   // Assign rolled scores to abilities in random order, then apply the background's legal ability increases.
   const shuffled=[...ABILITIES];
@@ -113,7 +114,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const attackMod=mod(abilityScores[classData.attackAbility])+proficiency;
   const allGear=[...classData.gear,...backgroundData.gear];
   const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
-  const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes])=>item(String(name),Number(qty),String(notes)));
+  const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes],index)=>item(String(name),Number(qty),String(notes),index));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];
   const featDescription=backgroundData.feat==="Alert"
     ?"Alert: добавляет бонус мастерства к инициативе; после броска инициативы может поменяться местами с инициативой согласного союзника."
