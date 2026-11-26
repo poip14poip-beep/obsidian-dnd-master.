@@ -96,7 +96,11 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const skills=[...new Set([...chosenClassSkills,...backgroundData.skills])];
   if(species==="Elf"&&!skills.includes("Perception")) skills.push("Perception");
   const proficiency=2;
-  const expertiseSkills=className==="Rogue"?[...skills].sort(()=>random(2)-random(2)).slice(0,2):[];
+  const expertisePool=[...skills];
+  const expertiseSkills:string[]=[];
+  if(className==="Rogue"){
+    while(expertiseSkills.length<2){const picked=choose(expertisePool,random);expertisePool.splice(expertisePool.indexOf(picked),1);expertiseSkills.push(picked);}
+  }
   const skillBonuses=skills.map((name)=>({name,bonus:mod(abilityScores[SKILL_ABILITY[name]??"wisdom"])+proficiency+(expertiseSkills.includes(name)?proficiency:0),basis:`${(SKILL_ABILITY[name]??"wisdom").toUpperCase()} + ${expertiseSkills.includes(name)?"экспертность":"владение"}`}));
   const saves=Object.fromEntries(ABILITIES.map((a)=>[a,mod(abilityScores[a])+(classData.saves.includes(a)?proficiency:0)])) as Record<Ability,number>;
   const conMod=mod(abilityScores.constitution);
@@ -108,7 +112,15 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
   const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes])=>item(String(name),Number(qty),String(notes)));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];
-  const featureText=[classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}; навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
+  const featDescription=backgroundData.feat==="Alert"
+    ?"Alert: добавляет бонус мастерства к инициативе; после броска инициативы может поменяться местами с инициативой согласного союзника."
+    :"Savage Attacker: один раз за ход при попадании оружием бросает кости урона дважды и выбирает результат.";
+  const classProficiencies=className==="Fighter"
+    ?"Владение: все доспехи, щиты, простое и воинское оружие."
+    :className==="Rogue"
+      ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
+      :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
+  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
     speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
