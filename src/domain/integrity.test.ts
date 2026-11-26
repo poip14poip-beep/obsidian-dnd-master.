@@ -40,6 +40,28 @@ describe("turn HP validation", () => {
     expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
       .toContain("Изменение валюты GP приводит к отрицательному остатку.");
   });
+
+  it("does not let a turn invent current uses for an unknown class resource", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    state.player_character_state.resources = [{ id: "second-wind", name: "Second Wind", current: null, max: 4, recovery: "Short/Long Rest", certainty: "KNOWN" }];
+    const draft = { ...createEmptyTurnDraft(), summary: "Использование Second Wind", worldOutcome: "Здоровье восстановлено",
+      characterChanges: { inventory: [], resources: [{ name: "Second Wind", current: 3, max: 4, recovery: "Short/Long Rest", certainty: "KNOWN" as const }],
+        conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } } };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
+      .toContain("Нельзя подставить текущее значение ресурса «Second Wind»: оно UNKNOWN. Сначала игрок должен указать фактический остаток.");
+  });
+
+  it("does not let a turn alter a resource maximum without a confirmed character-sheet change", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    state.player_character_state.resources = [{ id: "second-wind", name: "Second Wind", current: 4, max: 4, recovery: "Short/Long Rest", certainty: "KNOWN" }];
+    const draft = { ...createEmptyTurnDraft(), summary: "Использование Second Wind", worldOutcome: "Ресурс изменён",
+      characterChanges: { inventory: [], resources: [{ name: "Second Wind", current: 3, max: 5, recovery: "Short/Long Rest", certainty: "KNOWN" as const }],
+        conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } } };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
+      .toContain("Нельзя менять максимум ресурса «Second Wind» без подтверждённого изменения листа персонажа.");
+  });
   it("rejects healing above the character's maximum HP", () => {
     const state = createInitialCollections();
     state.world_state.setup.confirmed = true;
