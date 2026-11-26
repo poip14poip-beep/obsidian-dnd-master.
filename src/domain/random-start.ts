@@ -1,4 +1,4 @@
-import type { LocationRecord, PlayerCharacterState } from "./types";
+import type { InventoryItem, LocationRecord, PlayerCharacterState } from "./types";
 
 export interface CanonStartCity { name: string; region: string; continent: string; population: number; }
 export interface RandomStartResult {
