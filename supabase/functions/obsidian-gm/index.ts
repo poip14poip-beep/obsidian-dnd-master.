@@ -245,6 +245,7 @@ Deno.serve(async (req: Request) => {
     const parsedInput = JSON.parse(inputText);
     if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText = parsedInput.action.toLowerCase();
   } catch { /* use raw input for matching */ }
+  if (isBiographyRequest) actionText = inputText.toLowerCase();
   const mappedTerms: string[] = [];
   if (/атак|удар|оруж|бой|инициатив/.test(actionText)) mappedTerms.push("attack", "combat", "weapon", "initiative", "attack roll");
   if (/урон|поврежден/.test(actionText)) mappedTerms.push("damage", "damage roll", "resistance", "vulnerability");
@@ -294,7 +295,7 @@ Deno.serve(async (req: Request) => {
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
-    isBiographyRequest ? "Полная хроника Экдрасиля доступна как закрытый источник. Выбирай только подтверждённые факты, не выводи новые факты из общего фэнтези-опыта." : canonContext,
+    isBiographyRequest ? canonContext : canonContext,
     ...(isBiographyRequest ? [
       "РЕЖИМ ГЕНЕРАЦИИ БИОГРАФИИ: не изменяй механику, имя, народ, класс, предысторию, место рождения, источник места рождения или canonBasis, переданные в JSON. Возвращай те же birthplace, birthplaceSource и canonBasis дословно.",
       "Создай индивидуальную, причинно связанную биографию на русском языке. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
