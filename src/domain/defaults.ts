@@ -72,6 +72,7 @@ export function createInitialSources(): SourceDocument[] {
     {
       id: DEFAULT_SOURCE_IDS.SRD,
       playerVisible: false,
+      serverManaged: true,
       title: "SRD 5.2.1",
       type: "SUPPLEMENTAL",
       targetPartition: "SYSTEM_RULES",
@@ -84,7 +85,7 @@ export function createInitialSources(): SourceDocument[] {
       content: "",
       checksum: "EMPTY",
       attachedAt: null,
-      notes: "Необязательный полный текст SRD 5.2.1. Загрузите извлечённый .md/.txt, обработайте, вручную проверьте и включите в контекст. Встроенная краткая справка по основным правилам доступна мастеру и без этого источника.",
+      notes: "Полный текст SRD 5.2.1 хранится отдельно в закрытом серверном хранилище и извлекается мастером по контексту действия. Браузер не получает текст правил.",
       processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
     {
