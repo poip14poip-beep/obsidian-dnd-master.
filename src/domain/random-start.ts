@@ -3,7 +3,7 @@ import { resolveTechnicalDate } from "./technical-calendar";
 
 export interface CanonStartCity { name: string; region: string; continent: string; population: number; }
 export interface RandomStartResult {
-  city: CanonStartCity; scene: string; narrative: string; date: string; hpCurrent: number;
+  city: CanonStartCity; scene: string; placeName: string; narrative: string; date: string; hpCurrent: number;
   healthLabel: string; healthDescription: string; inventory: InventoryItem[];
   replaceInventory: boolean;
   characterPatch: Partial<PlayerCharacterState>; location: Omit<LocationRecord, "id">;
@@ -150,7 +150,7 @@ export function generateRandomStart(
   const city = CITIES[cityIndex]!;
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
-  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000);
+  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000, index(24), index(60));
   const date = technicalDate.formatted;
   const background = options.generateStartingSupplies ? resolveBackground(options.background) : null;
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
@@ -175,7 +175,7 @@ export function generateRandomStart(
   ].join("\n\n");
   const generatedAt = new Date().toISOString();
   return {
-    city, scene: scene.label, narrative, date, hpCurrent, healthLabel: profile.label,
+    city, scene: scene.label, placeName: scene.label, narrative, date, hpCurrent, healthLabel: profile.label,
     healthDescription: profile.description, inventory, replaceInventory: true,
     characterPatch: {
       // A generated starting condition may set current HP, but must never rebuild or overwrite the imported character.
@@ -184,7 +184,7 @@ export function generateRandomStart(
 
     },
     location: {
-      name: city.name, region: city.region,
+      name: city.name, region: city.region, cityName: city.name, placeName: scene.label,
       description: `${sceneText}\n\nСцена сгенерирована для этого прохождения; это не утверждение о более раннем историческом каноне.`,
       certainty: "KNOWN", sourceId: "src-ekdrasil-chronicle",
     },
