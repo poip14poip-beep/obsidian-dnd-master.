@@ -10,6 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
+  "https://dbchfgkdrqpjspptoezh.supabase.co",
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
@@ -28,7 +29,7 @@ const MODEL_ATTEMPTS: ModelAttempt[] = [
 function corsHeaders(origin: string | null): HeadersInit {
   return {
     "Access-Control-Allow-Origin": origin && ALLOWED_ORIGINS.has(origin) ? origin : "null",
-    "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type",
+    "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type, x-supabase-api-version, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
@@ -131,6 +132,18 @@ const originsSchema: JsonRecord = {
     skillOrigins:{type:"array",items:{type:"string"}},
     weaponBackground:{type:"string"},equipmentBackground:{type:"string"}
   },required:["skillOrigins","weaponBackground","equipmentBackground"]
+};
+const compatibilitySchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    status: { type: "string", enum: ["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"] },
+    summary: { type: "string" },
+    supportedFacts: { type: "array", items: { type: "string" } },
+    conflicts: { type: "array", items: { type: "string" } },
+    unknowns: { type: "array", items: { type: "string" } },
+    requiredChanges: { type: "array", items: { type: "string" } }
+  },
+  required: ["status", "summary", "supportedFacts", "conflicts", "unknowns", "requiredChanges"]
 };
 const biographySchema: JsonRecord = {
   type: "object", additionalProperties: false,
@@ -244,6 +257,21 @@ Deno.serve(async (req: Request) => {
     return json({ stored: true, source: data }, 200, cors);
   }
 
+  if (isRecord(body) && body.operation === "CHECK_SERVER_READINESS") {
+    if (!SUPABASE_SERVICE_ROLE_KEY) return json({ ready: false, checks: {}, error: "PRIVATE_VAULT_NOT_CONFIGURED" }, 503, cors);
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data, error } = await serviceClient.rpc("obsidian_api_get_gm_base");
+    if (error || !isRecord(data)) return json({ ready: false, checks: {}, error: "PRIVATE_VAULT_UNAVAILABLE" }, 503, cors);
+    const required = ["OBSIDIAN_MASTER_PROMPT", "SRD_5_2_1", "EKDRASIL_WORLD_BIBLE", "CHARACTER_GENERATION_GUIDE"];
+    const checks = Object.fromEntries(required.map((kind) => {
+      const entry = data[kind];
+      return [kind, isRecord(entry) && typeof entry.content === "string" && entry.content.trim().length > 0];
+    }));
+    const ready = Object.values(checks).every(Boolean);
+    return json({ ready, checks }, ready ? 200 : 503, cors);
+  }
+
+  const isCompatibilityRequest = isRecord(body) && body.operation === "VALIDATE_CHARACTER_COMPATIBILITY";
   const isBiographyRequest = isRecord(body) && ["GENERATE_CHARACTER_BIOGRAPHY","GENERATE_CHARACTER_APPEARANCE","GENERATE_CHARACTER_STORY","GENERATE_CHARACTER_ORIGINS"].includes(String(body.operation));
   const isAppearanceRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_APPEARANCE";
   const isStoryRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_STORY";
@@ -263,13 +291,13 @@ Deno.serve(async (req: Request) => {
   const turnRequestValid = isRecord(requestBody.text) && isRecord(requestBody.text.format) &&
     requestBody.text.format.type === "json_schema" && requestBody.text.format.name === "obsidian_game_turn" &&
     requestBody.text.format.strict === true && isRecord(requestBody.text.format.schema);
-  if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !turnRequestValid)) {
+  if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !isCompatibilityRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
   const inputText = requestBody.input as string;
   const instructionText = requestBody.instructions as string;
-  const schema: JsonRecord = isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
-  const schemaName = isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
+  const schema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const schemaName = isCompatibilityRequest ? "obsidian_character_compatibility" : isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
   }
@@ -330,12 +358,20 @@ Deno.serve(async (req: Request) => {
   if (/перегруз|вес|грузоподъем/.test(actionText)) mappedTerms.push("carrying capacity", "encumbrance", "push", "drag", "lift");
   if (/смерт|умира|без созн/.test(actionText)) mappedTerms.push("death saving throw", "dying", "stabilize");
   if (/класс|боец|воин|особенност/.test(actionText)) mappedTerms.push("fighter", "character classes", "class features");
+  if (isCompatibilityRequest) mappedTerms.push(
+    "character creation", "character sheet", "character origins", "species", "background",
+    "ability scores", "ability score improvement", "proficiency bonus", "saving throw proficiency",
+    "skill proficiency", "class features", "class level", "level advancement", "origin feat",
+    "weapon", "weapon mastery", "armor", "shield", "equipment", "starting equipment",
+    "adventuring gear", "tools", "coins", "carrying capacity", "weight", "encumbrance",
+    "spellcasting", "spells", "magic items", "languages", "hit points", "armor class"
+  );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
   const selectedRules = ruleParagraphs
     .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 12)
+    .slice(0, isCompatibilityRequest ? 36 : 12)
     .map((item) => item.paragraph);
   const rulesContext = selectedRules.length
     ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
@@ -352,6 +388,7 @@ Deno.serve(async (req: Request) => {
         String(campaign.currentInGameDate ?? ""),
         String(campaign.startNarrative ?? ""),
         String(character.speciesAndClass ?? ""),
+        JSON.stringify(parsed.parsedDossier ?? parsed.character ?? parsed.generationBasis ?? {}),
       );
       for (const key of ["knownLocations", "knownNpcs", "knownFactions"] as const) {
         const records = parsed[key];
@@ -377,23 +414,42 @@ Deno.serve(async (req: Request) => {
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
-  const isCharacterGeneration = isBiographyRequest || isIdentityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
-  const orderedModelAttempts = isIdentityRequest || isBiographyRequest
-    ? [MODEL_ATTEMPTS[0]!]
-    : highImpactTurn
-      ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
-      : MODEL_ATTEMPTS;
+  const orderedModelAttempts = isCompatibilityRequest
+    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!]
+    : isIdentityRequest || isBiographyRequest
+      ? [MODEL_ATTEMPTS[0]!]
+      : highImpactTurn
+        ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
+        : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
       : "РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ НЕ ЗАГРУЖЕН. Не выдумывай его содержание; используй только основной промт, подтверждённый канон и SRD.")
     : "";
-  const serverInstructions = isIdentityRequest ? [
+  const serverInstructions = isCompatibilityRequest ? [
+    "ТЫ — ПРОВЕРЯЮЩИЙ МАСТЕР ОБСИДИАН 4.1. Задача — провести технический и канонический аудит импортируемого листа персонажа для допуска в кампанию Экдрасиля. Это отдельная операция подготовки, НЕ игровой ход: не создавай сцену, не продвигай время, не меняй персонажа, не генерируй биографию и не применяй исправления.",
+    "ОБСИДИАН 4.1 — главный управляющий документ. Прочитай его целиком как регламент мастера, особенно разделы 0–2 (иерархия источников и истины), 7.4–7.6 (происхождение, классовые ресурсы, Weapon Mastery), 7.10 (заклинания и предметы), 10 (предметы, экономика и ресурсы), 13 (контроль качества), 16 (начало кампании), 20 (вес и инвентарь), 25 (ограничение точности). Для этой операции применяй только относящиеся к аудиту положения. Не требуй игровой формат ответа из разделов 14/17/23: верни только JSON по схеме проверки.",
+    "ИСТОЧНИКИ И ПРИОРИТЕТ: механика — SRD 5.2.1 и согласованные правила Экдрасиля; факты мира — постоянная хроника Экдрасиля; методика создания персонажа — CHARACTER_GENERATION_GUIDE, но она не заменяет канон и правила. Лист игрока — объект проверки, а не источник истины о мире. Не принимай утверждения досье о городах, фракциях, событиях и NPC за канон без подтверждения хроникой.",
+    "ПРОВЕРЬ ЛИСТ ПО ПОЛЯМ: народ/вид и его особенности; класс, подкласс и уровень; предысторию и Origin Feat; шесть характеристик и модификаторы; бонус мастерства; спасброски и навыки; владения; классовые особенности и ресурсы с уровнями получения/максимумами/восстановлением; оружие, атаки, урон и Weapon Mastery; броню, щит и КБ; экипировку, предметы, магические свойства, настройку и боеприпасы; языки; происхождение и биографию; возраст и место рождения; упомянутые организации, исторические события и NPC; любые дополнительные способности/сопротивления/заклинания/мутации/проклятия.",
+    "МЕХАНИЧЕСКИЙ АУДИТ: сравни значения с точными правилами D&D 2024/SRD 5.2.1. Пересчитай только то, что возможно по входным данным: модификаторы характеристик, proficiency bonus по уровню, спасброски/навыки с учётом владения, КБ по указанной броне и щиту, атаки/урон и условия Weapon Mastery, классовые ресурсы и их восстановление. Проверяй уровни получения особенностей и допустимость комбинаций. Не угадывай неизвестные владения, характеристики, происхождение предметов, вес или текущие остатки ресурсов. Не считай отсутствие текущего значения ресурса конфликтом, если его можно определить при старте кампании.",
+    "КАНОНИЧЕСКИЙ АУДИТ: сверяй место рождения, народ, культуру, географию, социальную среду, исторические события, организации, NPC и любые утверждения о магии с переданными фрагментами хроники. Семь народов Экдрасиля не своди к похожим видам SRD. Не изобретай подтверждение. Неизвестные сведения помечай UNKNOWN, а не конфликтом.",
+    "МАГИЯ ЭКДРАСИЛЯ: свободная повседневная магия отсутствует. Необычные способности, заклинания, магические предметы, мутации и проклятия допустимы только при подтверждённом каноническом/механическом основании и разрешённом пути. Не переносить автоматически расовые заклинания/черты SRD в народы Экдрасиля. Мутация и проклятие различны и редки. Если механика SRD допустима, но канон Экдрасиля не подтверждает её применение к этому персонажу, укажи это как заметку/неизвестность, а не выдумывай лор.",
+    "ИНВЕНТАРЬ И СТАРТ: аудитируй то, что действительно записано в загруженном листе. Не считай отсутствие веса, неизвестное место хранения, неизвестный текущий остаток расходников или денег автоматическим конфликтом: стартовая процедура приложения отдельно нормализует состояние. Не разрешай мастеру переносить в стартовый инвентарь все строки досье автоматически: при старте сохраняются одежда, оружие и броня; прочие предметы подлежат отдельной случайной генерации по предыстории и правилам кампании. В рамках проверки только укажи, что требует нормализации на старте.",
+    "СТАТУСЫ: COMPATIBLE — все существенные проверки пройдены, конфликтов нет; COMPATIBLE_WITH_NOTES — прямых конфликтов нет, но есть неизвестные, неподтверждённые детали или нормализация на старте; INCOMPATIBLE — только доказанное противоречие канону или невозможная/недопустимая механика; INSUFFICIENT_DATA — файл не читается или отсутствуют ключевые поля, без которых невозможно идентифицировать/проверить лист. Не используй INCOMPATIBLE из-за одного UNKNOWN.",
+    "КРИТИЧЕСКИ ВАЖНО: не исправляй, не переписывай, не балансируй и не импортируй персонажа. Не придумывай отсутствующие значения. Для каждого конфликта укажи конкретное поле, значение из досье, подтверждённое правило/факт и причину. В supportedFacts перечисли только подтверждённые совпадения; conflicts — только доказанные противоречия; unknowns — всё неподтверждённое/неизвестное; requiredChanges — только обязательные исправления для допуска. Ответ на русском, строго JSON.",
+    masterPrompt,
+    characterGuideContext,
+    "=== ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1 ===",
+    rulesContext,
+    "=== ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ ХРОНИКИ ЭКДРАСИЛЯ ===",
+    canonContext,
+  ] : isIdentityRequest ? [
     "Ты — генератор личности персонажа для D&D 2024 в мире Экдрасиль. Верни только один компактный JSON строго по схеме. Выбери имя, народ, класс, предысторию, возраст 18–80, гендерное представление и подтверждённый город рождения. Добавь краткую семью, воспитание, ровно два жизненных события, две черты, идеал, привязанность, слабость, мотивацию и личное желание. Все значения короткие, конкретные, на русском. Не пиши длинную прозу, вступление, Markdown или пояснения. Не создавай внешность, экипировку или подробную биографию — это следующий этап.",
     "Канон имеет приоритет: выбирай город только из разрешённого списка и используй только переданные ниже подтверждённые фрагменты. Не придумывай новые города, страны, фракции, исторические события или NPC. Личные семейные обстоятельства можно выдумывать, не выдавая их за мировой канон.",
     canonContext
@@ -450,9 +506,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 5000 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? (attempt.id === MODEL_ATTEMPTS[1]!.id ? 34_000 : 18_000) : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
