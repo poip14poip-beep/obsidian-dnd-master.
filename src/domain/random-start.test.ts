@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateRandomStart, RANDOM_START_CITY_COUNT } from "./random-start";
+import { calculatePlayerInventoryWeight } from "./inventory-weight";
+import { createInitialPlayerCharacterState } from "./defaults";
 
 describe("generateRandomStart", () => {
   it("uses deterministic draws for city and scene while preserving full HP", () => {
@@ -56,6 +58,30 @@ describe("generateRandomStart", () => {
     expect(result.characterPatch.currency).toEqual({ cp: 1, sp: 1, ep: 0, gp: 10, pp: 0 });
     expect(result.characterPatch.background).toBe("Soldier");
     expect(result.narrative).toContain("Случайный стартовый капитал");
+  });
+
+  it("resolves carried-item weights and currency so the standard starting load is calculable", () => {
+    const generated = generateRandomStart(40, () => 0, {
+      background: "Солдат",
+      generateBackgroundKit: true,
+      retainedInventory: [
+        { id: "sword", name: "Длинный меч", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: null },
+        { id: "armor", name: "Кожаный доспех", quantity: 1, notes: "", certainty: "KNOWN", location: "WORN", unitWeightLb: null },
+      ],
+    });
+    const character = {
+      ...createInitialPlayerCharacterState(),
+      abilityScores: { strength: 16, dexterity: 14, constitution: 14, intelligence: 10, wisdom: 12, charisma: 10 },
+      size: "MEDIUM" as const,
+      currency: generated.characterPatch.currency!,
+      inventory: generated.inventory,
+    };
+    const load = calculatePlayerInventoryWeight(character, "STANDARD");
+    expect(load.unknownCarriedItems).toEqual([]);
+    expect(load.unknownLocationItems).toEqual([]);
+    expect(load.currencyWeightLb).not.toBeNull();
+    expect(load.carryingCapacityLb).toBe(240);
+    expect(load.encumbranceStatus).not.toBe("UNKNOWN");
   });
 
   it("always starts with full HP instead of unexplained random injuries", () => {
