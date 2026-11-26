@@ -12,6 +12,7 @@ export const DEFAULT_SOURCE_IDS = {
   GOVERNING: "src-obsidian-41",
   CANON: "src-ekdrasil-chronicle",
   DOSSIER: "src-lia-vein-dossier",
+  SRD: "src-srd-5-2-1",
 } as const;
 
 export function createInitialSources(): SourceDocument[] {
@@ -50,6 +51,23 @@ export function createInitialSources(): SourceDocument[] {
       attachedAt: null,
       notes:
         "Канонический источник сведений о мире. Наличие файла не означает старт кампании и не импортирует старые ходы или локации автоматически.",
+      processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
+    },
+    {
+      id: DEFAULT_SOURCE_IDS.SRD,
+      title: "SRD 5.2.1",
+      type: "SUPPLEMENTAL",
+      targetPartition: "SYSTEM_RULES",
+      originLabel: "Дополнительный источник правил D&D 2024 (полный текст не прикреплён)",
+      contentStatus: "NOT_ATTACHED",
+      reviewStatus: "UNREVIEWED",
+      contextEnabled: false,
+      certainty: "UNKNOWN",
+      fileName: null,
+      content: "",
+      checksum: "EMPTY",
+      attachedAt: null,
+      notes: "Необязательный полный текст SRD 5.2.1. Загрузите извлечённый .md/.txt, обработайте, вручную проверьте и включите в контекст. Встроенная краткая справка по основным правилам доступна мастеру и без этого источника.",
       processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
     {
