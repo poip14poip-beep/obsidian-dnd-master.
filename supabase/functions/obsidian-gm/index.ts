@@ -10,7 +10,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
-    "http://localhost:3000",
+  "http://localhost:3000",
   "http://localhost:5173",
 ]);
 
