@@ -456,7 +456,9 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    ? [MODEL_ATTEMPTS[2]!]
+    // Lore audits use two independent providers in order. A Gemini-only route
+    // made every audit fail whenever that single provider timed out.
+    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
       : highImpactTurn
