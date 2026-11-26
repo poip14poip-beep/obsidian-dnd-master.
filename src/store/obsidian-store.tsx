@@ -899,7 +899,7 @@ export function ObsidianStoreProvider({
     (id, current) => {
       const existing = collections.player_character_state.resources.find((resource) => resource.id === id);
       if (!existing) return { ok: false, error: "Ресурс не найден в листе персонажа.", report: lastIntegrityReport };
-      if (!Number.isInteger(current) || current < 0 || (existing.max !== null && current > existing.max)) {
+      if (current === null || !Number.isInteger(current) || current < 0 || (existing.max !== null && current > existing.max)) {
         return { ok: false, error: "Текущее количество ресурса должно быть целым числом от 0 до его максимума.", report: lastIntegrityReport };
       }
       return updatePlayerCharacter({
