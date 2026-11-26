@@ -6,6 +6,14 @@ type ClassKey = "Fighter" | "Rogue" | "Barbarian";
 type BackgroundKey = "Acolyte" | "Criminal" | "Sage" | "Soldier";
 type SpeciesKey = "Human" | "Elf" | "Dark Elf" | "Gnome" | "Red Dwarf" | "Half-Elf" | "Beastfolk";
 
+const CLASS_LABELS: Record<ClassKey, string> = { Fighter: "Воин", Rogue: "Плут", Barbarian: "Варвар" };
+const SPECIES_LABELS: Record<SpeciesKey, string> = {
+  Human: "Человек", Elf: "Эльф", "Dark Elf": "Тёмный эльф", Gnome: "Гном",
+  "Red Dwarf": "Краснолюд", "Half-Elf": "Полуэльф", Beastfolk: "Зверолюд",
+};
+const BACKGROUND_LABELS: Record<BackgroundKey, string> = {
+  Acolyte: "Послушник", Criminal: "Преступник", Sage: "Мудрец", Soldier: "Солдат",
+};
 const ABILITIES: Ability[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 const SKILL_ABILITY: Record<string, Ability> = {
   Acrobatics:"dexterity", Animal:"wisdom", "Animal Handling":"wisdom", Arcana:"intelligence",
@@ -142,7 +150,10 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     :className==="Rogue"
       ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
-  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
+  const classLabel = CLASS_LABELS[className];
+  const speciesLabel = SPECIES_LABELS[species];
+  const backgroundLabel = BACKGROUND_LABELS[background];
+  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${backgroundLabel}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Народ ${speciesLabel}: ${speciesData.traits}`];
   const origins = [
     ["Вальдгард","Арденхольм","Вальтерра"],["Элион","Солемар","Вальтерра"],["Аэлиндор","Лиарен","Вальтерра"],
     ["Кхар-Дорн","Дорн-Кар","Вальтерра"],["Крейнхольм","Вестмар","Вальтерра"],["Тар-Нер","Неррат","Вальтерра"],
@@ -203,7 +214,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   };
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography:{...biography,skillOrigins:[],weaponBackground:"",equipmentBackground:""},
-    speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
+    speciesAndClass:`${speciesLabel} · ${classLabel}, 1 уровень · Предыстория: ${backgroundLabel}`,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
     abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
     hitDice:`1d${classData.die}`,baseSavingThrowBonuses:saves,savingThrowBonuses:saves,
@@ -211,7 +222,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
-    notes:`Случайный персонаж 1 уровня, создан по адаптированному генератору Экдрасиля на основе D&D 2024 / SRD 5.2.1. Свободная повседневная магия в Экдрасиле отсутствует; сверхъестественные явления редки, ограничены и требуют конкретного источника. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
+    notes:`Случайный персонаж 1 уровня, создан по адаптированному генератору Экдрасиля на основе D&D 2024 / SRD 5.2.1. Свободная повседневная магия в Экдрасиле отсутствует; сверхъестественные явления редки, ограничены и требуют конкретного источника. Класс: ${classLabel}; предыстория: ${backgroundLabel}; народ: ${speciesLabel}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
-  return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
+  return {character,summary:{name:character.name!,className:classLabel,background:backgroundLabel,species:speciesLabel,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }
