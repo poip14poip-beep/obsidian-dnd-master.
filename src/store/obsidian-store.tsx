@@ -187,6 +187,7 @@ export interface ObsidianStoreValue {
     generationRecord: NonNullable<WorldState["startGeneration"]>;
     characterPatch: Partial<Omit<PlayerCharacterState, "schemaVersion" | "stateVersion" | "updatedAt">>;
     inventory: Array<Omit<InventoryItem, "id">>;
+    replaceInventory: boolean;
   }) => PersistVerifyResult;
   saveOpeningScene: (openingScene: string) => PersistVerifyResult;
   updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
@@ -966,7 +967,7 @@ export function ObsidianStoreProvider({
       ...input.characterPatch,
       stateVersion: previousCharacter.stateVersion + 1,
       currentLocationLabel: input.city.name,
-      inventory: input.inventory.length > 0 ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
+      inventory: input.replaceInventory ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
       updatedAt: now,
     };
     const previousWorld = collections.world_state;
