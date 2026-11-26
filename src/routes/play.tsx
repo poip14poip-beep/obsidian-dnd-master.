@@ -504,7 +504,7 @@ function PlayPage() {
       setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
       return;
     }
-    setImportError(auditWarning);
+    setImportError(null);
     const result = updatePlayerCharacter({
       sourceDossierId: dossier.id,
       name: parsed.name ?? "UNKNOWN",
