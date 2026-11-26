@@ -127,6 +127,15 @@ describe("random free-roam start", () => {
   it("atomically initializes the generated city, scene, HP and isolated inventory without creating a quest or game turn", async () => {
     const storage = createMemoryStorage();
     const { result } = await renderCampaignStore(storage);
+    act(() => {
+      const imported = result.current.updatePlayerCharacter({
+        name: "Лия Вейн", nameCertainty: "KNOWN", hpCurrent: 120, hpMax: 184,
+        proficiencyBonus: 6,
+        abilityScores: { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 },
+        inventory: [{ id: "dossier-katana", name: "Катана в ножнах", quantity: 1, notes: "Из досье", certainty: "KNOWN", location: "UNKNOWN" }],
+      });
+      expect(imported.ok).toBe(true);
+    });
     const draws = [7, 2, 1, 18];
     const generated = generateRandomStart((length) => {
       const value = draws.shift();
