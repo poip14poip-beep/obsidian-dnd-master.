@@ -5,6 +5,9 @@ describe("SRD 5.2.1 random character generator", () => {
   it("creates a complete level-one Fighter with calculated defenses, attacks, gear and currency", () => {
     const result = generateRandomCharacter(() => 0);
     expect(result.summary.className).toBe("Fighter");
+    expect(result.summary.classNameRu).toBe("Воин");
+    expect(result.summary.speciesRu).toBe("Человек");
+    expect(result.summary.backgroundRu).toBe("Послушник");
     expect(result.summary.background).toBe("Acolyte");
     expect(result.summary.species).toBe("Human");
     expect(result.character.level).toBe(1);
@@ -24,6 +27,9 @@ describe("SRD 5.2.1 random character generator", () => {
   it("creates a Rogue with Expertise and an Elf's traits", () => {
     const result = generateRandomCharacter((length) => Math.min(1, length - 1));
     expect(result.summary.className).toBe("Rogue");
+    expect(result.summary.classNameRu).toBe("Плут");
+    expect(result.summary.speciesRu).toBe("Эльф");
+    expect(result.summary.backgroundRu).toBe("Преступник");
     expect(result.summary.background).toBe("Criminal");
     expect(result.summary.species).toBe("Elf");
     expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Expertise:");
