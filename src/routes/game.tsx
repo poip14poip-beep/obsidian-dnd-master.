@@ -1,6 +1,6 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle2, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,13 @@ function GamePage() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
   const [explicitConfirm, setExplicitConfirm] = useState(false);
+
+  useEffect(() => {
+    if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
+      setDraftReady(true);
+      setDraftChecked(Boolean(turnDraft.checkedAt));
+    }
+  }, [turnDraft.id, turnDraft.playerIntent, turnDraft.summary, turnDraft.gmNarration, turnDraft.checkedAt]);
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const governingReady = sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
@@ -344,7 +351,9 @@ function GamePage() {
             <CheckCircle2 className="h-4 w-4 text-status-verified" />
             <h2 className="text-sm font-semibold text-foreground">Ход #{nextTurnNumber} готов к проверке</h2>
           </div>
-          <p className="text-xs text-muted-foreground">{turnDraft.summary} · изменение времени: {turnDraft.timeDeltaMinutes} мин · дата после хода: {turnDraft.newInGameDate}</p>
+          <p className="text-xs text-muted-foreground">{turnDraft.summary || "Черновик хода"} · изменение времени: {turnDraft.timeDeltaMinutes} мин · дата после хода: {turnDraft.newInGameDate || worldState.currentInGameDate}</p>
+          {turnDraft.playerIntent && <p className="text-sm text-foreground">Действие: {turnDraft.playerIntent}</p>}
+          {turnDraft.gmNarration && <div className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg bg-background/60 p-3 text-sm leading-relaxed">{turnDraft.gmNarration}</div>}
           {!draftChecked ? (
             <Button type="button" variant="secondary" className="w-full" onClick={handleCheckDraft}>
               <ShieldCheck className="mr-2 h-4 w-4" /> Проверить и подготовить сохранение
