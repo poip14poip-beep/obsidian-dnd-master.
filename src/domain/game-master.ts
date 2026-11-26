@@ -1,5 +1,6 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
+import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -555,7 +556,18 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     }
   }
   if (context.mode === "OPENING") {
-    // Opening narration is deliberately non-mutating. Models can vary harmless
+    if (/technical calendar 1\.0/i.test(context.world.calendarSystem) &&
+      advanceTechnicalDateByElapsedMinutes(turn.newInGameDate, 0) === null) {
+      throw new GameMasterError("Мастер не установил корректную дату и время начала кампании по техническому календарю. Вступительная сцена не сохранена.", "OPENING_DATE_MISSING");
+    }
+    if (!Number.isFinite(turn.environment.temperatureC) ||
+      turn.environment.temperatureCertainty === "UNKNOWN" ||
+      [turn.environment.weather, turn.environment.lighting, turn.environment.visibility, turn.environment.wind,
+        turn.environment.precipitation, turn.environment.ambientSounds, turn.environment.ambientSmells]
+        .some((value) => !value.trim() || value === "UNKNOWN" || value === "НЕ УСТАНОВЛЕНО")) {
+      throw new GameMasterError("Мастер не установил полное стартовое состояние погоды и температуры. Вступительная сцена не сохранена.", "OPENING_ENVIRONMENT_MISSING");
+    }
+    // Opening narration does not mutate the character or advance game time. The GM does initialize
     // environment metadata while describing the scene; never persist that output.
     // Rebuild every state-bearing field from the confirmed campaign snapshot.
     turn = {
