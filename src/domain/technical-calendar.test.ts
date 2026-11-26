@@ -14,28 +14,32 @@ describe("technical Ekdrasil calendar", () => {
     expect(TECHNICAL_CALENDAR_DAYS_PER_YEAR).toBe(365);
   });
 
-  it("formats a regular date and clock time", () => {
-    const date = resolveTechnicalDate(91, 2000, 9, 5);
+  it("formats a regular date without inventing a clock time", () => {
+    const date = resolveTechnicalDate(91, 2000);
     expect(date.season).toBe("Лето");
     expect(date.month).toBe("Солар");
     expect(date.dayOfMonth).toBe(1);
-    expect(date.formatted).toContain("1 Солар, 2000 год · 09:05");
+    expect(date.hour).toBeNull();
+    expect(date.minute).toBeNull();
+    expect(date.formatted).toContain("1 Солар, 2000 год");
+    expect(date.formatted).toContain("время не установлено");
   });
 
   it("keeps five intercalary days outside the twelve months", () => {
     expect(INTERCALARY_DAYS).toHaveLength(5);
-    const first = resolveTechnicalDate(361, 2000, 0, 0);
-    const last = resolveTechnicalDate(365, 2000, 23, 59);
+    const first = resolveTechnicalDate(361, 2000);
+    const last = resolveTechnicalDate(365, 2000);
     expect(first.intercalaryDay).toBe("День Пробуждения");
     expect(first.month).toBeNull();
     expect(last.intercalaryDay).toBe("День Возвращения Света");
     expect(last.season).toBeNull();
+    expect(last.formatted).toContain("время не установлено");
   });
 
-  it("rejects dates and times outside the calendar", () => {
-    expect(() => resolveTechnicalDate(0, 2000, 0, 0)).toThrow();
-    expect(() => resolveTechnicalDate(366, 2000, 0, 0)).toThrow();
-    expect(() => resolveTechnicalDate(1, 2000, 24, 0)).toThrow();
-    expect(() => resolveTechnicalDate(1, 2000, 0, 60)).toThrow();
+  it("rejects invalid day-of-year and year values", () => {
+    expect(() => resolveTechnicalDate(0, 2000)).toThrow();
+    expect(() => resolveTechnicalDate(366, 2000)).toThrow();
+    expect(() => resolveTechnicalDate(1, -1)).toThrow();
+    expect(() => resolveTechnicalDate(1, 2000.5)).toThrow();
   });
 });
