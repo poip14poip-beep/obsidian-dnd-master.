@@ -485,7 +485,19 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
         playerIntent: entry.playerIntent.slice(0, 100),
         worldOutcome: entry.worldOutcome.slice(0, 140),
       })),
-    recentJournal: selectRelevantJournal(context.journal, context.action),
+    recentJournal: selectRelevantJournal(context.journal, context.action).map((entry) => {
+      if (entry.entryType === "TECHNICAL_NOTE") {
+        return { ...entry, text: entry.text.slice(0, 800) };
+      }
+      return {
+        ...entry,
+        summary: entry.summary.slice(0, 180),
+        playerIntent: entry.playerIntent.slice(0, 240),
+        worldOutcome: entry.worldOutcome.slice(0, 360),
+        gmNarration: entry.gmNarration?.slice(0, 1_200),
+        campaignMemory: entry.campaignMemory?.slice(0, 600),
+      };
+    }),
     requirements: [
       ...(context.mode === "OPENING" ? [
         "Это начальная сцена кампании и служебное открытие мира. Она фиксируется как игровой ход #0001, но не является действием персонажа: summary = «Начало кампании — вступительная сцена»; worldOutcome = «Вступительная сцена представлена игроку; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
