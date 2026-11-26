@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
+import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
-type RandomCandidate = { strength:number; dexterity:number; constitution:number; intelligence:number; wisdom:number; charisma:number; classChoice:string; speciesChoice:string };
+
 function secureIndex(length: number): number {
   if (!Number.isInteger(length) || length < 1 || !globalThis.crypto?.getRandomValues) {
     throw new Error("Криптографический генератор случайных чисел недоступен.");
@@ -30,7 +31,7 @@ function PlayPage() {
   const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
-  const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
+  const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
@@ -132,13 +133,14 @@ function PlayPage() {
     worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
   ]);
   const randomize = () => {
-    const stats = { strength: rollAbility(), dexterity: rollAbility(), constitution: rollAbility(), intelligence: rollAbility(), wisdom: rollAbility(), charisma: rollAbility() };
-    const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
-    const speciesList = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
-    const draw = (list: string[]) => list[secureIndex(list.length)]!;
-    setCandidate({ ...stats, classChoice: draw(classes), speciesChoice: draw(speciesList) });
-    setMode("RANDOM");
-    setConfirmed(false);
+    try {
+      const generated = generateRandomCharacter(secureIndex);
+      setCandidate(generated);
+      setMode("RANDOM");
+      setConfirmed(false);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
+    }
   };
   const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
   const confirmDossier = () => {
@@ -183,16 +185,11 @@ function PlayPage() {
   const confirmRandom = () => {
     if (!candidate) return;
     const result = updatePlayerCharacter({
-      name: "Новый персонаж (имя не задано)",
-      nameCertainty: "APPROXIMATE",
-      speciesAndClass: "Случайная заготовка · " + candidate.classChoice + " · " + candidate.speciesChoice,
-      level: 1, hpCurrent: null, hpMax: null, armorClass: null,
-      abilityScores: { strength:candidate.strength, dexterity:candidate.dexterity, constitution:candidate.constitution, intelligence:candidate.intelligence, wisdom:candidate.wisdom, charisma:candidate.charisma },
-      statsCertainty: "APPROXIMATE",
-      currentLocationLabel: "UNKNOWN", conditions: [], inventory: [], resources: [],
-      notes: "Случайная заготовка персонажа. Характеристики получены бросками 4d6 с отбрасыванием наименьшего кубика. Вид и класс выбраны случайно; детали класса, происхождение, навыки, снаряжение, HP, КД и заклинания требуют отдельной подготовки и проверки.",
+      ...candidate.character,
+      notes: candidate.character.notes ?? "",
     });
     if (result.ok) setConfirmed(true);
+    else setImportError(result.error);
   };
   return <main className="mx-auto max-w-3xl space-y-4 p-4 pb-20">
     <header className="space-y-1"><p className="text-xs uppercase tracking-wider text-primary">ОБСИДИАН 4.1 · подготовка</p><h1 className="text-2xl font-bold">Новая кампания</h1><p className="text-sm text-muted-foreground">Выбери, как создать персонажа.</p></header>
@@ -232,11 +229,18 @@ function PlayPage() {
       </>}
     </section>}
     {mode === "RANDOM" && candidate && <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="text-lg font-semibold">Случайная заготовка персонажа</h2>
-      <p className="text-sm text-muted-foreground">Характеристики: 4d6, отбрасывается наименьший кубик. Вид: <strong>{candidate.speciesChoice}</strong> · класс: <strong>{candidate.classChoice}</strong>.</p>
-      <div className="grid grid-cols-3 gap-2">{Object.entries(candidate).filter(([k])=>k!=="level").map(([k,v])=><div className="rounded bg-muted/40 p-2 text-center" key={k}><p className="text-xs text-muted-foreground">{k.toUpperCase()}</p><p className="text-xl font-bold">{v}</p></div>)}</div>
-      <div className="rounded bg-muted/30 p-3 text-sm">HP, КД, навыки, владения, происхождение, снаряжение, заклинания и классовые особенности останутся UNKNOWN до следующего этапа заполнения и проверки по D&D 2024.</div>
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Перебросить характеристики</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить заготовку</Button></div>
+      <h2 className="text-lg font-semibold">Случайный персонаж · 1 уровень</h2>
+      <div className="rounded bg-muted/30 p-3">
+        <p className="text-lg font-semibold">{candidate.summary.name}</p>
+        <p className="text-sm text-muted-foreground">{candidate.summary.species} · {candidate.summary.className} · {candidate.summary.background}</p>
+        <p className="mt-2 text-sm">HP <strong>{candidate.summary.hitPoints}</strong> · КД <strong>{candidate.summary.armorClass}</strong> · Скорость и владения рассчитаны</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2">{Object.entries(candidate.summary.abilityScores).map(([key,value])=><div className="rounded bg-muted/40 p-2 text-center" key={key}><p className="text-xs text-muted-foreground">{key.toUpperCase()}</p><p className="text-xl font-bold">{value}</p></div>)}</div>
+      <div className="space-y-1 text-sm"><p><strong>Навыки:</strong> {candidate.summary.skills.join(", ")}</p><p><strong>Снаряжение:</strong> {candidate.summary.equipment.join("; ")}</p><p><strong>Особенности:</strong> {candidate.summary.features.join(" ")}</p></div>
+      <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
+      <p className="text-xs text-muted-foreground">Генератор сейчас использует поддерживаемые варианты SRD 5.2.1: Боец, Плут, Варвар; Дварф или Эльф; Солдат или Преступник. Персонаж полностью рассчитан в пределах этих вариантов. Другие классы, виды и предыстории пока не включены.</p>
+      {importError && <p role="alert" className="text-xs text-destructive">{importError}</p>}
+      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Создать другого</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить персонажа</Button></div>
     </section>}
     {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Досье персонажа импортировано и сохранено отдельно от канона мира.</div>}
     {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
@@ -245,7 +249,7 @@ function PlayPage() {
       {startError && <p role="alert" className="text-sm text-destructive">{startError}</p>}
       <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
     </section>}
-    {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайная заготовка создана, но ещё не является полным листом персонажа. До запуска нужно завершить её сборку по D&D 2024.</p>}
+    {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайный персонаж ещё не подтверждён. Проверь его параметры и нажми «Подтвердить персонажа».</p>}
     {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/game">Перейти к игре</Link></div>}
     
   </main>;
