@@ -69,6 +69,14 @@ describe("unknown character load data", () => {
     character.size = "LARGE";
     expect(calculatePlayerInventoryWeight(character, "STANDARD").carryingCapacityLb).toBe(600);
   });
+  it("rejects incomplete currency denominations for definitive weight", () => {
+    const character = createInitialPlayerCharacterState();
+    character.size = "MEDIUM";
+    character.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+    character.currency = { cp: 0, sp: 0, ep: 0, gp: 0 } as NonNullable<typeof character.currency>;
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").currencyWeightLb).toBeNull();
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").encumbranceStatus).toBe("UNKNOWN");
+  });
   it("rejects invalid currency balances for definitive weight", () => {
     const character = createInitialPlayerCharacterState();
     character.size = "MEDIUM";
