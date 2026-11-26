@@ -50,6 +50,7 @@ function CharacterPage() {
   const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\.\s*Подробная биография/i, /^6\.\s*Области опыта/i) : ''; 
   const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\.\s*Внешность и экипировка/i, /^2\.\s*Прозвища/i) : '';
   const load = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
+  const campaignStarted = worldState.setup.confirmed;
   const stats = character.abilityScores;
 
   return (
@@ -271,17 +272,22 @@ function CharacterPage() {
       <section className="panel-surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-foreground">Инвентарь ({character.inventory.length})</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Value label="Известный переносимый вес" value={`${load.knownCarriedWeightLb.toFixed(2)} фунт.`} />
-          <Value label="Вес монет" value={load.currencyWeightLb === null ? "Неизвестно" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Известный переносимый вес" value={!campaignStarted && load.unknownCarriedItems.length > 0 ? "Рассчитывается при старте" : `${load.knownCarriedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Вес монет" value={load.currencyWeightLb === null ? campaignStarted ? "Неизвестно" : "Будет рассчитан при старте" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
           <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "Неизвестно" : `${load.carryingCapacityLb} фунт.`} />
-          <Value label="Статус нагрузки" value={load.encumbranceStatus} />
+          <Value label="Статус нагрузки" value={!campaignStarted && load.encumbranceStatus === "UNKNOWN" ? "Будет рассчитан при старте" : ru(load.encumbranceStatus)} />
         </div>
-        {load.unknownCarriedItems.length > 0 && (
+        {!campaignStarted && (
+          <p className="rounded border border-border bg-background/50 p-2 text-xs text-muted-foreground">
+            До запуска это предварительный лист. Масса предметов, стартовый денежный баланс и итоговая нагрузка рассчитываются автоматически при создании кампании; вручную вводить их не нужно.
+          </p>
+        )}
+        {campaignStarted && load.unknownCarriedItems.length > 0 && (
           <p className="rounded border border-status-approx/30 bg-status-approx/5 p-2 text-xs">
             Вес не установлен для предметов: {load.unknownCarriedItems.join(", ")}. Полная нагрузка пока не определена.
           </p>
         )}
-        {load.unknownLocationItems.length > 0 && (
+        {campaignStarted && load.unknownLocationItems.length > 0 && (
           <p className="rounded border border-status-approx/30 bg-status-approx/5 p-2 text-xs">
             Не установлено местоположение: {load.unknownLocationItems.join(", ")}.
           </p>
@@ -296,10 +302,10 @@ function CharacterPage() {
                   <span className="font-medium">{ru(item.name)}</span>
                   <span className="mono-code ml-2 text-xs text-muted-foreground">×{item.quantity}</span>
                   {item.notes && <p className="text-xs text-muted-foreground">{ru(item.notes)}</p>}
-                  {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {item.attunement}</p>}
+                  {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {ru(item.attunement)}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес не установлен" : `${item.unitWeightLb} фунт/ед.`}
+                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? campaignStarted ? "вес не установлен" : "вес рассчитается при старте" : `${item.unitWeightLb} фунт/ед.`}
                 </span>
               </li>
             ))}
@@ -308,7 +314,7 @@ function CharacterPage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Value label="Хранится отдельно" value={`${load.storedWeightLb.toFixed(2)} фунт.`} />
           <Value label="Оставлено" value={`${load.droppedWeightLb.toFixed(2)} фунт.`} />
-          <Value label="Режим нагрузки" value={worldState.encumbranceMode} />
+          <Value label="Режим нагрузки" value={!campaignStarted && worldState.encumbranceMode === "UNSET" ? "Будет STANDARD при старте" : ru(worldState.encumbranceMode)} />
           <Value label="Перегруз" value={load.overCapacity === null ? "Неизвестно" : load.overCapacity ? "Да" : "Нет"} />
         </div>
       </section>
