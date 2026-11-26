@@ -28,7 +28,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, attachSourceContent, verifySource, setSourceContextEnabled, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
+  const { sources, updatePlayerCharacter, attachSourceContent, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
@@ -388,10 +388,6 @@ function PlayPage() {
         processing: processed.processing,
       });
       if (!attached.ok) throw new Error(attached.error);
-      const reviewed = verifySource(source.id);
-      if (!reviewed.ok) throw new Error(reviewed.error);
-      const enabled = setSourceContextEnabled(source.id, true);
-      if (!enabled.ok) throw new Error(enabled.error);
       setImportError(null);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось загрузить лист персонажа.");
