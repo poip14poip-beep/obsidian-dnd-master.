@@ -15,7 +15,7 @@ describe("generateRandomStart", () => {
     expect(result.scene).toBe("На городском рынке");
     expect(result.hpCurrent).toBe(183);
     expect(result.healthLabel).toBe("Незначительные повреждения");
-    expect(result.characterPatch.hpMax).toBe(184);
+    expect(result.characterPatch.hpMax).toBeUndefined();
     expect(result.characterPatch.hpCurrent).toBe(183);
   });
 
