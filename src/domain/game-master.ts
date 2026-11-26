@@ -1,7 +1,7 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldChangeSet, WorldState } from "./types";
 
 export interface GameMasterContext {
-  action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
+  action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
   canonFacts: CanonFact[]; npcs: NpcRecord[]; factions: FactionRecord[]; locations: LocationRecord[];
   journal: Array<GameTurnEntry | TechnicalMessageEntry>;
 }
@@ -330,7 +330,7 @@ function validateReferences(turn: GameMasterTurn, context: GameMasterContext): v
 export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
   if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
-  if (!context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
+  if (context.mode !== "OPENING" && !context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
   const governing = context.sources.find((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED");
   if (!governing) throw new GameMasterError("Не загружен ОБСИДИАН 4.1. Игра заблокирована: мастер не должен работать по пересказу правил.", "GOVERNING_SOURCE_MISSING");
   const dossier = context.sources.find((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED");
@@ -343,15 +343,28 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Игрок может пытаться совершать любые действия. Не запрещай их произвольно: оцени физическую возможность, механику, риски и последствия.",
     "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
+    ...(context.mode === "OPENING" ? [
+      "СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING: запрос не является действием Лии и не продвигает игровое время. Создай атмосферное вступление, описывающее только то, что персонаж может непосредственно воспринимать в подтверждённой стартовой локации. Не заставляй Лию двигаться, говорить, принимать решения или совершать действия. Не назначай квест, заказчика, встречу, угрозу или обязательное событие. Не вводи именованных NPC, новые фракции, локации, факты канона, последствия или таймеры. Не меняй дату, время, HP, ресурсы, инвентарь, деньги, состояние мира или персонажа. Все массивы изменений и бросков должны быть пустыми, все числовые изменения — нулевыми, newLocationId/newLocationKey — null, newInGameDate — точно текущая дата.",
+      "Вступление начинается заголовком «ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001», затем полностью заполни шапку раздела 17 ОБСИДИАН 4.1. Используй только подтверждённые дату и место. Неизвестные месяц, день, время, погоду, освещение и точную локацию обозначай «НЕ УСТАНОВЛЕНО» или UNKNOWN, не угадывай. После сенсорного описания оставь пространство для свободного решения игрока и задай вопрос «Что делает Лия?»."
+    ] : []),
     "Выводи только JSON по заданной схеме. Не включай markdown.",
   ].join("\n\n");
+  const openingCanonQuery = `${context.world.startLocationName} ${context.world.calendarSystem} стартовая точка регион город окружение погода`;
   const user = {
-    action: context.action, campaign: context.world, playerCharacterState: context.character,
+    mode: context.mode ?? "ACTION",
+    action: context.mode === "OPENING" ? "Служебный запрос: сформируй вступительную сцену кампании, не являющуюся действием персонажа." : context.action,
+    campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
-    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
+    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.mode === "OPENING" ? openingCanonQuery : context.action),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations,
     recentJournal: context.journal.slice(-12),
     requirements: [
+      ...(context.mode === "OPENING" ? [
+        "Это только вступительная сцена, не игровой ход и не действие Лии: все изменения состояния строго пустые, время и HP не меняются, бросков нет.",
+        "Не добавляй новые объективные факты мира или сведения о NPC; не создавай квест или событие. Не описывай намерения и действия Лии.",
+        "В narration используй специальный заголовок вступления и все доступные поля шапки ОБСИДИАН 4.1. Недостающие сведения обозначай НЕ УСТАНОВЛЕНО / UNKNOWN.",
+        "summary: «Вступительная сцена кампании». worldOutcome: «Вступление показано; действие персонажа ещё не совершено». consequenceText пустая строка."
+      ] : []),
       "Ответ narration должен соблюдать формат ОБСИДИАН 4.1 и быть на русском языке.",
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
@@ -388,5 +401,16 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
   const turn = validateTurn(parsed);
   validateReferences(turn, context);
+  if (context.mode === "OPENING") {
+    const c = turn.characterChanges;
+    const w = turn.worldChanges;
+    const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
+    const hasWorldChanges = Object.values(w).some((items) => items.length > 0);
+    if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
+      turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null || turn.newLocationKey !== null ||
+      c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged || hasWorldChanges) {
+      throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены; повтори запрос.", "OPENING_MUTATION_REJECTED");
+    }
+  }
   return { turn, model, usage };
 }
