@@ -218,8 +218,10 @@ Deno.serve(async (req: Request) => {
   });
   const { data: authData, error: authError } = await authClient.auth.getUser(tokenMatch[1]);
   if (authError || !authData.user) {
+    console.error("[obsidian-gm] auth rejected", authError?.message ?? "user missing");
     return json({ error: { code: "INVALID_SESSION", message: "Your session is invalid or expired. Sign in again." } }, 401, cors);
   }
+  console.log("[obsidian-gm] authenticated request", { userId: authData.user.id });
   let rawBody: string;
   try { rawBody = await req.text(); }
   catch { return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors); }
@@ -272,6 +274,7 @@ Deno.serve(async (req: Request) => {
   }
 
   const isCompatibilityRequest = isRecord(body) && body.operation === "VALIDATE_CHARACTER_COMPATIBILITY";
+  console.log("[obsidian-gm] operation received", { operation: isRecord(body) ? String(body.operation ?? "GAME_TURN") : "INVALID_BODY", bodyLength: rawBody.length });
   const isBiographyRequest = isRecord(body) && ["GENERATE_CHARACTER_BIOGRAPHY","GENERATE_CHARACTER_APPEARANCE","GENERATE_CHARACTER_STORY","GENERATE_CHARACTER_ORIGINS"].includes(String(body.operation));
   const isAppearanceRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_APPEARANCE";
   const isStoryRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_STORY";
@@ -310,11 +313,13 @@ Deno.serve(async (req: Request) => {
   if (privateSourcesError || !isRecord(privateSources) ||
       !isRecord(privateSources.OBSIDIAN_MASTER_PROMPT) ||
       typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string") {
+    console.error("[obsidian-gm] private source read failed", privateSourcesError?.message ?? "missing master prompt");
     return json({ error: {
       code: "OBSIDIAN_MASTER_PROMPT_NOT_CONFIGURED",
       message: "В постоянную базу мастера ещё не добавлен ОБСИДИАН 4.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
+  console.log("[obsidian-gm] private sources loaded", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : String(requestBody.operation ?? "GAME_TURN"), masterPromptChars: privateSources.OBSIDIAN_MASTER_PROMPT.content.length, rulesChars: isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string" ? privateSources.SRD_5_2_1.content.length : 0, canonChars: isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string" ? privateSources.EKDRASIL_WORLD_BIBLE.content.length : 0 });
   const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
   const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
     ? privateSources.SRD_5_2_1.content : "";
@@ -421,7 +426,7 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!]
+    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
       : highImpactTurn
@@ -492,6 +497,7 @@ Deno.serve(async (req: Request) => {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
+      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -508,8 +514,9 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: isCompatibilityRequest ? 5000 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? (attempt.id === MODEL_ATTEMPTS[1]!.id ? 34_000 : 18_000) : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? (attempt.id === MODEL_ATTEMPTS[1]!.id ? 22_000 : 14_000) : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
+      console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
       let payload: unknown;
       try { payload = JSON.parse(raw); }
@@ -556,6 +563,7 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
       }
+      console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       return json({
         output_text: content,
         model: attempt.id,
@@ -563,6 +571,7 @@ Deno.serve(async (req: Request) => {
       }, 200, cors);
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      console.error("[obsidian-gm] model attempt failed", { model: attempt.id, timedOut, message: error instanceof Error ? error.message : String(error) });
       failures.push(`${attempt.id}: ${timedOut ? "timeout" : "network error"}`);
     }
   }
