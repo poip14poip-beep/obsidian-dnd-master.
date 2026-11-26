@@ -65,7 +65,7 @@ export function createInitialSources(): SourceDocument[] {
       checksum: "EMPTY",
       attachedAt: null,
       notes:
-        "Канонический источник сведений о мире. Наличие файла не означает старт кампании и не импортирует старые ходы или локации автоматически.",
+        "Канон содержит только сведения об Экдрасиле: устройство мира, историю, географию, народы, государства, культуры, фракции и объективные мировые факты. Персонажи игроков, их досье и события отдельных кампаний хранятся отдельно.",
       processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
     {
