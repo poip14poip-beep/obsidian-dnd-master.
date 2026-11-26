@@ -8,22 +8,21 @@ import { extractDossierBasics } from "@/domain/dossier-parser";
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
+type RandomCandidate = { strength:number; dexterity:number; constitution:number; intelligence:number; wisdom:number; charisma:number; classChoice:string; speciesChoice:string };
 function rollAbility(): number {
   const dice = [0, 1, 2, 3].map(() => Math.floor(Math.random() * 6) + 1).sort((a,b) => b-a);
   return dice[0]! + dice[1]! + dice[2]!;
 }
 function PlayPage() {
-  const { sources, character, updatePlayerCharacter, worldState, sessionLog } = useObsidianStore();
+  const { sources, updatePlayerCharacter, worldState, sessionLog } = useObsidianStore();
   const [mode, setMode] = useState<Mode>(null);
-  const [candidate, setCandidate] = useState<Record<string, number> | null>(null);
+  const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
   const randomize = () => {
-    const names = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
-    const species = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
-    const stats = Object.fromEntries(["strength","dexterity","constitution","intelligence","wisdom","charisma"].map(k => [k, rollAbility()]));
+    const stats = { strength: rollAbility(), dexterity: rollAbility(), constitution: rollAbility(), intelligence: rollAbility(), wisdom: rollAbility(), charisma: rollAbility() };
     const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
     const speciesList = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
     const draw = (list: string[]) => list[Math.floor(Math.random() * list.length)]!;
@@ -47,9 +46,9 @@ function PlayPage() {
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
-      hitDice: parsed.hitDice ?? undefined,
-      savingThrowBonuses: parsed.savingThrowBonuses ?? undefined,
-      baseSavingThrowBonuses: parsed.baseSavingThrowBonuses ?? undefined,
+      ...(parsed.hitDice ? { hitDice: parsed.hitDice } : {}),
+      ...(parsed.savingThrowBonuses ? { savingThrowBonuses: parsed.savingThrowBonuses } : {}),
+      ...(parsed.baseSavingThrowBonuses ? { baseSavingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       skillBonuses: parsed.skillBonuses,
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
@@ -65,9 +64,9 @@ function PlayPage() {
     const result = updatePlayerCharacter({
       name: "Новый персонаж (имя не задано)",
       nameCertainty: "APPROXIMATE",
-      speciesAndClass: "Случайная заготовка · " + (String(candidate.classChoice) + " · " + String(candidate.speciesChoice),
+      speciesAndClass: "Случайная заготовка · " + candidate.classChoice + " · " + candidate.speciesChoice,
       level: 1, hpCurrent: null, hpMax: null, armorClass: null,
-      abilityScores: { strength:candidate.strength!, dexterity:candidate.dexterity!, constitution:candidate.constitution!, intelligence:candidate.intelligence!, wisdom:candidate.wisdom!, charisma:candidate.charisma! },
+      abilityScores: { strength:candidate.strength, dexterity:candidate.dexterity, constitution:candidate.constitution, intelligence:candidate.intelligence, wisdom:candidate.wisdom, charisma:candidate.charisma },
       statsCertainty: "APPROXIMATE",
       currentLocationLabel: "UNKNOWN", conditions: [], inventory: [], resources: [],
       notes: "Случайная заготовка персонажа. Характеристики получены бросками 4d6 с отбрасыванием наименьшего кубика. Вид и класс выбраны случайно; детали класса, происхождение, навыки, снаряжение, HP, КД и заклинания требуют отдельной подготовки и проверки.",
