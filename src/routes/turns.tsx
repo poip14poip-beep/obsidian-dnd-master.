@@ -79,6 +79,7 @@ function TurnsPage() {
   const [rollFormula, setRollFormula] = useState("1d20");
   const [rollResult, setRollResult] = useState("");
 
+  const campaignActive = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
 
   async function handleResolveAction(actionOverride?: string) {
@@ -86,7 +87,7 @@ function TurnsPage() {
     setGmError(null);
     setGmTurn(null);
     if (!submittedAction.trim()) return;
-    if (!worldState.setup.confirmed) {
+    if (!campaignActive) {
       setGmError("Сначала завершите обязательную подготовку кампании.");
       return;
     }
@@ -236,7 +237,7 @@ function TurnsPage() {
         </p>
       </header>
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed} />\n\n      <section className="panel-surface space-y-3 p-4">
+      <SetupGateBanner confirmed={campaignActive} />\n\n      <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
@@ -262,7 +263,7 @@ function TurnsPage() {
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
           <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
-        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={handleResolveAction}>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !campaignActive} onClick={handleResolveAction}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
         {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
