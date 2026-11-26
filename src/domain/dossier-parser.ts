@@ -69,7 +69,7 @@ export function extractDossierBasics(text: string): DossierBasics {
       inventoryLocation = "UNKNOWN";
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
     } else if (/^11\.[3-5]\./.test(heading)) {
-      inventoryLocation = "OTHER";
+      inventoryLocation = "UNKNOWN";
       // These are explicit sections of the player dossier, not generated starter gear.
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
     } else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) {
