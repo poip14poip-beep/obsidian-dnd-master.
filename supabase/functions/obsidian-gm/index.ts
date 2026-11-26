@@ -44,13 +44,16 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function compactAuditValue(value: unknown, depth = 0): unknown {
-  if (typeof value === "string") return value.length > 1200 ? value.slice(0, 1200) + "…[сокращено]" : value;
+function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
+  if (typeof value === "string") {
+    const limit = key === "sourceText" ? 16_000 : key === "sourceTextTail" ? 10_000 : 1200;
+    return value.length > limit ? value.slice(0, limit) + "…[сокращено]" : value;
+  }
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
   if (depth >= 6) return "[вложенные данные сокращены]";
   if (Array.isArray(value)) return value.slice(0, 24).map((item) => compactAuditValue(item, depth + 1));
   if (isRecord(value)) {
-    const entries = Object.entries(value).slice(0, 70).map(([key, item]) => [key, compactAuditValue(item, depth + 1)]);
+    const entries = Object.entries(value).slice(0, 70).map(([childKey, item]) => [childKey, compactAuditValue(item, depth + 1, childKey)]);
     return Object.fromEntries(entries);
   }
   return String(value);
@@ -315,7 +318,7 @@ Deno.serve(async (req: Request) => {
     try {
       const parsedInput = JSON.parse(inputText);
       inputText = JSON.stringify(compactAuditValue(parsedInput));
-      if (inputText.length > 18_000) inputText = inputText.slice(0, 18_000);
+      if (inputText.length > 34_000) inputText = inputText.slice(0, 34_000);
     } catch { /* keep the original input so malformed dossiers are reported accurately */ }
   }
   const instructionText = requestBody.instructions as string;
@@ -459,6 +462,9 @@ Deno.serve(async (req: Request) => {
     : "";
   const serverInstructions = isCompatibilityRequest ? [
     "Ты — аудитор ОБСИДИАН 4.1. Проверь импортируемый лист D&D 2024 для допуска в кампанию Экдрасиля. Это только аудит: не начинай игру, не меняй, не исправляй и не импортируй персонажа.",
+    "КРИТИЧЕСКИ ВАЖНО: во входе могут быть parsedDossier, sourceText и sourceTextTail. Сверяй каждый вывод с полным исходным текстом досье, а не только с машинно извлечёнными полями. sourceText/sourceTextTail — первичные доказательства; parsedDossier — вспомогательный парсинг, который может ошибаться. Не объявляй конфликт, если поле подтверждено в исходном досье. Не подменяй авторские названия предметов стандартными предметами D&D.",
+    "Явно описанные и согласованные в досье домашние правила кампании не являются нарушением SRD сами по себе. Уровень 21 = Fighter 20 + один эпический уровень «Память веков» — явно одобренное домашнее расширение: классифицируй как CAMPAIGN_HOMEBREW/заметку, не как INCOMPATIBLE; не добавляй пятую атаку, PB или классовые особенности. Возраст 1879 лет при рождении в 121 году и текущем 2000 году, внешний возраст около 21 — авторская биография и остановка старения, не арифметическая ошибка и не автоматический конфликт с каноном. Возвращение через 168 часов после смерти — явно описанное личное проклятие: не объявляй его воскрешением заклинанием или стандартной расовой способностью; учитывай точные ограничения и неизвестные из досье.",
+    "Предметы проверяй по точным названиям и разделам источника: «Кожа Последнего Часа» — авторский проклятый лёгкий доспех с описанным происхождением и свойствами; Cloak of Protection и Boots of Elvenkind указаны в досье как предметы с официальными источниками; не переименовывай доспех в Studded Leather +3. Наличие авторского предмета с подробным происхождением не равно отсутствию источника. Если точная деталь есть в исходном досье, отнеси её к supportedFacts, а не conflicts.",
     "Приоритет: механика — SRD 5.2.1 и согласованные правила Экдрасиля; факты мира — только переданная хроника; лист персонажа — объект проверки. Не выдумывай канон.",
     "Проверь доступные поля: народ и особенности; класс/подкласс/уровень/предыстория/Origin Feat; характеристики и модификаторы; proficiency bonus; навыки/спасброски/владения; классовые ресурсы и уровни получения; оружие, атаки, урон, Weapon Mastery; броню, щит, КБ; предметы, магию, боеприпасы, языки; происхождение, биографию, места, организации, NPC и события.",
     "Пересчитывай только выводимое из листа. Не угадывай неизвестное. UNKNOWN не конфликт. Неизвестные вес, деньги, остатки ресурсов и хранение не блокируют проверку: приложение нормализует старт отдельно. При старте сохраняются одежда, оружие и броня; прочий инвентарь генерируется отдельно по предыстории.",
