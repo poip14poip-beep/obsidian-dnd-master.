@@ -1,0 +1,11 @@
+project_id = "dbchfgkdrqpjspptoezh"
+
+[functions.obsidian-api]
+verify_jwt = true
+
+[functions.obsidian-app]
+verify_jwt = false
+
+# This function verifies every Bearer token itself with Supabase Auth getUser().
+[functions.obsidian-gm]
+verify_jwt = false
