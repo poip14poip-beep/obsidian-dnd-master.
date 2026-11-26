@@ -69,6 +69,11 @@ function OverviewPage() {
         </p>
       </header>
 
+      <Link to="/play" className="panel-surface flex items-center justify-between gap-3 border-primary/40 p-4 hover:bg-accent">
+        <span><strong className="block text-sm text-foreground">Играть в Экдрасиль</strong><span className="text-xs text-muted-foreground">Выбрать досье или создать случайного персонажа · предварительная проверка</span></span>
+        <span className="text-sm font-semibold text-primary">Начать →</span>
+      </Link>
+
       {lastStorageError && (
         <div
           role="alert"
