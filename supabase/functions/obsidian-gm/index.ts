@@ -459,9 +459,13 @@ Deno.serve(async (req: Request) => {
   const orderedModelAttempts = isCompatibilityRequest
     // Keep the audit inside the mobile request window; DeepSeek first, Claude fallback.
     ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
-    : isIdentityRequest || isBiographyRequest
-      ? [MODEL_ATTEMPTS[0]!]
-      : highImpactTurn
+    : isStoryRequest
+      // Recent-history prose is short; use the stronger narrative provider first
+      // and an independent provider as a bounded fallback.
+      ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[2]!]
+      : isIdentityRequest || isBiographyRequest
+        ? [MODEL_ATTEMPTS[0]!]
+        : highImpactTurn
         ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
         : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
@@ -540,9 +544,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isCompatibilityRequest ? 1400 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 1400 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1400 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
