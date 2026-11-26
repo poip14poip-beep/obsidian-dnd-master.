@@ -1,6 +1,7 @@
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
   name: string; quantity: number; notes: string; location: "WORN" | "OTHER"; certainty: "KNOWN" | "APPROXIMATE";
+  startPolicy: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
 export interface DossierBasics {
   name: string | null;
@@ -76,7 +77,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     if (!name) continue;
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
-    inventory.push({ name, quantity, notes, location: inventoryLocation,
+    inventory.push({ name, quantity, notes, location: inventoryLocation, startPolicy: inventoryStartPolicy,
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
   const section = (startPrefix: string, endPrefix: string): string[] => {
