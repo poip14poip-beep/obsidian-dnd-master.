@@ -143,14 +143,14 @@ export function validateTurnDraft(
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
     for (const knowledge of change.playerKnowledgeAdditions) {
-      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание Лии о NPC «${change.name}» должно иметь содержание и канал получения.`);
+      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание персонажа о NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
   }
   const existingQuests = worldState.quests ?? [];
   for (const change of draft.questChanges ?? []) {
     const existing = existingQuests.find((quest) => quest.title.toLocaleLowerCase() === change.title.toLocaleLowerCase());
     if (change.action === "CREATE" && existing) errors.push(`Задание «${change.title}» уже существует; используйте UPDATE.`);
-    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить неизвестное Лии задание «${change.title}».`);
+    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить неизвестное персонажу задание «${change.title}».`);
     if (!change.title.trim() || !change.sourcePath.trim() || !change.description.trim()) errors.push("Запись задания должна иметь название, описание и источник получения информации.");
   }
   if (draft.environment) {
