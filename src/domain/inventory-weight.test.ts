@@ -4,6 +4,7 @@ import { calculatePlayerInventoryWeight } from "./inventory-weight";
 describe("player inventory weight", () => {
   it("includes carried and worn items and currency, but excludes stored and dropped items", () => {
     const character = createInitialPlayerCharacterState();
+    character.size = "MEDIUM";
     character.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
     character.currency = { cp: 0, sp: 0, ep: 0, gp: 50, pp: 0 };
     character.inventory = [
@@ -22,6 +23,7 @@ describe("player inventory weight", () => {
   });
   it("uses variant encumbrance thresholds when selected", () => {
     const character = createInitialPlayerCharacterState();
+    character.size = "MEDIUM";
     character.abilityScores = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 };
     character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
     character.inventory = [{ id: "x", name: "Груз", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: 110 }];
@@ -45,5 +47,34 @@ describe("player inventory weight", () => {
     const character = createInitialPlayerCharacterState();
     character.inventory = [{ id: "x", name: "Рюкзак", quantity: 1, notes: "", certainty: "UNKNOWN", location: "CARRIED", unitWeightLb: null }];
     expect(calculatePlayerInventoryWeight(character).overCapacity).toBeNull();
+  });
+});
+
+describe("unknown character load data", () => {
+  it("does not assume an omitted inventory location is carried", () => {
+    const character = createInitialPlayerCharacterState();
+    character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    character.inventory = [{ id: "u", name: "Неуточнённый предмет", quantity: 1, notes: "", certainty: "KNOWN", unitWeightLb: 2 }];
+    const result = calculatePlayerInventoryWeight(character, "STANDARD");
+    expect(result.unknownLocationItems).toEqual(["Неуточнённый предмет"]);
+    expect(result.encumbranceStatus).toBe("UNKNOWN");
+  });
+  it("requires confirmed size before calculating carrying capacity", () => {
+    const character = createInitialPlayerCharacterState();
+    character.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+    character.currency = { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").carryingCapacityLb).toBeNull();
+    character.size = "SMALL";
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").carryingCapacityLb).toBe(300);
+    character.size = "LARGE";
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").carryingCapacityLb).toBe(600);
+  });
+  it("rejects invalid currency balances for definitive weight", () => {
+    const character = createInitialPlayerCharacterState();
+    character.size = "MEDIUM";
+    character.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+    character.currency = { cp: -1, sp: 0, ep: 0, gp: 0, pp: 0 };
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").currencyWeightLb).toBeNull();
+    expect(calculatePlayerInventoryWeight(character, "STANDARD").encumbranceStatus).toBe("UNKNOWN");
   });
 });
