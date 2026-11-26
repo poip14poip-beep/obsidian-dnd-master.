@@ -26,6 +26,8 @@ function formatEnvironment(environment: WorldEnvironment | undefined): string[] 
     "ВИДИМОСТЬ: НЕ УСТАНОВЛЕНО",
     "ВЕТЕР: НЕ УСТАНОВЛЕНО",
     "ОСАДКИ: НЕ УСТАНОВЛЕНО",
+    "ФОНОВЫЕ ЗВУКИ: НЕ УСТАНОВЛЕНО",
+    "ЗАПАХИ: НЕ УСТАНОВЛЕНО",
   ];
   const temp = env.temperatureC === null || env.temperatureC === undefined
     ? "НЕ УСТАНОВЛЕНО"
@@ -37,6 +39,8 @@ function formatEnvironment(environment: WorldEnvironment | undefined): string[] 
     `ВИДИМОСТЬ: ${known(env.visibility)}`,
     `ВЕТЕР: ${known(env.wind)}`,
     `ОСАДКИ: ${known(env.precipitation)}`,
+    `ФОНОВЫЕ ЗВУКИ: ${known(env.ambientSounds)}`,
+    `ЗАПАХИ: ${known(env.ambientSmells)}`,
   ];
 }
 
