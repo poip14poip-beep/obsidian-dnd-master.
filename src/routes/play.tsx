@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
@@ -13,6 +13,7 @@ import { getSupabaseAuthClient, readSupabaseEnv } from "@/lib/supabase-auth";
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
+type StartStage = "CHARACTER" | "PARAMETERS" | "CONFIRM" | null;
 
 function secureIndex(length: number): number {
   if (!Number.isInteger(length) || length < 1 || !globalThis.crypto?.getRandomValues) {
@@ -34,6 +35,8 @@ function PlayPage() {
   const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
+  const [pendingStart, setPendingStart] = useState<ReturnType<typeof generateRandomStart> | null>(null);
+  const [startStage, setStartStage] = useState<StartStage>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
@@ -72,6 +75,8 @@ function PlayPage() {
     setImportError(null);
     setStartError(null);
     setStartPending(false);
+    setPendingStart(null);
+    setStartStage(null);
   }
 
   function handleStartCampaign() {
@@ -86,25 +91,42 @@ function PlayPage() {
       return;
     }
 
-    setStartPending(true);
     try {
-      const generated = generateRandomStart();
-      const characterResult = updatePlayerCharacter({
-        ...generated.characterPatch,
-        inventory: generated.inventory,
+      setPendingStart(generateRandomStart());
+      setStartStage("CHARACTER");
+      setStartPending(true);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : "Не удалось создать старт кампании.");
+    }
+  }
+
+  useEffect(() => {
+    if (!pendingStart || !startStage) return;
+
+    if (startStage === "CHARACTER") {
+      const result = updatePlayerCharacter({
+        ...pendingStart.characterPatch,
+        inventory: pendingStart.inventory,
       });
-      if (!characterResult.ok) {
-        setStartError(characterResult.error);
+      if (!result.ok) {
+        setStartError(result.error);
+        setPendingStart(null);
+        setStartStage(null);
+        setStartPending(false);
         return;
       }
+      setStartStage("PARAMETERS");
+      return;
+    }
 
-      const parametersResult = updateCampaignParameters({
+    if (startStage === "PARAMETERS") {
+      const result = updateCampaignParameters({
         campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
         calendarSystem: worldState.calendarSystem === "UNKNOWN"
           ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
           : worldState.calendarSystem,
-        startInGameDate: generated.date,
-        startLocationName: generated.city.name,
+        startInGameDate: pendingStart.date,
+        startLocationName: pendingStart.city.name,
         encumbranceMode: "STANDARD",
         setupPatch: {
           sourcesConfirmed: true,
@@ -114,23 +136,33 @@ function PlayPage() {
           noAutoImportAcknowledged: true,
         },
       });
-      if (!parametersResult.ok) {
-        setStartError(parametersResult.error);
+      if (!result.ok) {
+        setStartError(result.error);
+        setPendingStart(null);
+        setStartStage(null);
+        setStartPending(false);
         return;
       }
-
-      const confirmation = confirmCampaignSetup();
-      if (!confirmation.ok) {
-        setStartError(confirmation.error);
-        return;
-      }
-      void navigate({ to: "/game" });
-    } catch (error) {
-      setStartError(error instanceof Error ? error.message : "Не удалось создать старт кампании.");
-    } finally {
-      setStartPending(false);
+      setStartStage("CONFIRM");
+      return;
     }
-  }
+
+    const result = confirmCampaignSetup();
+    if (!result.ok) {
+      setStartError(result.error);
+      setPendingStart(null);
+      setStartStage(null);
+      setStartPending(false);
+      return;
+    }
+    setPendingStart(null);
+    setStartStage(null);
+    setStartPending(false);
+    void navigate({ to: "/game" });
+  }, [
+    pendingStart, startStage, worldState.campaignName, worldState.calendarSystem,
+    updatePlayerCharacter, updateCampaignParameters, confirmCampaignSetup, navigate,
+  ]);
   const randomize = () => {
     try {
       const generated = generateRandomCharacter(secureIndex);
