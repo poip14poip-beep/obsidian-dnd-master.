@@ -67,6 +67,52 @@ describe("player dossier summary extraction", () => {
       { name: "Indomitable", current: null, max: 3, recovery: "UNKNOWN", certainty: "KNOWN" },
     ]);
   });
+  it("parses aligned DOCX table columns without inventing current HP", () => {
+    const result = extractDossierBasics([
+      "ЛИЯ ВЕЙН",
+      "Родилась: 121 год. Возраст в 2000 году: 1879 лет. Человек.",
+      "Fighter 20 / Champion + один эпический уровень кампании.",
+      "Общий уровень                                           21 (домашнее эпическое расширение)",
+      "Классовые уровни                                        Fighter 20",
+      "Бонус мастерства                                        +6",
+      "HP                                                      184",
+      "Кость хитов                                             20d10",
+      "Скорость                                                30 футов",
+      "КБ                                                      КБ 20",
+      "Сила               Ловкость          Телосложение       Интеллект          Мудрость            Харизма",
+      "20 (+5)            16 (+3)           16 (+3)            18 (+4)            14 (+2)             16 (+3)",
+      "## 9.2. Спасброски",
+      "+11                +3                +9                 +4                 +2                  +3",
+      "## 9.3. Навыки и пассивные показатели",
+      "Атлетика                             +11                                   Сила +5, владение +6; Soldier",
+      "## 9.4. Fighter 20: способности по уровням",
+      "1                                                       Fighting Style, Second Wind, Weapon Mastery",
+      "## 9.5. Боевые стили и оружие",
+      "Катана (Longsword)                   +11                               1d8+5 одной рукой; 1d10+5 двумя руками             Sap",
+      "## 11.1. Надетые предметы",
+      "1                                      Кожа Последнего Часа                Авторский проклятый лёгкий доспех",
+      "## 11.2. Оружие и обслуживание",
+      "1                                      Катана в ножнах                     Основное оружие",
+      "Second Wind: четыре использования. Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
+    ].join("\\n"));
+
+    expect(result.name).toBe("ЛИЯ ВЕЙН");
+    expect(result.level).toBe(21);
+    expect(result.classLevel).toBe(20);
+    expect(result.epicCampaignLevels).toBe(1);
+    expect(result.hitPointMaximum).toBe(184);
+    expect(result.armorClass).toBe(20);
+    expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
+    expect(result.proficiencyBonus).toBe(6);
+    expect(result.speedFeet).toBe(30);
+    expect(result.hitDice).toBe("20d10");
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
+    expect(result.classFeaturesByLevel[0]?.level).toBe(1);
+    expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
+    expect(result.inventory).toHaveLength(2);
+    expect(result.resources.map((resource) => resource.max)).toEqual([4, 2, 3]);
+  });
   it("does not invent missing values", () => {
     const result = extractDossierBasics("Персонаж\nБиография без игровых характеристик.");
     expect(result.hitPointMaximum).toBeNull();

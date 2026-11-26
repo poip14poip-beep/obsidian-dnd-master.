@@ -234,9 +234,8 @@ export async function applyEkdrasilSeed(
         startLocationName: collections.world_state.startLocationName || "UNKNOWN",
         setup: {
           ...collections.world_state.setup,
-          sourcesConfirmed: allRequiredSourcesReady,
-          confirmed: false,
-          confirmedAt: null,
+          // Attaching trusted source documents is not the same as the player's final setup acknowledgement.
+          sourcesConfirmed: collections.world_state.setup.sourcesConfirmed,
         },
         updatedAt: now,
       }
