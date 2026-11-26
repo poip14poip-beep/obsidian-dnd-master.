@@ -267,6 +267,7 @@ export interface CharacterBiography {
   bond: string;
   flaw: string;
   motivation: string;
+  preCampaignDesire: string;
   biography: string;
   skillOrigins: string[];
   weaponBackground: string;
