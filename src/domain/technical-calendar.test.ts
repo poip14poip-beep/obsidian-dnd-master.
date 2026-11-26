@@ -15,15 +15,20 @@ describe("technical Ekdrasil calendar", () => {
     expect(TECHNICAL_CALENDAR_DAYS_PER_YEAR).toBe(365);
   });
 
-  it("formats a regular date without inventing a clock time", () => {
-    const date = resolveTechnicalDate(91, 2000);
+  it("formats a regular date with a campaign-start clock", () => {
+    const date = resolveTechnicalDate(91, 2000, 9, 5);
     expect(date.season).toBe("Лето");
     expect(date.month).toBe("Солар");
     expect(date.dayOfMonth).toBe(1);
-    expect(date.hour).toBeNull();
-    expect(date.minute).toBeNull();
-    expect(date.formatted).toContain("1 Солар, 2000 год");
-    expect(date.formatted).toContain("время не установлено");
+    expect(date.hour).toBe(9);
+    expect(date.minute).toBe(5);
+    expect(date.formatted).toContain("1 Солар, 2000 год · 09:05");
+  });
+
+  it("keeps time unknown until the campaign start clock is assigned", () => {
+    expect(resolveTechnicalDate(91, 2000).formatted).toContain("время не установлено");
+    expect(() => resolveTechnicalDate(1, 2000, 24, 0)).toThrow();
+    expect(() => resolveTechnicalDate(1, 2000, 9, null)).toThrow();
   });
 
   it("keeps five intercalary days outside the twelve months", () => {
@@ -44,11 +49,10 @@ describe("technical Ekdrasil calendar", () => {
     expect(() => resolveTechnicalDate(1, 2000.5)).toThrow();
   });
 
-  it("advances the date only after full 24-hour periods since campaign start", () => {
-    const start = resolveTechnicalDate(91, 2000).formatted;
-    expect(advanceTechnicalDateByElapsedMinutes(start, 1439)).toContain("1 Солар, 2000 год");
-    expect(advanceTechnicalDateByElapsedMinutes(start, 1440)).toContain("2 Солар, 2000 год");
-    expect(advanceTechnicalDateByElapsedMinutes(start, 2880)).toContain("3 Солар, 2000 год");
+  it("advances the clock and rolls over the date", () => {
+    const start = resolveTechnicalDate(91, 2000, 23, 30).formatted;
+    expect(advanceTechnicalDateByElapsedMinutes(start, 45)).toContain("1 Солар, 2000 год · 00:15");
+    expect(advanceTechnicalDateByElapsedMinutes(start, 1440)).toContain("2 Солар, 2000 год · 23:30");
   });
 
   it("crosses month, intercalary-day, and year boundaries", () => {
