@@ -170,7 +170,7 @@ export function generateRandomStart(
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
   const date = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
-  const background = resolveBackground(options.background, index);
+  const background = options.generateBackgroundKit ? resolveBackground(options.background, index) : "Acolyte";
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
   const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
   const alreadyHasClothing = retainedInventory.some((item) => /одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name));
