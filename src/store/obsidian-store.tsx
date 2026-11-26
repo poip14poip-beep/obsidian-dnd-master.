@@ -1136,6 +1136,11 @@ export function ObsidianStoreProvider({
       pc.level === null ? "уровень" : "",
       pc.proficiencyBonus === null || pc.proficiencyBonus === undefined ? "бонус мастерства" : "",
       !pc.abilityScores ? "шесть характеристик" : "",
+      !pc.speciesAndClass.trim() || pc.speciesAndClass === "UNKNOWN" ? "вид и класс" : "",
+      !pc.baseSavingThrowBonuses ? "базовые спасброски" : "",
+      !pc.skillBonuses?.length ? "владения навыками" : "",
+      !pc.weaponAttacks?.length ? "параметры атак" : "",
+      !pc.classFeaturesByLevel?.length ? "классовые особенности" : "",
     ].filter(Boolean);
     if (missingCombatFields.length) {
       return { ok: false, error: "Лист персонажа не готов к механическому разрешению действий: не заполнено — " +
