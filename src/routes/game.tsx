@@ -386,7 +386,7 @@ function GamePage() {
         <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер · вступление</p>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{opening}</div>
-          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Это вступительная сцена, а не ход. Игровое время не продвинуто. Первое действие персонажа будет записано как ход #0001.</p>
+          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Вступительная сцена записана в журнал как ход #0001. Игровое время не продвинуто. Следующее действие персонажа будет ходом #0002.</p>
         </article>
       )}
 
