@@ -201,7 +201,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
   };
   const character:Partial<PlayerCharacterState>={
-    name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography,
+    name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography:{...biography,skillOrigins:[],weaponBackground:"",equipmentBackground:""},
     speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
     abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
