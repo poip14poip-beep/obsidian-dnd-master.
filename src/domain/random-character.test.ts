@@ -44,6 +44,36 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(result.character.currency?.gp).toBeGreaterThanOrEqual(8);
     expect(result.character.skillBonuses?.find((skill) => skill.name === "Perception")?.basis).toContain("владение");
   });
+  it("uses the master-selected identity while recalculating every mechanical field", () => {
+    const result = generateRandomCharacter(() => 0, {
+      name: "Эллариэн Вейр",
+      species: "Elf",
+      className: "Rogue",
+      background: "Sage",
+      birthplace: "Элион",
+      ageYears: 34,
+      genderPresentation: "женщина",
+      family: "Она выросла в семье переписчиков при городском архиве, где каждый член семьи отвечал за отдельную часть большого собрания документов.",
+      upbringing: "С детства её учили бережно обращаться с рукописями, сверять даты и не делать выводов по одному свидетельству.",
+      lifeEvents: ["После ошибки в копии договора ей пришлось несколько лет восстанавливать доверие заказчиков.", "Позднее она покинула архив и стала искать независимую работу."],
+      personalityTraits: ["внимательная к деталям", "ироничная", "недоверчивая к громким обещаниям"],
+      ideal: "Правда должна выдерживать проверку источниками.",
+      bond: "Хранит письмо наставницы, которое не решается перечитать.",
+      flaw: "Иногда слишком долго проверяет очевидное.",
+      motivation: "Хочет доказать, что может самостоятельно раскрыть старую подделку.",
+      preCampaignDesire: "Найти работу, которая позволит ей добраться до закрытого архива в Элионе."
+    });
+    expect(result.character.name).toBe("Эллариэн Вейр");
+    expect(result.summary.species).toBe("Elf");
+    expect(result.summary.className).toBe("Rogue");
+    expect(result.summary.background).toBe("Sage");
+    expect(result.character.biography?.birthplace).toContain("Элион");
+    expect(result.character.biography?.ageYears).toBe(34);
+    expect(result.character.biography?.family).toContain("переписчиков");
+    expect(result.character.armorClass).toBe(11 + Math.floor(((result.character.abilityScores?.dexterity ?? 10) - 10) / 2));
+    expect(result.character.weaponAttacks?.[0]?.weapon).toBe("Короткий меч");
+  });
+
 });
 
 
