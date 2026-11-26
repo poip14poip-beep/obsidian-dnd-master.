@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { extractDossierBasics } from "./dossier-parser";
 describe("player dossier summary extraction", () => {
@@ -116,6 +117,27 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory).toHaveLength(2);
     expect(result.inventory.every((item) => item.startPolicy === "KEEP_FROM_DOSSIER")).toBe(true);
     expect(result.resources.map((resource) => resource.max)).toEqual([4, 2, 3]);
+  });
+
+  it("parses the complete bundled Lii dossier without inventing live state", () => {
+    const dossier = readFileSync(new URL("../../public/seed/Liya_Vein_Full_Dossier_Ekdrasil.md", import.meta.url), "utf8");
+    const result = extractDossierBasics(dossier);
+    expect(result.name).toBe("ЛИЯ ВЕЙН");
+    expect(result.level).toBe(21);
+    expect(result.classLevel).toBe(20);
+    expect(result.hitPointMaximum).toBe(184);
+    expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
+    expect(result.proficiencyBonus).toBe(6);
+    expect(result.speedFeet).toBe(30);
+    expect(result.hitDice).toBe("20d10");
+    expect(result.skillBonuses).toHaveLength(8);
+    expect(result.weaponAttacks).toHaveLength(2);
+    expect(result.resources.map((resource) => [resource.name, resource.max])).toEqual([
+      ["Second Wind", 4], ["Action Surge", 2], ["Indomitable", 3],
+    ]);
+    expect(result.inventory.some((item) => item.name.includes("Кожа Последнего Часа") && item.location === "WORN")).toBe(true);
+    expect(result.inventory.some((item) => item.location === "UNKNOWN")).toBe(true);
+    expect(result.inventory.every((item) => item.startPolicy === "KEEP_FROM_DOSSIER")).toBe(true);
   });
   it("does not invent missing values", () => {
     const result = extractDossierBasics("Персонаж\nБиография без игровых характеристик.");
