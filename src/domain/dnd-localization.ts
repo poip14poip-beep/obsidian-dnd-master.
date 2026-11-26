@@ -7,11 +7,9 @@ const ITEM_TRANSLATIONS: Record<string, string> = {
   "belt of giant strength": "Пояс силы великана",
   "bracers of defense": "Наручи защиты",
   "cloak of displacement": "Плащ смещения",
-  "cloak of the bat": "Плащ летучей мыши",
   "boots of speed": "Сапоги скорости",
   "boots of striding and springing": "Сапоги ходьбы и прыжков",
   "gloves of thievery": "Перчатки воровства",
-  "gloves of missile snaring": "Перчатки ловли снарядов",
   "gauntlets of ogre power": "Рукавицы силы огра",
   "helm of telepathy": "Шлем телепатии",
   "headband of intellect": "Повязка интеллекта",
@@ -92,15 +90,15 @@ const SKILL_DESCRIPTIONS: Record<string, string> = {
 };
 
 function normalizeLookup(value: string): string {
-  return value.trim().toLocaleLowerCase("ru-RU").replace(/\\s+/g, " ");
+  return value.trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
 }
 
 export function localizeInventoryItemName(name: string): string {
   const trimmed = name.trim();
-  const match = trimmed.match(/^(.*?)(\\s*\\+\\s*\\d+)$/);
+  const match = trimmed.match(/^(.*?)(\s*\+\s*\d+)$/);
   const base = normalizeLookup(match?.[1] ?? trimmed);
   const translated = ITEM_TRANSLATIONS[base];
-  return translated ? translated + (match?.[2] ? " " + match[2].replace(/\\s+/g, "") : "") : trimmed;
+  return translated ? translated + (match?.[2] ? " " + match[2].replace(/\s+/g, "") : "") : trimmed;
 }
 
 export function localizeSkillName(name: string): string {
