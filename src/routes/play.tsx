@@ -31,7 +31,6 @@ function PlayPage() {
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [cloakAttunement, setCloakAttunement] = useState<"UNKNOWN" | "ATTUNED" | "NOT_ATTUNED">("UNKNOWN");
   const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
@@ -139,7 +138,7 @@ function PlayPage() {
     setMode("RANDOM");
     setConfirmed(false);
   };
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setCloakAttunement("UNKNOWN"); setResourceCurrentInputs({}); setImportError(null); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
   const confirmDossier = () => {
     if (!parsed || !dossier) return;
     const invalidResource = parsed.resources.find((resource) => {
@@ -162,20 +161,20 @@ function PlayPage() {
       epicCampaignLevels: parsed.epicCampaignLevels,
       hpCurrent: null,
       hpMax: parsed.hitPointMaximum,
-      armorClass: parsed.armorClass === null ? null : (cloakAttunement === "ATTUNED" ? parsed.armorClass : parsed.armorClass - 1),
+      armorClass: parsed.armorClass,
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
       ...(parsed.hitDice ? { hitDice: parsed.hitDice } : {}),
       ...(parsed.baseSavingThrowBonuses ? { baseSavingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
-      ...(parsed.baseSavingThrowBonuses ? { savingThrowBonuses: cloakAttunement === "ATTUNED" ? Object.fromEntries(Object.entries(parsed.baseSavingThrowBonuses).map(([ability, bonus]) => [ability, bonus + 1])) as typeof parsed.baseSavingThrowBonuses : parsed.baseSavingThrowBonuses } : {}),
+      ...(parsed.baseSavingThrowBonuses ? { savingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       skillBonuses: parsed.skillBonuses,
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
-      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: cloakAttunement === "UNKNOWN" ? "UNKNOWN" : cloakAttunement } : {}) })),
+      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: "UNKNOWN" } : {}) })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: resourceCurrentInputs[item.name]?.trim() ? Number(resourceCurrentInputs[item.name]) : item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: `Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Настройка Cloak of Protection: ${cloakAttunement}. Без подтверждённой настройки используется КБ 19 и базовые спасброски; при подтверждённой настройке — КБ 20 и +1 ко всем спасброскам. Размер существа в досье не указан и остаётся UNKNOWN.`,
+      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Неуказанные в досье сведения и настройки предметов остаются UNKNOWN.",
     });
     if (result.ok) setConfirmed(true);
   };
@@ -208,14 +207,6 @@ function PlayPage() {
           ["Имя",parsed.name],["Вид и класс",parsed.speciesAndClass],["Уровень",parsed.level],["Макс. HP",parsed.hitPointMaximum],["КД без плаща",parsed.armorClass === null ? null : parsed.armorClass - 1],["КД с настроенным плащом",parsed.armorClass],["Бонус мастерства",parsed.proficiencyBonus],["Скорость",parsed.speedFeet],["Навыков",parsed.skillBonuses.length],["Атак",parsed.weaponAttacks.length],["Классовых уровней с особенностями",parsed.classFeaturesByLevel.length],["Предметов",parsed.inventory.length],["Ресурсов",parsed.resources.length]
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
         <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Текущие HP, деньги, местоположение, активные состояния и фактические остатки ресурсов не выводятся автоматически. После импорта потребуется отдельная подготовка старта.</div>
-        <div className="space-y-1.5">
-          <label htmlFor="cloak-attunement" className="text-xs font-medium">Cloak of Protection — настройка (attunement)</label>
-          <select id="cloak-attunement" value={cloakAttunement} onChange={(event) => setCloakAttunement(event.target.value as typeof cloakAttunement)} className="touch-target w-full rounded-md border border-border bg-background px-3 py-2 text-sm">
-            <option value="UNKNOWN">Не установлено — использовать КБ 19 и базовые спасброски</option>
-            <option value="ATTUNED">Да, плащ настроен — КБ 20 и +1 ко всем спасброскам</option>
-            <option value="NOT_ATTUNED">Нет, плащ не настроен — КБ 19 и базовые спасброски</option>
-          </select>
-        </div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
         <div className="space-y-2 rounded-md border border-border p-3">
           <p className="text-xs font-semibold">Фактические остатки классовых ресурсов</p>
@@ -248,7 +239,7 @@ function PlayPage() {
     {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Досье персонажа импортировано и сохранено отдельно от канона мира.</div>}
     {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
       <div><h2 className="text-lg font-semibold">Персонаж готов к кампании</h2><p className="text-sm text-muted-foreground">{character.name} · {character.speciesAndClass} · HP будут определены случайной стартовой ситуацией; неизвестные остатки ресурсов останутся UNKNOWN.</p></div>
-      <p className="text-xs text-muted-foreground">Применится профиль ОБСИДИАН 4.1 / D&D 2024: SRD 5.2.1, броски через Web Crypto с показом результатов, XP, стандартный учёт нагрузки, базовые правила выживания, региональные встречи без универсальных таблиц, без PvP и без дополнительных правил смерти кроме проклятия Лии. Профиль можно изменить в настройках до первого игрового хода.</p>
+      <p className="text-xs text-muted-foreground">Применится профиль ОБСИДИАН 4.1 / D&D 2024: SRD 5.2.1, броски через Web Crypto с показом результатов, XP, стандартный учёт нагрузки, базовые правила выживания, региональные встречи без универсальных таблиц, без PvP и без дополнительных правил смерти, кроме отдельно согласованных правил текущей кампании. Профиль можно изменить в настройках до первого игрового хода.</p>
       {startError && <p role="alert" className="text-sm text-destructive">{startError}</p>}
       <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
     </section>}
