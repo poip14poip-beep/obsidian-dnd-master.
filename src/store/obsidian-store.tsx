@@ -1028,7 +1028,9 @@ export function ObsidianStoreProvider({
         ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
         ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
         encumbranceMode: patch.encumbranceMode ?? ws.encumbranceMode,
-        campaignPreferences: patch.campaignPreferences ?? ws.campaignPreferences,
+        ...((patch.campaignPreferences ?? ws.campaignPreferences) !== undefined
+          ? { campaignPreferences: patch.campaignPreferences ?? ws.campaignPreferences }
+          : {}),
         setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
       };
       return commitCollections({ ...collections, world_state: nextWorld });
@@ -1100,7 +1102,9 @@ export function ObsidianStoreProvider({
       ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
       ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
       encumbranceMode: patch.encumbranceMode ?? currentWorld.encumbranceMode,
-      campaignPreferences: patch.campaignPreferences ?? currentWorld.campaignPreferences,
+      ...((patch.campaignPreferences ?? currentWorld.campaignPreferences) !== undefined
+        ? { campaignPreferences: patch.campaignPreferences ?? currentWorld.campaignPreferences }
+        : {}),
       setup: patch.setupPatch ? { ...currentWorld.setup, ...patch.setupPatch } : currentWorld.setup,
     };
     const pc = collections.player_character_state;
