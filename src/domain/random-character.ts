@@ -122,13 +122,21 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const dexMod=mod(abilityScores.dexterity);
   const armorClass=className==="Fighter"?17:className==="Rogue"?11+dexMod:10+dexMod+conMod;
   const attackMod=mod(abilityScores[classData.attackAbility])+proficiency;
-  const backgroundUsesGold=choose([false,true] as const,random);\n  const backgroundGear=backgroundUsesGold?[["Золотые монеты",backgroundData.alternativeGold,"50 GP (альтернативный комплект предыстории)"]] as const:backgroundData.gear;\n  const allGear=[...classData.gear,...backgroundGear];
+  const backgroundUsesGold=choose([false,true] as const,random);
+  const backgroundGear=backgroundUsesGold
+    ? [["Золотые монеты",backgroundData.alternativeGold,"50 GP (альтернативный комплект предыстории)"]] as const
+    : backgroundData.gear;
+  const allGear=[...classData.gear,...backgroundGear];
   const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
   const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes],index)=>item(String(name),Number(qty),String(notes),index));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];
   const featDescription=backgroundData.feat==="Alert"
     ?"Alert: добавляет бонус мастерства к инициативе; после броска инициативы может поменяться местами с инициативой согласного союзника."
-    :"Savage Attacker: один раз за ход при попадании оружием бросает кости урона дважды и выбирает результат.";
+    :backgroundData.feat==="Savage Attacker"
+      ?"Savage Attacker: один раз за ход при попадании оружием бросает кости урона дважды и выбирает результат."
+      :backgroundData.feat==="Magic Initiate (Cleric)"
+        ?"Magic Initiate (Cleric): два заговора и одно заклинание 1-го уровня из списка жреца; заклинательная характеристика — Мудрость."
+        :"Magic Initiate (Wizard): два заговора и одно заклинание 1-го уровня из списка волшебника; заклинательная характеристика — Интеллект.";
   const classProficiencies=className==="Fighter"
     ?"Владение: все доспехи, щиты, простое и воинское оружие."
     :className==="Rogue"

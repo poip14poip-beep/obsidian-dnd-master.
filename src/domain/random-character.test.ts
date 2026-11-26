@@ -5,7 +5,7 @@ describe("SRD 5.2.1 random character generator", () => {
   it("creates a complete level-one Fighter with calculated defenses, attacks, gear and currency", () => {
     const result = generateRandomCharacter(() => 0);
     expect(result.summary.className).toBe("Fighter");
-    expect(result.summary.background).toBe("Soldier");
+    expect(result.summary.background).toBe("Acolyte");
     expect(result.summary.species).toBe("Human");
     expect(result.character.level).toBe(1);
     expect(result.character.hpMax).toBeGreaterThan(0);
