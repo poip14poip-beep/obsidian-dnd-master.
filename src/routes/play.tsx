@@ -172,6 +172,36 @@ function PlayPage() {
     worldState.startLocationName, worldState.startNarrative, worldState.campaignName,
     worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
   ]);
+  async function validateCharacterCompatibility(characterData: unknown) {
+    const env = readSupabaseEnv();
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError || !sessionData.session?.access_token) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
+    const { data, error } = await client.functions.invoke("obsidian-gm", {
+      body: {
+        operation: "VALIDATE_CHARACTER_COMPATIBILITY",
+        model: "obsidian-free",
+        instructions: "Проведи независимую проверку персонажа на совместимость с каноном Экдрасиля и D&D 2024 / SRD 5.2.1. Используй закрытую хронику, ОБСИДИАН 4.1, SRD и руководство создания персонажей. Проверяй народ, место рождения, социальную среду, биографию, организационные/исторические ссылки, классовые особенности, навыки, оружие, броню, предметы и магические утверждения. Не считай неизвестное несовместимым: помести в unknowns. Не выдумывай подтверждение. INCOMPATIBLE только при прямом конфликте с источниками или запрещённой механике; COMPATIBLE_WITH_NOTES при устранимых/неподтверждённых деталях; INSUFFICIENT_DATA если не хватает ключевых сведений. Не исправляй персонажа сам. Для каждого конфликта укажи основание и нужное изменение. Ответ строго по схеме.",
+        input: JSON.stringify({ action: "Автоматическая проверка совместимости персонажа с миром Экдрасиль", character: characterData }),
+      },
+    });
+    if (error) {
+      let detail = error.message || "Не удалось проверить персонажа мастером.";
+      if ("context" in error && error.context instanceof Response) {
+        const payload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+        detail = payload?.error?.message ?? detail;
+      }
+      throw new Error(detail);
+    }
+    if (!data?.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
+    const report = JSON.parse(data.output_text) as { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
+    if (!["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"].includes(report.status)) throw new Error("Некорректный статус проверки персонажа.");
+    if (report.status === "INCOMPATIBLE" || report.status === "INSUFFICIENT_DATA") {
+      throw new Error("Проверка совместимости: " + report.summary + (report.conflicts?.length ? " Конфликты: " + report.conflicts.join("; ") : "") + (report.unknowns?.length ? " Неизвестно: " + report.unknowns.join("; ") : ""));
+    }
+    return report;
+  }
   const randomize = () => {
     if (biographyBusy || locked) return;
     try {
@@ -314,7 +344,14 @@ function PlayPage() {
         throw new Error("Полное досье не прошло проверку внешности, биографии, навыков или канона. Ничего не сохранено.");
       }
       const completeBiography: CharacterBiography = { ...biography, skillOrigins };
-      setCandidate({ ...generated, character: { ...generated.character, biography: completeBiography } });
+      await validateCharacterCompatibility({
+        ...generated.character,
+        summary: generated.summary,
+        biography: completeBiography,
+        generationBasis: { species: identity.species, className: identity.className, background: identity.background, birthplace: identity.birthplace },
+      });
+      const verifiedBiography = { ...completeBiography, inventedDetailsNotice: completeBiography.inventedDetailsNotice + " Проверка совместимости с каноном Экдрасиля и SRD 5.2.1 пройдена автоматически." };
+      setCandidate({ ...generated, character: { ...generated.character, biography: verifiedBiography } });
       setBiographyReady(true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
@@ -365,8 +402,18 @@ function PlayPage() {
     const result = setSourceContextEnabled(dossier.id, true);
     if (!result.ok) setImportError(result.error);
   }
-  const confirmDossier = () => {
-    if (!parsed || !dossier) return;
+  const confirmDossier = async () => {
+    if (!parsed || !dossier || biographyBusy) return;
+    setBiographyBusy(true);
+    setImportError(null);
+    try {
+      await validateCharacterCompatibility({ parsedDossier: parsed, originalText: dossier.content, fileName: dossier.fileName });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
+      setBiographyBusy(false);
+      return;
+    }
+    setBiographyBusy(false);
     if (dossier.reviewStatus !== "VERIFIED" || dossier.contextEnabled !== true) {
       setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
       return;
@@ -431,7 +478,8 @@ function PlayPage() {
         <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Новая кампания автоматически подготовит стартовое состояние персонажа: полные HP, восстановленные классовые ресурсы, отсутствие временных HP и состояний, нулевой баланс и случайную стартовую локацию.</div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
         {importError && <p className="text-xs text-destructive">{importError}</p>}
-        <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
+        {biographyBusy && <p className="text-sm text-primary">Мастер автоматически сверяет персонажа с хроникой Экдрасиля и SRD 5.2.1…</p>}
+        <Button disabled={locked || !parsed || confirmed || biographyBusy} onClick={() => void confirmDossier()}>{biographyBusy ? "Проверяю совместимость…" : "Проверить и импортировать персонажа"}</Button>
       </>}
     </section>}
     {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
