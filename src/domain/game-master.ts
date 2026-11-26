@@ -102,7 +102,7 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
       return { source, sectionId: "UNINDEXED", headingPath: [], ...paragraph,
         score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
     });
-  }).filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 8);
+  }).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 24);
   const selectedFacts = facts
     .filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
     .map((fact) => {
