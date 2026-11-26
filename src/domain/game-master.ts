@@ -398,7 +398,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   return turn as unknown as GameMasterTurn;
 }
 function parseTechnicalDateTime(value: string): number | null {
-  const match = value.match(/(?:^|\\D)(\\d{1,4})\\s*(?:год)?\\s*,?\\s*месяц\\s*(\\d{1,2})\\s*,?\\s*день\\s*(\\d{1,2})\\s*[;, ]+([01]\\d|2[0-3]):([0-5]\\d)/i);
+  const match = value.match(/(?:^|\D)(\d{1,4})\s*(?:год)?\s*,?\s*месяц\s*(\d{1,2})\s*,?\s*день\s*(\d{1,2})\s*[;, ]+([01]\d|2[0-3]):([0-5]\d)/i);
   if (!match) return null;
   const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
   const hour = Number(match[4]), minute = Number(match[5]);
@@ -528,7 +528,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? []);
-  if (/technical calendar 1\\.0/i.test(context.world.calendarSystem)) {
+  if (/technical calendar 1\.0/i.test(context.world.calendarSystem)) {
     const before = parseTechnicalDateTime(context.world.currentInGameDate);
     const after = parseTechnicalDateTime(turn.newInGameDate);
     if (before !== null && (after === null || after - before !== turn.timeDeltaMinutes)) {
