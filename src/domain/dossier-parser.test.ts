@@ -44,6 +44,7 @@ describe("player dossier summary extraction", () => {
       "1 | Катана в ножнах | Основное оружие",
       "## 11.3. Инструменты, исследования и медицина",
       "1 | Инструменты кузнеца | Осмотр и мелкий ремонт",
+      "1 | Набор дорожного ремонта | Основное снаряжение: используется для регулярного обслуживания брони и оружия",
     ].join("\n"));
     expect(result.level).toBe(21);
     expect(result.hitPointMaximum).toBe(184);
@@ -60,10 +61,13 @@ describe("player dossier summary extraction", () => {
     expect(result.classFeaturesByLevel).toHaveLength(2);
     expect(result.weaponAttacks).toHaveLength(2);
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
-    expect(result.inventory).toHaveLength(3);
+    expect(result.inventory).toHaveLength(4);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory.some((item) => item.name === "Инструменты кузнеца")).toBe(false);
+    expect(result.inventory).toContainEqual(expect.objectContaining({
+      name: "Набор дорожного ремонта", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER",
+    }));
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "1 use on Short Rest; all uses on Long Rest", certainty: "KNOWN" },
       { name: "Action Surge", current: null, max: 2, recovery: "All uses on Short or Long Rest", certainty: "KNOWN" },
