@@ -15,7 +15,7 @@ describe("technical Ekdrasil calendar", () => {
   });
 
   it("formats a regular date and clock time", () => {
-    const date = resolveTechnicalDate(61, 2000, 9, 5);
+    const date = resolveTechnicalDate(91, 2000, 9, 5);
     expect(date.season).toBe("Лето");
     expect(date.month).toBe("Солар");
     expect(date.dayOfMonth).toBe(1);
