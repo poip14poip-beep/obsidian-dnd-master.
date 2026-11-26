@@ -72,6 +72,15 @@ function GamePage() {
   );
   const setupReady = worldState.setup.confirmed && verifiedCoreSourcesReady && characterReady;
   const currentLocation = locations.find((location) => location.id === worldState.currentLocationId);
+  const dateParts = (worldState.currentInGameDate || "").split(" · ");
+  const datePart = dateParts[0] ?? "";
+  const regularDateMatch = datePart.match(/^(\\d{1,2})\\s+(.+),\\s*(\\d+)\\s+год$/);
+  const intercalaryDateMatch = datePart.match(/^(.+),\\s*(\\d+)\\s+год$/);
+  const clockMatch = dateParts.slice(1).join(" ").match(/\\b([01]\\d|2[0-3]):([0-5]\\d)\\b/);
+  const displayYear = regularDateMatch?.[3] ?? intercalaryDateMatch?.[2] ?? "не установлен";
+  const displayMonth = regularDateMatch?.[2] ?? (intercalaryDateMatch ? "межсезонный день" : "не установлен");
+  const displayDay = regularDateMatch?.[1] ?? intercalaryDateMatch?.[1] ?? "не установлен";
+  const displayTemperature = worldState.environment?.temperatureC == null ? "не установлена" : String(worldState.environment.temperatureC) + " °C" + (worldState.environment.temperatureCertainty === "APPROXIMATE" ? " · примерно" : "");
   const formattedGmAnswer = gmTurn
     ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber)
     : "";
@@ -392,8 +401,18 @@ function GamePage() {
         </section>
       )}
 
-      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-xs">
-        <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p><p className="mt-1 text-[10px] text-muted-foreground">Ход #{String(nextTurnNumber).padStart(4, "0")}</p></div>
+      <section className="flex items-start justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2">
+        <div className="min-w-0 space-y-0.5 text-[10px] leading-tight text-muted-foreground">
+          <p><span className="text-foreground/60">Регион:</span> {currentLocation?.region || "не установлен"}</p>
+          <p><span className="text-foreground/60">Город:</span> {currentLocation?.cityName || currentLocation?.name || worldState.startLocationName || "не установлен"}</p>
+          <p><span className="text-foreground/60">Место:</span> {currentLocation?.placeName || "точка не уточнена"}</p>
+          <p><span className="text-foreground/60">Год:</span> {displayYear}</p>
+          <p><span className="text-foreground/60">Месяц:</span> {displayMonth}</p>
+          <p><span className="text-foreground/60">День:</span> {displayDay}</p>
+          <p><span className="text-foreground/60">Время:</span> {clockMatch ? clockMatch[1] + ":" + clockMatch[2] : "не установлено"}</p>
+          <p><span className="text-foreground/60">Температура:</span> {displayTemperature}</p>
+          <p className="pt-1 text-[9px]">Ход #{String(nextTurnNumber).padStart(4, "0")}</p>
+        </div>
         <Link to="/character" aria-label="Состояние персонажа" title="Состояние персонажа" className="flex shrink-0 flex-col items-center gap-1 rounded-lg border border-border bg-background/70 px-3 py-2 text-muted-foreground hover:text-foreground"><UserRound className="h-6 w-6"/><span className="text-[10px] font-semibold">Персонаж</span></Link>
       </section>
 
