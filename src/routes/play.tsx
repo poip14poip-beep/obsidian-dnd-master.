@@ -189,7 +189,7 @@ function PlayPage() {
     const result = confirmCampaignSetup({
       campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
       calendarSystem: worldState.calendarSystem === "UNKNOWN"
-        ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
+        ? "Технический календарь мастера Экдрасиля 1.0: 365 дней, 12 месяцев по 30 дней и 5 межсезонных дней; условная система приложения, не канон Хроники"
         : worldState.calendarSystem,
       startInGameDate: worldState.startInGameDate,
       startLocationName: worldState.startLocationName,
