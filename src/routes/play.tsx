@@ -54,7 +54,7 @@ function PlayPage() {
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
   const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
-      source.type === type && (type === "GOVERNING_DOC"
+      source.type === type && ((type === "GOVERNING_DOC" || type === "WORLD_CANON")
         ? source.serverManaged === true
         : source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
           source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true)
