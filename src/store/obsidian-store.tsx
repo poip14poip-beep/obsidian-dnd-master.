@@ -1045,7 +1045,7 @@ export function ObsidianStoreProvider({
         source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
         source.id === DEFAULT_SOURCE_IDS.CANON ||
         source.id === DEFAULT_SOURCE_IDS.DOSSIER ||
-        (source.type === "SUPPLEMENTAL" && /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
+        (source.type === "SUPPLEMENTAL" && /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
       ),
       player_character_state: {
         ...characterWithoutCurrency,
