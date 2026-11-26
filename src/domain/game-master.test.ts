@@ -37,7 +37,9 @@ describe("game master resolver", () => {
     const result = await resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch });
     expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
-    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
+    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1");
+    expect(request.instructions).toContain("SECOND WIND");
+    expect(request.instructions).toContain("Fighter 20"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
   it("does not send a verified but context-disabled world source to the model", async () => {
