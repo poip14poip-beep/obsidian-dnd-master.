@@ -48,9 +48,9 @@ describe("game master resolver", () => {
       timeDeltaMinutes: 1, summary: longText, playerIntent: longText, worldOutcome: longText,
       gmNarration: longText, campaignMemory: longText, locationIdAfter: null, hpDelta: 0,
       rolls: [], affectedCampaignVersion: 1, affectedCharacterVersion: 1, entryChecksum: "checksum",
-      questChanges: [{ action: "CREATE" as const, title: "Важная зацепка" }],
-      npcChanges: [{ action: "UPDATE" as const, name: "Страж" }],
-      characterChanges: { inventory: [{ action: "ADD" as const, name: "Ключ" }] },
+      questChanges: [{ action: "CREATE" as const, title: "Важная зацепка", description: "Найти ключ.", objectives: ["Найти ключ"], status: "ACTIVE" as const, giverName: null, locationName: null, deadline: null, reward: "", sourcePath: "Разговор", certainty: "KNOWN" as const, reason: "Получена зацепка" }],
+      npcChanges: [{ action: "UPDATE" as const, playerVisible: true, name: "Страж", role: "Страж ворот", goals: "Охранять ворота", resources: "UNKNOWN", attitudeToPlayer: "Нейтральное", locationName: null, factionName: null, certainty: "KNOWN" as const, reason: "Поговорили", knowledgeAdditions: [], playerKnowledgeAdditions: [] }],
+      characterChanges: { inventory: [{ action: "ADD" as const, name: "Ключ", quantity: 1, notes: "Старый ключ", certainty: "KNOWN" as const }], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } },
     };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
     await resolvePlayerAction("test-user-jwt", { ...context, journal: [journalEntry] }, testOptions(fetcher as unknown as typeof fetch));
