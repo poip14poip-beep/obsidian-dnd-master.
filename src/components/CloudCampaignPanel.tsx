@@ -113,7 +113,7 @@ export function CloudCampaignPanel({
     setLatest(snapshot);
     setRevision(snapshot.revision);
     setCanSave(!snapshot.found);
-    setCloudCampaignLink({ campaignId: id, revision: snapshot.revision });
+    if (!snapshot.found) setCloudCampaignLink({ campaignId: id, revision: 0 });
     if (!snapshot.found || !snapshot.payload) {
       setNotice("В облачной кампании пока нет резервных снимков. Текущую локальную кампанию можно сохранить как первый снимок.");
     } else {
