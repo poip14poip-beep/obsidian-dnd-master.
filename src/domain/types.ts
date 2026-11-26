@@ -135,6 +135,9 @@ export interface LocationRecord {
   id: string;
   name: string;
   region: string;
+  /** City and exact in-city place for a campaign start, when known. */
+  cityName?: string;
+  placeName?: string;
   description: string;
   certainty: CertaintyStatus;
   sourceId: string;
