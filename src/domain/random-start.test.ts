@@ -55,12 +55,13 @@ describe("generateRandomStart", () => {
     expect(result.replaceInventory).toBe(true);
     expect(result.inventory.map((item) => item.name)).toContain("Катана в ножнах");
     expect(result.inventory.map((item) => item.name)).toContain("Кожа Последнего Часа");
-    expect(result.inventory.map((item) => item.name)).toContain("Набор целителя");
-    expect(result.inventory.map((item) => item.name)).not.toContain("Короткий лук");
+    expect(result.inventory.map((item) => item.name)).toContain("Рационы");
+    expect(result.inventory.map((item) => item.name)).toContain("Факелы");
+    expect(result.inventory.map((item) => item.name)).not.toContain("Набор целителя");
     expect(result.inventory.map((item) => item.name)).not.toContain("Дорожная одежда");
     expect(result.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined)).toBe(true);
     expect(result.characterPatch.currency).toEqual({ cp: 1, sp: 1, ep: 0, gp: 10, pp: 0 });
-    expect(result.characterPatch.background).toBe("Soldier");
+    expect(result.characterPatch.background).toBeUndefined();
     expect(result.narrative).toContain("Случайный стартовый капитал");
   });
 
