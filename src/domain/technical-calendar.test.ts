@@ -51,7 +51,7 @@ describe("technical Ekdrasil calendar", () => {
 
   it("advances the clock and rolls over the date", () => {
     const start = resolveTechnicalDate(91, 2000, 23, 30).formatted;
-    expect(advanceTechnicalDateByElapsedMinutes(start, 45)).toContain("1 Солар, 2000 год · 00:15");
+    expect(advanceTechnicalDateByElapsedMinutes(start, 45)).toContain("2 Солар, 2000 год · 00:15");
     expect(advanceTechnicalDateByElapsedMinutes(start, 1440)).toContain("2 Солар, 2000 год · 23:30");
   });
 
