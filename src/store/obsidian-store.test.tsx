@@ -206,7 +206,7 @@ describe("random free-roam start", () => {
 
 
 describe("clean trial campaign reset", () => {
-  it("archives old campaign state from the active collections while preserving verified sources and the player character", async () => {
+  it("clears old campaign and character data while preserving verified world and rules sources", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
     const optionalSrd = initial.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD)!;
@@ -233,9 +233,12 @@ describe("clean trial campaign reset", () => {
     expect(result.current.sessionLog.entries).toHaveLength(0);
     expect(result.current.npcs).toHaveLength(0);
     expect(result.current.locations).toHaveLength(0);
-    expect(result.current.character.name).toBe("Лия Вейн");
+    expect(result.current.character.name).toBe("UNKNOWN");
+    expect(result.current.character.speciesAndClass).toBe("UNKNOWN");
     expect(result.current.character.hpCurrent).toBeNull();
     expect(result.current.character.inventory).toHaveLength(0);
+    expect(result.current.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)?.contentStatus).toBe("NOT_ATTACHED");
+    expect(result.current.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)?.content).toBe("");
     expect(result.current.character.currentLocationLabel).toBe("UNKNOWN");
     expect(result.current.sources.filter((source) => source.id !== DEFAULT_SOURCE_IDS.SRD).every((source) => source.contentStatus === "ATTACHED")).toBe(true);
     expect(result.current.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD)?.contentStatus).toBe("NOT_ATTACHED");
