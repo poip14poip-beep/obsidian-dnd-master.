@@ -174,6 +174,12 @@ export interface CampaignSetupState {
  * from sources, canon_facts, npcs, factions, locations, timeline_events,
  * turn_drafts, session_log, and audit_log.
  */
+export interface CampaignPreferences {
+  allowedBooksAndOptions: string; diceMethod: string; advancement: string; foodAndWater: string;
+  randomEncounters: string; pvp: string; deathAndResurrection: string; economyDetail: string;
+  contentBoundaries: string; houseRules: string;
+}
+
 export interface WorldState {
   schemaVersion: number;
   stateVersion: number;
@@ -184,6 +190,7 @@ export interface WorldState {
   currentInGameDate: string;
   elapsedMinutes: number;
   encumbranceMode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT";
+  campaignPreferences?: CampaignPreferences;
   startLocationName: string;
   startNarrative?: string;
   startGeneration?: {
