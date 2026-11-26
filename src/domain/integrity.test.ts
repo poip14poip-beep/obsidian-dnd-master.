@@ -13,7 +13,7 @@ describe("turn HP validation", () => {
     const state = createInitialCollections();
     state.world_state.setup.confirmed = true;
     const base = { ...createEmptyTurnDraft(), summary: "Встреча", worldOutcome: "Разговор завершён" };
-    const duplicate = { action: "CREATE" as const, name: "Страж", role: "Стражник", goals: "Охраняет ворота", resources: "UNKNOWN", attitudeToPlayer: "Нейтральное", locationName: null, factionName: null, certainty: "KNOWN" as const, reason: "Встречен у ворот", knowledgeAdditions: [] };
+    const duplicate = { action: "CREATE" as const, name: "Страж", role: "Стражник", goals: "Охраняет ворота", resources: "UNKNOWN", attitudeToPlayer: "Нейтральное", playerVisible: true, playerKnowledgeAdditions: [], locationName: null, factionName: null, certainty: "KNOWN" as const, reason: "Встречен у ворот", knowledgeAdditions: [] };
     state.npcs = [{ id: "npc-1", name: "Страж", role: "Стражник", locationId: null, factionId: null, goals: "Охрана", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN", sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge: [], version: 1, history: [] }];
     const createDraft = { ...base, npcChanges: [duplicate] };
     expect(validateTurnDraft(createDraft, state.world_state, state.player_character_state, state.npcs))
