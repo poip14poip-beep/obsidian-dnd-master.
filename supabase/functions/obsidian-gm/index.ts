@@ -130,7 +130,7 @@ Deno.serve(async (req: Request) => {
     const sourceKind = body.sourceKind;
     const title = body.title;
     const content = body.content;
-    if (sourceKind !== "OBSIDIAN_MASTER_PROMPT" && sourceKind !== "SRD_5_2_1") {
+    if (sourceKind !== "OBSIDIAN_MASTER_PROMPT" && sourceKind !== "SRD_5_2_1" && sourceKind !== "EKDRASIL_WORLD_BIBLE") {
       return json({ error: { code: "INVALID_GM_SOURCE_KIND", message: "Unsupported master source type." } }, 400, cors);
     }
     if (typeof title !== "string" || !title.trim() || typeof content !== "string" ||
@@ -145,8 +145,7 @@ Deno.serve(async (req: Request) => {
     const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const { data, error } = await serviceClient.rpc("obsidian_api_upsert_gm_source", {
-      p_actor: authData.user.id,
+    const { data, error } = await serviceClient.rpc("obsidian_api_upsert_gm_base", {
       p_source_kind: sourceKind,
       p_title: title.trim(),
       p_content: content,
@@ -183,24 +182,34 @@ Deno.serve(async (req: Request) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: privateSources, error: privateSourcesError } = await serviceClient.rpc(
-    "obsidian_api_get_gm_sources", { p_actor: authData.user.id },
+    "obsidian_api_get_gm_base",
   );
   if (privateSourcesError || !isRecord(privateSources) ||
       !isRecord(privateSources.OBSIDIAN_MASTER_PROMPT) ||
       typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string") {
     return json({ error: {
       code: "OBSIDIAN_MASTER_PROMPT_NOT_CONFIGURED",
-      message: "В закрытом хранилище мастера ещё не загружен полный документ ОБСИДИАН 4.1. Игровой запрос не отправлен.",
+      message: "В постоянную базу мастера ещё не добавлен ОБСИДИАН 4.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
   const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
   const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
     ? privateSources.SRD_5_2_1.content : "";
   const ruleParagraphs = rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80);
+  const canonDoc = isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string"
+    ? privateSources.EKDRASIL_WORLD_BIBLE.content : "";
+  if (!canonDoc.trim()) {
+    return json({ error: {
+      code: "EKDRASIL_CANON_NOT_CONFIGURED",
+      message: "В постоянную базу мастера ещё не добавлена хроника Экдрасиля. Игровой запрос не отправлен.",
+    } }, 503, cors);
+  }
+  const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 60);
+
   if (!rulesDoc.trim()) {
     return json({ error: {
       code: "SRD_SOURCE_NOT_CONFIGURED",
-      message: "В закрытое хранилище мастера ещё не загружен текст SRD 5.2.1. Игровой запрос не отправлен.",
+      message: "В постоянную базу мастера ещё не добавлен SRD 5.2.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
   let actionText = body.input.toLowerCase();
@@ -232,12 +241,25 @@ Deno.serve(async (req: Request) => {
   const rulesContext = selectedRules.length
     ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
+  const canonTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
+  const selectedCanon = canonParagraphs
+    .map((paragraph) => ({ paragraph, score: canonTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 14)
+    .map((item) => item.paragraph);
+  const canonContext = selectedCanon.length
+    ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
+    : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
+
   const serverInstructions = [
     masterPrompt,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     body.instructions,
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
+    "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
+    canonContext,
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
     { role: "system", content: serverInstructions },
