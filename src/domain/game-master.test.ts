@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolvePlayerAction, type GameMasterContext } from "./game-master";
+import { resolvePlayerAction, selectRulesContext, type GameMasterContext } from "./game-master";
 import type { SourceDocument } from "./types";
 const source = (type: SourceDocument["type"], content: string): SourceDocument => ({
   id: type, title: type, type, targetPartition: type === "GOVERNING_DOC" ? "SYSTEM_RULES" : type === "PLAYER_DOSSIER" ? "PLAYER_CHARACTER_STATE" : "CAMPAIGN_STATE",
@@ -88,5 +88,33 @@ describe("game master resolver", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
     await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
       .rejects.toMatchObject({ code: "MODEL_API_ERROR" });
+  });
+});
+
+describe("verified SRD rules context", () => {
+  it("selects relevant excerpts from an explicitly verified and enabled SRD source", () => {
+    const rules = {
+      ...source("SUPPLEMENTAL", "Combat\\nThe Attack action lets you make one attack. A weapon attack uses an attack roll.\\n\\nSpellcasting\\nSpells have components and durations."),
+      title: "SRD 5.2.1",
+      originLabel: "Official D&D 2024 SRD 5.2.1",
+      fileName: "SRD_5.2.1.txt",
+    };
+    const result = selectRulesContext([...context.sources, rules], "Лия атакует мечом");
+    expect(result).toContain("The Attack action");
+    expect(result).toContain("sourceId=SUPPLEMENTAL");
+  });
+
+  it("does not use an unreviewed SRD source", () => {
+    const rules = {
+      ...source("SUPPLEMENTAL", "Combat\\nThe Attack action lets you make one attack."),
+      title: "SRD 5.2.1",
+      reviewStatus: "UNREVIEWED" as const,
+    };
+    expect(selectRulesContext([...context.sources, rules], "Лия атакует")).toContain("UNKNOWN");
+  });
+
+  it("does not treat unrelated supplemental sources as SRD rules", () => {
+    const rules = { ...source("SUPPLEMENTAL", "Combat\\nThe Attack action."), title: "Летопись Экдрасиля" };
+    expect(selectRulesContext([...context.sources, rules], "Лия атакует")).toContain("UNKNOWN");
   });
 });
