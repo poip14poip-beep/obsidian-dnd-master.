@@ -13,6 +13,7 @@ import { useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
+import { isCampaignActive } from "@/domain/campaign-state";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import { buildDiceContinuationAction } from "@/domain/dice-continuation";
 import { Button } from "@/components/ui/button";
@@ -79,7 +80,7 @@ function TurnsPage() {
   const [rollFormula, setRollFormula] = useState("1d20");
   const [rollResult, setRollResult] = useState("");
 
-  const campaignActive = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
+  const campaignActive = isCampaignActive(worldState.setup.confirmed, sessionLog.lastTurnNumber);
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
 
   async function handleResolveAction(actionOverride?: string) {
