@@ -238,7 +238,11 @@ function SettingsPage() {
         </p>
       </header>
 
-      <CloudCampaignPanel worldState={worldState} />
+      <CloudCampaignPanel
+        worldState={worldState}
+        exportBackupJson={exportBackupJson}
+        importBackupJson={importBackupJson}
+      />
 
       <section className="panel-surface space-y-3 p-4">
         <div>
