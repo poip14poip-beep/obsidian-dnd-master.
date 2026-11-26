@@ -402,7 +402,9 @@ function PlayPage() {
     setBiographyBusy(true);
     setImportError(null);
     try {
-      await validateCharacterCompatibility({ parsedDossier: parsed, originalText: dossier.content, fileName: dossier.fileName });
+      // Send the parsed dossier only. The original file can contain a large amount
+      // of repeated prose and is not needed for a rules/canon compatibility check.
+      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName });
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
       setBiographyBusy(false);
