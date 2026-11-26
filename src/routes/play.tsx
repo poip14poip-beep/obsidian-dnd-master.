@@ -185,9 +185,10 @@ function PlayPage() {
       const supportedSpecies = ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"];
       const supportedClasses = ["Fighter","Rogue","Barbarian"];
       const supportedBackgrounds = ["Acolyte","Criminal","Sage","Soldier"];
+      const supportedBirthplaces = ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"];
       if (!identity || typeof identity.name !== "string" || identity.name.trim().length < 2 ||
           !supportedSpecies.includes(identity.species) || !supportedClasses.includes(identity.className) ||
-          !supportedBackgrounds.includes(identity.background) || typeof identity.birthplace !== "string" ||
+          !supportedBackgrounds.includes(identity.background) || !supportedBirthplaces.includes(identity.birthplace) ||
           !Number.isInteger(identity.ageYears) || identity.ageYears < 18 || identity.ageYears > 80 ||
           typeof identity.family !== "string" || identity.family.length < 30 ||
           typeof identity.upbringing !== "string" || identity.upbringing.length < 30 ||
@@ -246,8 +247,19 @@ function PlayPage() {
       if (!payload?.output_text) throw new Error("Мастер не вернул биографию.");
       const biography = JSON.parse(payload.output_text) as CharacterBiography;
       if (!biography || typeof biography.biography !== "string" ||
+          biography.ageYears !== target.character.biography?.ageYears ||
+          biography.genderPresentation !== target.character.biography?.genderPresentation ||
           biography.birthplace !== target.character.biography?.birthplace ||
           biography.birthplaceSource !== target.character.biography?.birthplaceSource ||
+          biography.family !== target.character.biography?.family ||
+          biography.upbringing !== target.character.biography?.upbringing ||
+          JSON.stringify(biography.lifeEvents) !== JSON.stringify(target.character.biography?.lifeEvents) ||
+          JSON.stringify(biography.personalityTraits) !== JSON.stringify(target.character.biography?.personalityTraits) ||
+          biography.ideal !== target.character.biography?.ideal ||
+          biography.bond !== target.character.biography?.bond ||
+          biography.flaw !== target.character.biography?.flaw ||
+          biography.motivation !== target.character.biography?.motivation ||
+          biography.preCampaignDesire !== target.character.biography?.preCampaignDesire ||
           JSON.stringify(biography.canonBasis) !== JSON.stringify(target.character.biography?.canonBasis) ||
           !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
           !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
