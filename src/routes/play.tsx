@@ -165,10 +165,8 @@ function PlayPage() {
       if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
       const { data, error } = await client.auth.getSession();
       if (error || !data.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
-      const response = await fetch(env.config.url + "/functions/v1/obsidian-gm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + data.session.access_token, apikey: env.config.publishableKey },
-        body: JSON.stringify({
+      const { data: payload, error: invokeError } = await client.functions.invoke("obsidian-gm", {
+        body: {
           operation: "GENERATE_CHARACTER_BIOGRAPHY",
           model: "obsidian-free",
           instructions: "Создай полную индивидуальную биографию персонажа Экдрасиля по закрытым источникам. generationSeed во входном JSON — криптографически случайный ключ вариативности: используй его только чтобы выбрать неповторяющуюся комбинацию жизненных обстоятельств, деталей внешности и личных связей; никогда не упоминай seed и не считай его фактом мира. Не повторяй универсальные шаблоны и типовые трагедии. Верни только структурированный JSON по схеме сервера. Не меняй механику персонажа. ОСОБО ВАЖНО: внешность должна быть конкретной, кинематографичной и пригодной для однозначного представления персонажа художником и мастером, без общих фраз вроде «обычная внешность» или «внимательный взгляд». Заполни КАЖДОЕ поле appearanceDetails развёрнутыми 2–3 предложениями (не менее 35 символов на поле): height — точный рост/диапазон и пропорции; build — плечи, осанка, руки и характер движений; skin — оттенок, фактура и заметные особенности; hair — цвет, длина, текстура, стрижка и уход; eyes — цвет, форма, посадка и выражение; face — форма лица, лоб, скулы, нос, губы, подбородок, брови, мимические линии и возрастные особенности; clothing — слои одежды, крой, материал, цвета, износ и практические детали; footwear — тип, материал, состояние и следы носки; accessories — конкретные украшения, ремни, сумки и предметы; distinctiveFeatures — шрамы, родинки, татуировки, ожоги, необычные детали (если их нет, так и объясни конкретно); firstImpression — цельный портрет в 3–4 предложениях, включая позу, манеру держаться, голос/манеру речи и впечатление при первой встрече. Все детали должны соответствовать народу, возрасту, происхождению, классу, предыстории и снаряжению; не противоречь друг другу и не повторяй одну и ту же фразу в разных полях.",
@@ -179,10 +177,17 @@ function PlayPage() {
             randomRolls: target.rolls,
             generationSeed: target.generationSeed,
           }),
-        }),
+        },
       });
-      const payload = await response.json().catch(() => null) as { output_text?: string; error?: { message?: string } } | null;
-      if (!response.ok || !payload?.output_text) throw new Error(payload?.error?.message ?? "Мастер не вернул биографию.");
+      if (invokeError) {
+        let detail = invokeError.message || "Ошибка вызова мастера.";
+        if ("context" in invokeError && invokeError.context instanceof Response) {
+          const errorPayload = await invokeError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+          detail = errorPayload?.error?.message ?? detail;
+        }
+        throw new Error(detail);
+      }
+      if (!payload?.output_text) throw new Error("Мастер не вернул биографию.");
       const biography = JSON.parse(payload.output_text) as CharacterBiography;
       if (!biography || typeof biography.biography !== "string" ||
           biography.birthplace !== target.character.biography?.birthplace ||
@@ -343,7 +348,9 @@ function PlayPage() {
         <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
       </>}
     </section>}
-    {mode === "RANDOM" && candidate && <section className="space-y-3 rounded-lg border p-4">
+    {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
+    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => void generateBiographyWithMaster(candidate)}>Повторить генерацию через API</Button></section>}
+    {mode === "RANDOM" && candidate && biographyReady && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Досье персонажа · 1 уровень</h2>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">1. Имя и основные данные</h3>
