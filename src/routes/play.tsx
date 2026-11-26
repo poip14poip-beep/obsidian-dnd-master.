@@ -168,7 +168,7 @@ function PlayPage() {
         body: {
           operation: "GENERATE_RANDOM_CHARACTER_IDENTITY",
           model: "obsidian-free",
-          instructions: "С нуля создай личность случайного персонажа для кампании Экдрасиль. Сам выбери имя, народ, класс, предысторию, возраст, канонический город рождения и всю личную основу биографии. Используй только варианты из строгой схемы. Имя должно соответствовать культурному звучанию народа и места. Выбирай необычную, но правдоподобную судьбу, не используй шаблонные трагедии. Учитывай подтверждённую хронику, географию, социальные условия и отсутствие свободной повседневной магии. Не придумывай канонические факты, города, организации, NPC и исторические события. Верни все поля на русском языке, конкретно и без заглушек. generationSeed — случайный ключ разнообразия, никогда не упоминай его в биографии.",
+          instructions: "С нуля создай ПОЛНОЕ ДОСЬЕ случайного персонажа для кампании Экдрасиль одним ответом. Помимо личности сразу создай биографию и подробную внешность. Сам выбери имя, народ, класс, предысторию, возраст, канонический город рождения и всю личную основу биографии. Используй только варианты из строгой схемы. Имя должно соответствовать культурному звучанию народа и места. Выбирай необычную, но правдоподобную судьбу, не используй шаблонные трагедии. Учитывай подтверждённую хронику, географию, социальные условия и отсутствие свободной повседневной магии. Не придумывай канонические факты, города, организации, NPC и исторические события. Верни все поля схемы одним ответом. Полностью заполни все поля biographySchema: appearance не менее 100 символов; каждое из 11 полей appearanceDetails — не менее 35 символов; lifeEvents минимум 2 события; canonBasis минимум 1 подтверждённая ссылка на хронику; birthplaceSource укажи точно. skillOrigins — ровно 18 строк по всем навыкам D&D в фиксированном порядке: Acrobatics, Animal Handling, Arcana, Athletics, Deception, History, Insight, Intimidation, Investigation, Medicine, Nature, Perception, Performance, Persuasion, Religion, Sleight of Hand, Stealth, Survival. Формат каждой строки: English Skill Name — конкретное происхождение владения для данного героя. weaponBackground и equipmentBackground должны учитывать выбранные класс и предысторию и реальные стартовые предметы профиля. В biography напиши цельную историю жизни до начала кампании, не менее 500 символов. Не создавай магические способности без основания в каноне Экдрасиля. Все личные поля — на русском, без заглушек. generationSeed — случайный ключ разнообразия, никогда не упоминай его в биографии.",
           input: JSON.stringify({ action: "Выбор полной личности нового случайного персонажа Экдрасиля", generationSeed: seed }),
         },
       });
@@ -181,7 +181,7 @@ function PlayPage() {
         throw new Error(detail);
       }
       if (!data?.output_text) throw new Error("Мастер не вернул личность персонажа.");
-      const identity = JSON.parse(data.output_text) as RandomCharacterProfile;
+      const identity = JSON.parse(data.output_text) as RandomCharacterProfile & CharacterBiography;
       const supportedSpecies = ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"];
       const supportedClasses = ["Fighter","Rogue","Barbarian"];
       const supportedBackgrounds = ["Acolyte","Criminal","Sage","Soldier"];
@@ -198,91 +198,48 @@ function PlayPage() {
           typeof identity.bond !== "string" || identity.bond.length < 10 ||
           typeof identity.flaw !== "string" || identity.flaw.length < 10 ||
           typeof identity.motivation !== "string" || identity.motivation.length < 20 ||
-          typeof identity.preCampaignDesire !== "string" || identity.preCampaignDesire.length < 20) {
+          typeof identity.preCampaignDesire !== "string" || identity.preCampaignDesire.length < 20 ||
+          typeof identity.appearance !== "string" || identity.appearance.trim().length < 100 ||
+          !identity.appearanceDetails || Object.values(identity.appearanceDetails).some((value) => typeof value !== "string" || value.trim().length < 35) ||
+          typeof identity.birthplaceSource !== "string" || identity.birthplaceSource.length < 20 ||
+          typeof identity.biography !== "string" || identity.biography.length < 500 ||
+          !Array.isArray(identity.skillOrigins) || identity.skillOrigins.length !== 18 ||
+          typeof identity.weaponBackground !== "string" || identity.weaponBackground.length < 30 ||
+          typeof identity.equipmentBackground !== "string" || identity.equipmentBackground.length < 30 ||
+          !Array.isArray(identity.canonBasis) || identity.canonBasis.length < 1 ||
+          typeof identity.inventedDetailsNotice !== "string" || identity.inventedDetailsNotice.length < 30) {
         throw new Error("Личность персонажа не прошла проверку. Мастер должен выбрать имя, народ, класс, предысторию и заполнить все поля биографии.");
       }
       const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
-      setCandidate(generated);
-      setBiographyBusy(false);
-      await generateBiographyWithMaster(generated, true);
+      const skillNames = generated.character.skillBonuses?.map((skill) => skill.name) ?? [];
+      const skillOriginMap = new Map(identity.skillOrigins.map((entry) => {
+        const separator = entry.indexOf(" — ");
+        return [separator < 0 ? "" : entry.slice(0, separator).trim(), separator < 0 ? "" : entry.slice(separator + 3).trim()];
+      }));
+      const skillOrigins = skillNames.map((name) => skillOriginMap.get(name) ?? "");
+      if (skillOrigins.some((origin) => origin.length < 20)) {
+        throw new Error("Мастер не объяснил происхождение каждого навыка. Досье не будет показано.");
+      }
+      const biography: CharacterBiography = {
+        ageYears: identity.ageYears, ageCertainty: "KNOWN", genderPresentation: identity.genderPresentation,
+        appearance: identity.appearance, appearanceDetails: identity.appearanceDetails,
+        birthplace: generated.character.biography?.birthplace ?? identity.birthplace,
+        birthplaceSource: identity.birthplaceSource, family: identity.family, upbringing: identity.upbringing,
+        lifeEvents: identity.lifeEvents, personalityTraits: identity.personalityTraits,
+        ideal: identity.ideal, bond: identity.bond, flaw: identity.flaw, motivation: identity.motivation,
+        preCampaignDesire: identity.preCampaignDesire, biography: identity.biography, skillOrigins,
+        weaponBackground: identity.weaponBackground, equipmentBackground: identity.equipmentBackground,
+        canonBasis: identity.canonBasis, inventedDetailsNotice: identity.inventedDetailsNotice,
+      };
+      setCandidate({ ...generated, character: { ...generated.character, biography } });
+      setBiographyReady(true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     } finally {
       setBiographyBusy(false);
     }
   }
-  async function generateBiographyWithMaster(target: RandomCharacterResult | null = candidate, allowBusy = false) {
-    if (!target || (biographyBusy && !allowBusy) || locked) return;
-    setBiographyBusy(true);
-    setBiographyReady(false);
-    setImportError(null);
-    try {
-      const env = readSupabaseEnv();
-      const { client, envResult } = getSupabaseAuthClient();
-      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
-      const { data, error } = await client.auth.getSession();
-      if (error || !data.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
-      const { data: payload, error: invokeError } = await client.functions.invoke("obsidian-gm", {
-        body: {
-          operation: "GENERATE_CHARACTER_BIOGRAPHY",
-          model: "obsidian-free",
-          instructions: "Создай полную индивидуальную биографию персонажа Экдрасиля по закрытым источникам. generationSeed во входном JSON — криптографически случайный ключ вариативности: используй его только чтобы выбрать неповторяющуюся комбинацию жизненных обстоятельств, деталей внешности и личных связей; никогда не упоминай seed и не считай его фактом мира. Не повторяй универсальные шаблоны и типовые трагедии. Верни только структурированный JSON по схеме сервера. Не меняй механику персонажа. ОСОБО ВАЖНО: внешность должна быть конкретной, кинематографичной и пригодной для однозначного представления персонажа художником и мастером, без общих фраз вроде «обычная внешность» или «внимательный взгляд». Заполни КАЖДОЕ поле appearanceDetails развёрнутыми 2–3 предложениями (не менее 35 символов на поле): height — точный рост/диапазон и пропорции; build — плечи, осанка, руки и характер движений; skin — оттенок, фактура и заметные особенности; hair — цвет, длина, текстура, стрижка и уход; eyes — цвет, форма, посадка и выражение; face — форма лица, лоб, скулы, нос, губы, подбородок, брови, мимические линии и возрастные особенности; clothing — слои одежды, крой, материал, цвета, износ и практические детали; footwear — тип, материал, состояние и следы носки; accessories — конкретные украшения, ремни, сумки и предметы; distinctiveFeatures — шрамы, родинки, татуировки, ожоги, необычные детали (если их нет, так и объясни конкретно); firstImpression — цельный портрет в 3–4 предложениях, включая позу, манеру держаться, голос/манеру речи и впечатление при первой встрече. Все детали должны соответствовать народу, возрасту, происхождению, классу, предыстории и снаряжению; не противоречь друг другу и не повторяй одну и ту же фразу в разных полях.",
-          input: JSON.stringify({
-            action: "Создание биографии случайного персонажа Экдрасиля",
-            character: target.character,
-            mechanicalSummary: target.summary,
-            randomRolls: target.rolls,
-            generationSeed: target.generationSeed,
-          }),
-        },
-      });
-      if (invokeError) {
-        let detail = invokeError.message || "Ошибка вызова мастера.";
-        if ("context" in invokeError && invokeError.context instanceof Response) {
-          const errorPayload = await invokeError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
-          detail = errorPayload?.error?.message ?? detail;
-        }
-        throw new Error(detail);
-      }
-      if (!payload?.output_text) throw new Error("Мастер не вернул биографию.");
-      const biography = JSON.parse(payload.output_text) as CharacterBiography;
-      if (!biography || typeof biography.biography !== "string" ||
-          biography.ageYears !== target.character.biography?.ageYears ||
-          biography.genderPresentation !== target.character.biography?.genderPresentation ||
-          biography.birthplace !== target.character.biography?.birthplace ||
-          biography.birthplaceSource !== target.character.biography?.birthplaceSource ||
-          biography.family !== target.character.biography?.family ||
-          biography.upbringing !== target.character.biography?.upbringing ||
-          JSON.stringify(biography.lifeEvents) !== JSON.stringify(target.character.biography?.lifeEvents) ||
-          JSON.stringify(biography.personalityTraits) !== JSON.stringify(target.character.biography?.personalityTraits) ||
-          biography.ideal !== target.character.biography?.ideal ||
-          biography.bond !== target.character.biography?.bond ||
-          biography.flaw !== target.character.biography?.flaw ||
-          biography.motivation !== target.character.biography?.motivation ||
-          biography.preCampaignDesire !== target.character.biography?.preCampaignDesire ||
-          JSON.stringify(biography.canonBasis) !== JSON.stringify(target.character.biography?.canonBasis) ||
-          !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
-          !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
-          !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (target.character.skillBonuses?.length ?? 0) ||
-          !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.trim().length < 35) ||
-          typeof biography.appearance !== "string" || biography.appearance.trim().length < 100 ||
-           typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
-          typeof biography.weaponBackground !== "string" || biography.weaponBackground.trim().length < 30 ||
-          typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
-        throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
-      }
-      setCandidate((current) => {
-        if (!current || current.generationSeed !== target.generationSeed) return current;
-        return { ...current, character: { ...current.character, biography } };
-      });
-      setBiographyReady(true);
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
-    } finally {
-      setBiographyBusy(false);
-    }
-  }
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || dossierUploadBusy) return;
@@ -417,7 +374,7 @@ function PlayPage() {
       </>}
     </section>}
     {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
-    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => candidate ? void generateBiographyWithMaster(candidate) : generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></section>}
+    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></section>}
     {mode === "RANDOM" && candidate && biographyReady && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Досье персонажа · 1 уровень</h2>
       <section className="space-y-2">
@@ -512,8 +469,8 @@ function PlayPage() {
       <div className="rounded border border-primary/30 p-3 space-y-2">
         <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
         <p className="text-xs text-muted-foreground">После случайных бросков приложение автоматически отправляет только параметры сгенерированного персонажа в RouterAI. Ключ хранится на сервере Supabase и не попадает в браузер. Запрос может расходовать баланс RouterAI.</p>
-        {biographyBusy && <p className="text-sm text-primary">Мастер изучает хронику Экдрасиля и создаёт индивидуальную историю, внешность, связи и объяснения навыков…</p>}
-        {!biographyBusy && !biographyReady && <div className="space-y-2"><p className="text-xs text-destructive">{importError || "Биография ещё не создана. Персонажа нельзя подтвердить без ответа мастера."}</p><Button type="button" variant="outline" disabled={locked} onClick={() => void generateBiographyWithMaster(candidate)}>Повторить генерацию через API</Button></div>}
+        {biographyBusy && <p className="text-sm text-primary">Мастер Экдрасиля одновременно создаёт личность, полную историю, подробную внешность и досье…</p>}
+        {!biographyBusy && !biographyReady && <div className="space-y-2"><p className="text-xs text-destructive">{importError || "Биография ещё не создана. Персонажа нельзя подтвердить без ответа мастера."}</p><Button type="button" variant="outline" disabled={locked} onClick={() => generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></div>}
         {biographyReady && candidate.character.biography && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character.biography.ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character.biography.ageYears}</p><p>{candidate.character.biography.biography}</p><p className="text-xs text-muted-foreground">События: {candidate.character.biography.lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character.biography.weaponBackground}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character.biography.equipmentBackground}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character.biography.canonBasis.join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
       </div>
       <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
