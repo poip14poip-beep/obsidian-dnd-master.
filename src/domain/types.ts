@@ -290,6 +290,8 @@ export interface PlayerCharacterState {
   /** Background/предыстория used to generate the campaign's random non-fixed starter kit. */
   background?: string;
   biography?: CharacterBiography;
+  /** Персональная хроника последнего месяца перед началом кампании. */
+  recentPreCampaignHistory?: string;
   level: number | null;
   classLevel?: number | null;
   epicCampaignLevels?: number;
