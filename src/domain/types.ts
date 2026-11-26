@@ -26,6 +26,8 @@ export interface SourceProcessingSummary {
 
 export interface SourceDocument {
   id: string;
+  /** False hides GM-only source material from player-facing source lists while retaining it in GM context. */
+  playerVisible?: boolean;
   title: string;
   type: SourceType;
   targetPartition: "CAMPAIGN_STATE" | "PLAYER_CHARACTER_STATE" | "SYSTEM_RULES";
@@ -101,6 +103,8 @@ export interface NpcRecord {
   locationId: string | null;
   factionId: string | null;
   goals: string;
+  /** GM-only summary of possessions, assets and resources currently controlled by this NPC. */
+  resources?: string;
   attitudeToPlayer: string;
   certainty: CertaintyStatus;
   sourceId: string;
@@ -291,6 +295,7 @@ export interface NpcTurnChange {
   name: string;
   role: string;
   goals: string;
+  resources: string;
   attitudeToPlayer: string;
   locationName: string | null;
   factionName: string | null;
