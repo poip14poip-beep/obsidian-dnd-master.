@@ -319,6 +319,25 @@ export async function saveLinkedCloudSnapshot(
   const remote = latest.data.snapshot;
   const remoteRevision = remote.found ? remote.revision : 0;
   if (remoteRevision !== link.revision) {
+    const remoteChecksums = remote.payload?.["checksums"];
+    const sameCommittedState = remote.found &&
+      remote.turn_number === payload.collections.session_log.lastTurnNumber &&
+      JSON.stringify(remoteChecksums) === JSON.stringify(payload.checksums);
+    if (sameCommittedState) {
+      // The previous request may have reached the server even if its response was lost.
+      // Adopt that already-verified revision instead of creating a duplicate checkpoint.
+      const currentLink = getCloudCampaignLink();
+      if (currentLink?.campaignId === link.campaignId && currentLink.revision === link.revision) {
+        setCloudCampaignLink({ campaignId: link.campaignId, revision: remoteRevision });
+      }
+      return {
+        ok: true,
+        skipped: false,
+        revision: remoteRevision,
+        turnNumber: remote.turn_number ?? payload.collections.session_log.lastTurnNumber,
+        payloadSha256: remote.payload_sha256 ?? "",
+      };
+    }
     return {
       ok: false,
       error: {
@@ -337,7 +356,10 @@ export async function saveLinkedCloudSnapshot(
   );
   if (!saved.ok) return { ok: false, error: saved.error };
   const metadata = saved.data.result;
-  setCloudCampaignLink({ campaignId: link.campaignId, revision: metadata.revision });
+  const currentLink = getCloudCampaignLink();
+  if (currentLink?.campaignId === link.campaignId && currentLink.revision === link.revision) {
+    setCloudCampaignLink({ campaignId: link.campaignId, revision: metadata.revision });
+  }
   return {
     ok: true,
     skipped: false,
