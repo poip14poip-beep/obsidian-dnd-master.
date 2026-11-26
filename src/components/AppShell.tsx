@@ -22,6 +22,7 @@ import { useAuth } from "@/auth/auth-context";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { cn } from "@/lib/utils";
+import { isCampaignActive } from "@/domain/campaign-state";
 
 export type NavRoutePath =
   | "/"
@@ -70,7 +71,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
-  const campaignActive = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
+  const campaignActive = isCampaignActive(worldState.setup.confirmed, sessionLog.lastTurnNumber);
 
   async function handleLogout() {
     setDrawerOpen(false);
