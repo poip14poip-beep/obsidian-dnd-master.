@@ -141,7 +141,7 @@ function PlayPage() {
       const generated = generateRandomStart(character.hpMax ?? 0, undefined, {
         ...(character.background ? { background: character.background } : {}),
         retainedInventory: character.inventory,
-        generateBackgroundKit: character.sourceDossierId !== "GENERATED_RANDOM",
+        generateStartingSupplies: character.sourceDossierId !== "GENERATED_RANDOM",
       });
       const env = readSupabaseEnv();
       const { client, envResult } = getSupabaseAuthClient();
