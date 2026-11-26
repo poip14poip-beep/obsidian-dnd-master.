@@ -108,6 +108,30 @@ const identitySchema: JsonRecord = {
   },
   required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire"]
 };
+const appearanceSchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    appearance: { type: "string" },
+    appearanceDetails: { type: "object", additionalProperties: false, properties: {
+      height:{type:"string"},build:{type:"string"},skin:{type:"string"},hair:{type:"string"},eyes:{type:"string"},face:{type:"string"},
+      clothing:{type:"string"},footwear:{type:"string"},accessories:{type:"string"},distinctiveFeatures:{type:"string"},firstImpression:{type:"string"}
+    }, required:["height","build","skin","hair","eyes","face","clothing","footwear","accessories","distinctiveFeatures","firstImpression"] }
+  }, required:["appearance","appearanceDetails"]
+};
+const storySchema: JsonRecord = {
+  type:"object",additionalProperties:false,
+  properties:{
+    biography:{type:"string"},birthplaceSource:{type:"string"},canonBasis:{type:"array",items:{type:"string"}},
+    inventedDetailsNotice:{type:"string"}
+  },required:["biography","birthplaceSource","canonBasis","inventedDetailsNotice"]
+};
+const originsSchema: JsonRecord = {
+  type:"object",additionalProperties:false,
+  properties:{
+    skillOrigins:{type:"array",items:{type:"string"}},
+    weaponBackground:{type:"string"},equipmentBackground:{type:"string"}
+  },required:["skillOrigins","weaponBackground","equipmentBackground"]
+};
 const biographySchema: JsonRecord = {
   type: "object", additionalProperties: false,
   properties: {
@@ -220,7 +244,10 @@ Deno.serve(async (req: Request) => {
     return json({ stored: true, source: data }, 200, cors);
   }
 
-  const isBiographyRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_BIOGRAPHY";
+  const isBiographyRequest = isRecord(body) && ["GENERATE_CHARACTER_BIOGRAPHY","GENERATE_CHARACTER_APPEARANCE","GENERATE_CHARACTER_STORY","GENERATE_CHARACTER_ORIGINS"].includes(String(body.operation));
+  const isAppearanceRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_APPEARANCE";
+  const isStoryRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_STORY";
+  const isOriginsRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_ORIGINS";
   const isIdentityRequest = isRecord(body) && body.operation === "GENERATE_RANDOM_CHARACTER_IDENTITY";
   const requestBody: JsonRecord = isRecord(body) ? body : {};
   if (!ROUTERAI_API_KEY) {
@@ -241,8 +268,8 @@ Deno.serve(async (req: Request) => {
   }
   const inputText = requestBody.input as string;
   const instructionText = requestBody.instructions as string;
-  const schema: JsonRecord = isIdentityRequest ? identitySchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
-  const schemaName = isIdentityRequest ? "obsidian_random_character_identity" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
+  const schema: JsonRecord = isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const schemaName = isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
   }
@@ -370,6 +397,15 @@ Deno.serve(async (req: Request) => {
     "Ты — генератор личности персонажа для D&D 2024 в мире Экдрасиль. Верни только один компактный JSON строго по схеме. Выбери имя, народ, класс, предысторию, возраст 18–80, гендерное представление и подтверждённый город рождения. Добавь краткую семью, воспитание, ровно два жизненных события, две черты, идеал, привязанность, слабость, мотивацию и личное желание. Все значения короткие, конкретные, на русском. Не пиши длинную прозу, вступление, Markdown или пояснения. Не создавай внешность, экипировку или подробную биографию — это следующий этап.",
     "Канон имеет приоритет: выбирай город только из разрешённого списка и используй только переданные ниже подтверждённые фрагменты. Не придумывай новые города, страны, фракции, исторические события или NPC. Личные семейные обстоятельства можно выдумывать, не выдавая их за мировой канон.",
     canonContext
+  ] : isAppearanceRequest ? [
+    "Ты создаёшь только внешность персонажа Экдрасиля. Верни строго JSON по схеме. Используй имя, народ, возраст, пол, профессию, биографию и снаряжение из входа. Заполни 11 полей внешности конкретно: рост, телосложение, кожа, волосы, глаза, лицо, одежда, обувь, аксессуары, отличительные особенности, первое впечатление. Каждое поле не менее 20 слов? Нет: кратко, обычно 8–20 слов, без повторов. Не добавляй сверхъестественных черт. Не изменяй личность.",
+    canonContext
+  ] : isStoryRequest ? [
+    "Ты пишешь только предысторию персонажа Экдрасиля до начала кампании. Верни JSON по схеме: цельная биография 350–500 слов, источник места рождения, 2–4 пункта canonBasis, inventedDetailsNotice. Используй входную личность и подтверждённый канон. Не выдумывай исторические события, NPC, организации или географию. Разделяй канон мира и личные вымышленные детали. Не меняй личность.",
+    canonContext
+  ] : isOriginsRequest ? [
+    "Ты объясняешь происхождение уже имеющихся навыков, оружия и снаряжения. Верни строго JSON по схеме. skillOrigins: по одной строке на каждый навык из входного skillBonuses, формат 'точное имя навыка — конкретное происхождение не менее 20 слов'. weaponBackground объясняет только переданное оружие. equipmentBackground объясняет только предметы входного inventory. Не добавляй и не удаляй навыки, оружие, предметы или механические свойства.",
+    canonContext
   ] : [
     masterPrompt,
     characterGuideContext,
@@ -414,9 +450,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isIdentityRequest ? 3000 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isIdentityRequest ? 3000 : isAppearanceRequest ? 1800 : isStoryRequest ? 3500 : isOriginsRequest ? 3000 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isIdentityRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
