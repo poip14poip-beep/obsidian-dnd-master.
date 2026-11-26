@@ -208,6 +208,10 @@ describe("clean trial campaign reset", () => {
   it("archives old campaign state from the active collections while preserving verified sources and the player character", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
+    const optionalSrd = initial.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD)!;
+    optionalSrd.contentStatus = "NOT_ATTACHED";
+    optionalSrd.reviewStatus = "UNREVIEWED";
+    optionalSrd.contextEnabled = false;
     initial.sources.push({ ...initial.sources[0]!, id: "old-campaign-map", title: "Старая карта кампании", type: "WORLD_CANON" });
     initial.sources.push({ ...initial.sources[0]!, id: "srd-test", title: "SRD 5.2.1", type: "SUPPLEMENTAL", contentStatus: "ATTACHED", reviewStatus: "VERIFIED", contextEnabled: true, fileName: "SRD_5.2.1.txt", content: "Verified rules text" });
     initial.world_state.campaignName = "Старая кампания";
