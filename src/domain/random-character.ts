@@ -106,7 +106,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const conMod=mod(abilityScores.constitution);
   const hpMax=Math.max(1,classData.die+conMod+speciesData.hp);
   const dexMod=mod(abilityScores.dexterity);
-  const armorClass=className==="Fighter"?16:className==="Rogue"?11+dexMod:10+dexMod+conMod;
+  const armorClass=className==="Fighter"?17:className==="Rogue"?11+dexMod:10+dexMod+conMod;
   const attackMod=mod(abilityScores[classData.attackAbility])+proficiency;
   const allGear=[...classData.gear,...backgroundData.gear];
   const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
