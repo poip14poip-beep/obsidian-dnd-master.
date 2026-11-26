@@ -63,10 +63,10 @@ function PlayPage() {
       skillBonuses: parsed.skillBonuses,
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
-      statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null && parsed.armorClass !== null ? "KNOWN" : "APPROXIMATE",
+      statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
       inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: "Загружено из досье персонажа после отдельного просмотра и подтверждения. Текущие HP, деньги и текущее местоположение не выводятся из досье; UNKNOWN.",
+      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. КБ 20 и итоговые спасброски с Cloak of Protection условны: плащ должен быть надет и настроен; настройка не подтверждена. Размер существа в досье не указан и остаётся UNKNOWN.",
     });
     if (result.ok) setConfirmed(true);
   };
