@@ -41,6 +41,7 @@ function SettingsPage() {
     updateCampaignParameters,
     applyGeneratedStart,
     confirmCampaignSetup,
+    resetForTrialCampaign,
     exportBackupJson,
     importBackupJson,
   } = useObsidianStore();
@@ -52,6 +53,7 @@ function SettingsPage() {
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [startNarrative, setStartNarrative] = useState(worldState.startNarrative ?? "");
   const [importError, setImportError] = useState<string | null>(null);
+  const [backupAcknowledged, setBackupAcknowledged] = useState(false);
 
   useEffect(() => {
     setCampaignName(worldState.campaignName);
@@ -148,6 +150,20 @@ function SettingsPage() {
     URL.revokeObjectURL(url);
   }
 
+  function handleResetForTrialCampaign() {
+    if (!backupAcknowledged) {
+      toast.error("Сначала скачай резервную копию и подтверди её сохранение.");
+      return;
+    }
+    const result = resetForTrialCampaign();
+    if (result.ok) {
+      setBackupAcknowledged(false);
+      toast.success("Создана чистая пробная кампания. Источники и лист персонажа сохранены; старый игровой журнал не перенесён.");
+    } else {
+      toast.error(result.error);
+    }
+  }
+
   function handleExportCampaignState() {
     downloadMarkdownFile("CAMPAIGN_STATE.md", buildCampaignStateMarkdown(collections));
     toast.success("CAMPAIGN_STATE.md сформирован; лист персонажа в него не включён.");
@@ -220,6 +236,24 @@ function SettingsPage() {
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportSessionLog}>Скачать SESSION_LOG.md</Button>
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCharacterState}>Скачать PLAYER_CHARACTER_STATE.md</Button>
         </div>
+      </section>
+
+      <section className="panel-surface space-y-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Чистая пробная кампания</h2>
+          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Проверенные источники и отдельный лист персонажа сохраняются. Файлы в библиотеке не изменяются.</p>
+        </div>
+        <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleExportBackup}>
+          <Download className="mr-1.5 h-4 w-4" />
+          Скачать резервную копию текущего состояния
+        </Button>
+        <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
+          <Checkbox checked={backupAcknowledged} onCheckedChange={(v) => setBackupAcknowledged(v === true)} />
+          <span>Я сохранил резервную копию и разрешаю очистить текущее состояние кампании</span>
+        </label>
+        <Button type="button" variant="destructive" className="touch-target w-full" disabled={!backupAcknowledged} onClick={handleResetForTrialCampaign}>
+          Создать чистую пробную кампанию
+        </Button>
       </section>
 
       {/* Setup Wizard */}
