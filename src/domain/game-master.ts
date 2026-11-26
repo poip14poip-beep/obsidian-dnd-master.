@@ -406,6 +406,7 @@ function parseTechnicalDateTime(value: string): number | null {
   const ordinal = month <= 12 ? (month - 1) * 30 + day : 360 + day;
   return year * 365 * 1440 + (ordinal - 1) * 1440 + hour * 60 + minute;
 }
+
 export async function resolvePlayerAction(sessionToken: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch; supabaseUrl?: string; publishableKey?: string } = {}): Promise<GameMasterResult> {
   if (!sessionToken.trim()) throw new GameMasterError("Войди в аккаунт, чтобы использовать игрового мастера.", "AUTH_REQUIRED");
