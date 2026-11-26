@@ -22,7 +22,7 @@ function ru(value: string | number | null | undefined): string {
  if (value === null || value === undefined || value === "") return "Неизвестно";
  let result = String(value);
  for (const [pattern, replacement] of RU_TERMS) result = result.replace(pattern, replacement);
- return result.replace(/\\bft\\b/gi, "фут.").replace(/\\blb\\b/gi, "фунт").replace(/\\bHP\\b/g, "ОЗ");
+ return result.replace(/\bft\b/gi, "фут.").replace(/\blb\b/gi, "фунт").replace(/\bHP\b/g, "ОЗ");
 }
 
 function Value({ label, value }: { label: string; value: string | number | null | undefined }) {
