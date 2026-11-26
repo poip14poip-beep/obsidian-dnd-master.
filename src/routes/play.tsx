@@ -53,12 +53,12 @@ function PlayPage() {
       epicCampaignLevels: parsed.epicCampaignLevels,
       hpCurrent: null,
       hpMax: parsed.hitPointMaximum,
-      armorClass: parsed.armorClass,
+      armorClass: parsed.armorClass === null ? null : parsed.armorClass - 1,
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
       ...(parsed.hitDice ? { hitDice: parsed.hitDice } : {}),
-      ...(parsed.savingThrowBonuses ? { savingThrowBonuses: parsed.savingThrowBonuses } : {}),
+      ...(parsed.baseSavingThrowBonuses ? { savingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       ...(parsed.baseSavingThrowBonuses ? { baseSavingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       skillBonuses: parsed.skillBonuses,
       classFeaturesByLevel: parsed.classFeaturesByLevel,
@@ -66,7 +66,7 @@ function PlayPage() {
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
       inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. КБ 20 и итоговые спасброски с Cloak of Protection условны: плащ должен быть надет и настроен; настройка не подтверждена. Размер существа в досье не указан и остаётся UNKNOWN.",
+      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. КБ 19 — подтверждённая база без бонуса Cloak of Protection; КБ 20 и +1 ко всем спасброскам возможны только если плащ надет и настроен. Настройка не подтверждена. Размер существа в досье не указан и остаётся UNKNOWN.",
     });
     if (result.ok) setConfirmed(true);
   };
