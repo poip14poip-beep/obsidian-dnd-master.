@@ -247,11 +247,15 @@ function TurnsPage() {
             <p className="text-muted-foreground">{cloudSyncMessage}</p>
             {cloudSyncStatus === "ERROR" && <p className="mt-1 text-muted-foreground">Ход уже сохранён локально. Облачная копия не подтверждена.</p>}
           </div>
-          {cloudSyncStatus === "ERROR" && (
+          {cloudSyncStatus === "ERROR" && (cloudSyncMessage?.includes("В облаке уже есть другая версия") ? (
+            <Button asChild type="button" variant="secondary" className="touch-target">
+              <Link to="/settings">Загрузить актуальную версию</Link>
+            </Button>
+          ) : (
             <Button type="button" variant="secondary" className="touch-target" onClick={() => void retryCloudSnapshot()}>
               Повторить сохранение
             </Button>
-          )}
+          ))}
         </section>
       )}
 
