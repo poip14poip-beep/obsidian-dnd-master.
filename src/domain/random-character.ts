@@ -3,7 +3,7 @@ import type { InventoryItem, PlayerCharacterState } from "./types";
 type Ability = "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma";
 type Random = (length: number) => number;
 type ClassKey = "Fighter" | "Rogue" | "Barbarian";
-type BackgroundKey = "Soldier" | "Criminal";
+type BackgroundKey = "Acolyte" | "Criminal" | "Sage" | "Soldier";
 type SpeciesKey = "Human" | "Elf" | "Dark Elf" | "Gnome" | "Red Dwarf" | "Half-Elf" | "Beastfolk";
 
 const ABILITIES: Ability[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
@@ -41,8 +41,10 @@ const CLASS_DATA = {
 } as const;
 
 const BACKGROUND_DATA = {
-  Soldier: { abilities:["strength","dexterity","constitution"] as Ability[], feat:"Savage Attacker", skills:["Athletics","Intimidation"], tool:"Игровой набор (случайный)", gear:[["Копьё",1,"1d6 колющий; Thrown, Versatile; mastery Sap"],["Короткий лук",1,"1d6 колющий"],["Стрелы",20,"Боеприпасы"],["Игровой набор",1,"Инструмент"],["Набор целителя",1,"Стабилизация и лечение"],["Колчан",1,"Для стрел"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",14,"14 GP"]] },
-  Criminal: { abilities:["dexterity","constitution","intelligence"] as Ability[], feat:"Alert", skills:["Sleight of Hand","Stealth"], tool:"Воровские инструменты", gear:[["Кинжал",2,"1d4 колющий; Finesse, Light"],["Воровские инструменты",1,"Инструмент"],["Ломик",1,"Инструмент"],["Мешочек",2,"Контейнер"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",16,"16 GP"]] },
+  Acolyte: { abilities:["intelligence","wisdom","charisma"] as Ability[], feat:"Magic Initiate (Cleric)", skills:["Insight","Religion"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга молитв",1,"Книга"],["Священный символ",1,"Фокусировка"],["Пергамент",10,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
+  Criminal: { abilities:["dexterity","constitution","intelligence"] as Ability[], feat:"Alert", skills:["Sleight of Hand","Stealth"], tool:"Воровские инструменты", gear:[["Кинжал",2,"1d4 колющий; Finesse, Light"],["Воровские инструменты",1,"Инструмент"],["Ломик",1,"Инструмент"],["Мешочек",2,"Контейнер"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",16,"16 GP"]], alternativeGold:50 },
+  Sage: { abilities:["constitution","intelligence","wisdom"] as Ability[], feat:"Magic Initiate (Wizard)", skills:["Arcana","History"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга истории",1,"Книга"],["Пергамент",8,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
+  Soldier: { abilities:["strength","dexterity","constitution"] as Ability[], feat:"Savage Attacker", skills:["Athletics","Intimidation"], tool:"Игровой набор (выбрать вид)", gear:[["Копьё",1,"1d6 колющий; Thrown, Versatile; mastery Sap"],["Короткий лук",1,"1d6 колющий"],["Стрелы",20,"Боеприпасы"],["Игровой набор",1,"Инструмент"],["Набор целителя",1,"Стабилизация и лечение"],["Колчан",1,"Для стрел"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",14,"14 GP"]], alternativeGold:50 },
 } as const;
 
 const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string;skillOptions?:string[];skillCount?:number}> = {
@@ -76,7 +78,7 @@ export interface RandomCharacterResult {
 
 export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const className=choose(["Fighter","Rogue","Barbarian"] as const,random);
-  const background=choose(["Soldier","Criminal"] as const,random);
+  const background=choose(["Acolyte","Criminal","Sage","Soldier"] as const,random);
   const species=choose(["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] as const,random);
   const classData=CLASS_DATA[className];
   const backgroundData=BACKGROUND_DATA[background];
@@ -120,7 +122,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const dexMod=mod(abilityScores.dexterity);
   const armorClass=className==="Fighter"?17:className==="Rogue"?11+dexMod:10+dexMod+conMod;
   const attackMod=mod(abilityScores[classData.attackAbility])+proficiency;
-  const allGear=[...classData.gear,...backgroundData.gear];
+  const backgroundUsesGold=choose([false,true] as const,random);\n  const backgroundGear=backgroundUsesGold?[["Золотые монеты",backgroundData.alternativeGold,"50 GP (альтернативный комплект предыстории)"]] as const:backgroundData.gear;\n  const allGear=[...classData.gear,...backgroundGear];
   const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
   const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes],index)=>item(String(name),Number(qty),String(notes),index));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];

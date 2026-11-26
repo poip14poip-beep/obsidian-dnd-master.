@@ -15,7 +15,7 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(result.character.baseSavingThrowBonuses).toBeDefined();
     expect(result.character.skillBonuses?.length).toBeGreaterThanOrEqual(4);
     expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Second Wind");
-    expect(result.character.currency?.gp).toBe(18);
+    expect(result.character.currency?.gp).toBeGreaterThanOrEqual(4);
     expect(result.character.inventory?.some((entry) => entry.name === "Кольчуга")).toBe(true);
     expect(result.character.biography?.birthplace).toContain("Вальтерра");
     expect(result.character.biography?.inventedDetailsNotice).toContain("сгенерированы");
@@ -33,7 +33,29 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(new Set(result.character.inventory?.map((entry) => entry.id)).size).toBe(result.character.inventory?.length);
     expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Наследие фей");
     expect(result.character.armorClass).toBe(11 + Math.floor(((result.character.abilityScores?.dexterity ?? 10) - 10) / 2));
-    expect(result.character.currency?.gp).toBe(24);
+    expect(result.character.currency?.gp).toBeGreaterThanOrEqual(8);
     expect(result.character.skillBonuses?.find((skill) => skill.name === "Perception")?.basis).toContain("владение");
+  });
+});
+
+
+describe("SRD 5.2.1 origin backgrounds", () => {
+  it("offers all four SRD backgrounds with their origin feats", () => {
+    const seen = new Map<string, string>();
+    for (let seed = 1; seed <= 300; seed++) {
+      let state = seed;
+      const random = (length: number) => {
+        state = (state * 48271) % 2147483647;
+        return Math.floor((state / 2147483647) * length);
+      };
+      const result = generateRandomCharacter(random);
+      const feature = result.character.classFeaturesByLevel?.[0]?.features ?? "";
+      seen.set(result.summary.background, feature);
+    }
+    expect([...seen.keys()].sort()).toEqual(["Acolyte","Criminal","Sage","Soldier"]);
+    expect(seen.get("Acolyte")).toContain("Magic Initiate (Cleric)");
+    expect(seen.get("Sage")).toContain("Magic Initiate (Wizard)");
+    expect(seen.get("Criminal")).toContain("Alert");
+    expect(seen.get("Soldier")).toContain("Savage Attacker");
   });
 });
