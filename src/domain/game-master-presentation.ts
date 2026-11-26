@@ -55,7 +55,8 @@ export function formatGameMasterAnswer(
   const timeMatch = date.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
   const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
-  const year = numericDate ? String(numericDate.year) : "НЕ УСТАНОВЛЕНО";
+  const fallbackYear = date.match(/(?:год|year)\\s*[:№]?\\s*(\\d{1,4})|(?:^|\\s|[,(])(\\d{1,4})\\s*(?:год|г\\.?|year)(?:\\s|[,(]|$)/i);
+  const year = numericDate ? String(numericDate.year) : fallbackYear ? (fallbackYear[1] ?? fallbackYear[2]) + (/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : "") : "НЕ УСТАНОВЛЕНО";
   const month = numericDate ? String(numericDate.month).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
   const day = numericDate ? String(numericDate.day).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
   const week = numericDate ? String(numericDate.week) : "НЕ УСТАНОВЛЕНО";
