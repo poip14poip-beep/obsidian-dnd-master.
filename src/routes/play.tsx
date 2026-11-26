@@ -368,6 +368,12 @@ function PlayPage() {
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
+        {candidate.character.biography?.appearance && (
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Общий портрет</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character.biography.appearance}</p>
+          </div>
+        )}
         {candidate.character.biography?.appearanceDetails ? (
           <div className="overflow-hidden rounded-lg border">
             {([
