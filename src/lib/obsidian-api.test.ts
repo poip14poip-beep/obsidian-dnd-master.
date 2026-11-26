@@ -4,9 +4,9 @@ import {
   commitCloudTurn,
   createCloudCampaign,
   loadCloudCampaign,
-  saveCloudTurnDraft,
-  saveCloudCampaignSnapshot,
   loadLatestCloudCampaignSnapshot,
+  saveCloudCampaignSnapshot,
+  saveCloudTurnDraft,
 } from "@/lib/obsidian-api";
 
 describe("obsidian-api client input guards", () => {
@@ -14,22 +14,7 @@ describe("obsidian-api client input guards", () => {
     const result = await createCloudCampaign("   ");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_TITLE");
-  
-  it("rejects invalid cloud snapshot IDs and revision counters before network access", async () => {
-    const invalidId = await saveCloudCampaignSnapshot("not-a-uuid", 0, 0, {});
-    const negativeRevision = await saveCloudCampaignSnapshot("123e4567-e89b-42d3-a456-426614174000", -1, 0, {});
-    const invalidTurn = await saveCloudCampaignSnapshot("123e4567-e89b-42d3-a456-426614174000", 0, -1, {});
-    const invalidLoad = await loadLatestCloudCampaignSnapshot("bad-id");
-    expect(invalidId.ok).toBe(false);
-    expect(negativeRevision.ok).toBe(false);
-    expect(invalidTurn.ok).toBe(false);
-    expect(invalidLoad.ok).toBe(false);
-    if (!invalidId.ok) expect(invalidId.error.code).toBe("INVALID_CAMPAIGN_ID");
-    if (!negativeRevision.ok) expect(negativeRevision.error.code).toBe("INVALID_SNAPSHOT_REVISION");
-    if (!invalidTurn.ok) expect(invalidTurn.error.code).toBe("INVALID_SNAPSHOT_REVISION");
-    if (!invalidLoad.ok) expect(invalidLoad.error.code).toBe("INVALID_CAMPAIGN_ID");
   });
-});
 
   it("rejects empty or malformed campaign IDs before bootstrap", async () => {
     const empty = await loadCloudCampaign(" ");
@@ -60,5 +45,20 @@ describe("obsidian-api client input guards", () => {
     const result = await commitCloudTurn("");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_DRAFT_ID");
+  });
+
+  it("rejects invalid cloud snapshot IDs and revision counters before network access", async () => {
+    const invalidId = await saveCloudCampaignSnapshot("not-a-uuid", 0, 0, {});
+    const negativeRevision = await saveCloudCampaignSnapshot("123e4567-e89b-42d3-a456-426614174000", -1, 0, {});
+    const invalidTurn = await saveCloudCampaignSnapshot("123e4567-e89b-42d3-a456-426614174000", 0, -1, {});
+    const invalidLoad = await loadLatestCloudCampaignSnapshot("bad-id");
+    expect(invalidId.ok).toBe(false);
+    expect(negativeRevision.ok).toBe(false);
+    expect(invalidTurn.ok).toBe(false);
+    expect(invalidLoad.ok).toBe(false);
+    if (!invalidId.ok) expect(invalidId.error.code).toBe("INVALID_CAMPAIGN_ID");
+    if (!negativeRevision.ok) expect(negativeRevision.error.code).toBe("INVALID_SNAPSHOT_REVISION");
+    if (!invalidTurn.ok) expect(invalidTurn.error.code).toBe("INVALID_SNAPSHOT_REVISION");
+    if (!invalidLoad.ok) expect(invalidLoad.error.code).toBe("INVALID_CAMPAIGN_ID");
   });
 });
