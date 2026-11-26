@@ -2,7 +2,7 @@ import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord
 import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
 
 export interface GameMasterContext {
-  action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
+  action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
   canonFacts: CanonFact[]; npcs: NpcRecord[]; factions: FactionRecord[]; locations: LocationRecord[];
   journal: Array<GameTurnEntry | TechnicalMessageEntry>; timelineEvents: DelayedEvent[];
 }
@@ -305,7 +305,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
 export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
   if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
-  if (!context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
+  if (context.mode !== "OPENING" && !context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
   const governing = context.sources.find((source) =>
     source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" &&
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
@@ -322,7 +322,9 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Досье персонажа должно быть загружено, обработано, проверено пользователем и включено в контекст ИИ.",
     "PLAYER_DOSSIER_NOT_READY",
   );
-  const verifiedRulesContext = selectRulesContext(context.sources, context.action);
+  const openingContextQuery = `${context.world.startLocationName} ${context.world.calendarSystem} ${context.world.startNarrative ?? ""} стартовая локация город регион окружение`;
+  const contextQuery = context.mode === "OPENING" ? openingContextQuery : context.action;
+  const verifiedRulesContext = selectRulesContext(context.sources, contextQuery);
   const system = [
     "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
     "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
@@ -334,6 +336,10 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Если в campaign.startNarrative содержится сгенерированная стартовая ситуация, считай её исходным состоянием текущего прохождения. Не переиначивай её задним числом. Не превращай бытовую сцену в квест. Развивай только последствия действий игрока и причинно обоснованные события мира.",
     "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
+    ...(context.mode === "OPENING" ? [
+      "СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING: это служебный запрос на вступительную сцену, а не действие Лии и не игровой ход. Используй campaign.startNarrative как подтверждённую стартовую ситуацию текущего прохождения: не меняй её смысл и не выдумывай предысторию. Описывай только доступную Лии обстановку, опираясь на подтверждённые источники и зарегистрированную стартовую локацию. Не заставляй Лию двигаться, говорить, выбирать или совершать действия. Не создавай квест, поручение, заказчика, обязательную встречу, угрозу, таймер, новый NPC, фракцию, локацию или факт. Не продвигай игровое время и не меняй дату, HP, предметы, деньги, ресурсы, состояния, NPC или состояние мира.",
+      "Вступление должно начинаться заголовком «ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001». Полностью заполни обязательные блоки ОБСИДИАН 4.1. Игровой год, месяц, день, день недели, время, время суток, погоду, освещение и точную локацию бери только из подтверждённых данных; если данных нет — укажи НЕ УСТАНОВЛЕНО / UNKNOWN. Заверши открытым вопросом «Что делает Лия?».",
+    ] : []),
     "=== РЕЕСТР ПРАВИЛ D&D 2024 / SRD 5.2.1 ===",
     DND_2024_CORE_RULES_REFERENCE,
     `Ruleset: ${DND_2024_RULESET.id}; source: ${DND_2024_RULESET.source}; license: ${DND_2024_RULESET.license}.`,
@@ -346,13 +352,21 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Выводи только JSON по заданной схеме. Не включай markdown.",
   ].join("\n\n");
   const user = {
-    action: context.action, campaign: context.world, playerCharacterState: context.character,
+    mode: context.mode ?? "ACTION",
+    action: context.mode === "OPENING" ? "Служебный запрос мастеру: сформируй вступительную сцену кампании, не являющуюся действием персонажа." : context.action,
+    campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
     verifiedRulesReference: verifiedRulesContext,
-    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
+    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
     recentJournal: context.journal.slice(-12),
     requirements: [
+      ...(context.mode === "OPENING" ? [
+        "Это вступительная сцена, а не действие персонажа и не игровой ход. summary = «Вступительная сцена кампании»; worldOutcome = «Вступление показано; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
+        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], characterChanges содержит пустые массивы и нулевую currencyDelta.",
+        "Не придумывай новые сведения о мире, NPC, фракциях, истории или событиях. Используй startNarrative и подтверждённые источники. Неизвестные поля оставь UNKNOWN/НЕ УСТАНОВЛЕНО.",
+        "campaignMemory отражает только подтверждённую стартовую ситуацию и релевантные известные сведения. sensoryDescription — только сенсорная информация, которую Лия может воспринимать в этой стартовой сцене. spatialAccounting не выдумывает позиции и расстояния. mechanics указывает, что проверка не требуется, поскольку персонаж ещё не совершал действия. nextAction задаёт открытый вопрос без навязывания вариантов."
+      ] : []),
       "Верни отдельные обязательные блоки campaignMemory, sensoryDescription, spatialAccounting, mechanics, consequences, resourceAccounting и nextAction. narration — только описание сцены.",
       "Не придумывай дату, погоду, освещение, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE.",
       "sensoryDescription содержит только то, что персонаж реально воспринимает; если новых ощущений нет, так и напиши.",
@@ -394,5 +408,16 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  return { turn: validateTurn(parsed, context.locations, context.npcs, context.factions), model, ...(usage ? { usage } : {}) };
+  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions);
+  if (context.mode === "OPENING") {
+    const c = turn.characterChanges;
+    const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
+    if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
+      turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null ||
+      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 ||
+      c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged) {
+      throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены.", "OPENING_MUTATION_REJECTED");
+    }
+  }
+  return { turn, model, ...(usage ? { usage } : {}) };
 }
