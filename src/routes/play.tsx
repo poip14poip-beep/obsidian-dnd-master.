@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState, type ChangeEvent } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
@@ -26,7 +26,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, attachSourceContent, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
+  const { sources, updatePlayerCharacter, attachSourceContent, updateCampaignParameters, worldState, sessionLog, character, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
@@ -76,47 +76,61 @@ function PlayPage() {
 
   function handleStartCampaign() {
     setStartError(null);
-    if (locked) return;
+    if (locked || startPending) return;
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском проверь серверную готовность ОБСИДИАН 4.1, Хронику Экдрасиля и, если персонаж загружен, его отдельный лист.");
+      setStartError("Перед запуском прикрепи оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля, а для загруженного персонажа отдельно подтверди его проверку и доступ мастера.");
       return;
     }
     if (!characterReady) {
-      setStartError("Лист персонажа ещё не готов. Для случайной заготовки сначала требуется завершить характеристики, классовые особенности, навыки, атаки и снаряжение.");
+      setStartError("Лист персонажа ещё не готов. Сначала проверь характеристики, классовые особенности, навыки, атаки и снаряжение.");
       return;
     }
+
+    setStartPending(true);
     try {
-      const generated = generateRandomStart(character.hpMax ?? 0);
-      const result = applyGeneratedStart({
-        city: generated.city,
-        date: generated.date,
-        narrative: generated.narrative,
-        locationDescription: generated.location.description,
-        generationRecord: generated.generationRecord,
-        characterPatch: generated.characterPatch,
+      const generated = generateRandomStart();
+      const characterResult = updatePlayerCharacter({
+        ...generated.characterPatch,
         inventory: generated.inventory,
       });
-      if (!result.ok) {
-        setStartError(result.error);
+      if (!characterResult.ok) {
+        setStartError(characterResult.error);
         return;
       }
-      setStartPending(true);
+
+      const parametersResult = updateCampaignParameters({
+        campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
+        calendarSystem: worldState.calendarSystem === "UNKNOWN"
+          ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
+          : worldState.calendarSystem,
+        startInGameDate: generated.date,
+        startLocationName: generated.city.name,
+        encumbranceMode: "STANDARD",
+        setupPatch: {
+          sourcesConfirmed: true,
+          parametersConfirmed: true,
+          startPointConfirmed: true,
+          characterConfirmed: true,
+          noAutoImportAcknowledged: true,
+        },
+      });
+      if (!parametersResult.ok) {
+        setStartError(parametersResult.error);
+        return;
+      }
+
+      const confirmation = confirmCampaignSetup();
+      if (!confirmation.ok) {
+        setStartError(confirmation.error);
+        return;
+      }
+      void navigate({ to: "/game" });
     } catch (error) {
       setStartError(error instanceof Error ? error.message : "Не удалось создать старт кампании.");
+    } finally {
+      setStartPending(false);
     }
   }
-
-  useEffect(() => {
-    if (!startPending || !worldState.startGeneration || character.hpCurrent === null) return;
-    const result = confirmCampaignSetup();
-    setStartPending(false);
-    if (!result.ok) setStartError(result.error);
-    else void navigate({ to: "/game" });
-  }, [
-    startPending, worldState.startGeneration, worldState.startInGameDate,
-    worldState.startLocationName, worldState.startNarrative, worldState.campaignName,
-    worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
-  ]);
   const randomize = () => {
     try {
       const generated = generateRandomCharacter(secureIndex);
