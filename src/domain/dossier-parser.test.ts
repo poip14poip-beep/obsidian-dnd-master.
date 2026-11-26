@@ -66,9 +66,9 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[3]).toMatchObject({ name: "Инструменты кузнеца", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.resources).toEqual([
-      { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
-      { name: "Action Surge", current: null, max: 2, recovery: "UNKNOWN", certainty: "KNOWN" },
-      { name: "Indomitable", current: null, max: 3, recovery: "UNKNOWN", certainty: "KNOWN" },
+      { name: "Second Wind", current: null, max: 4, recovery: "1 use on Short Rest; all uses on Long Rest", certainty: "KNOWN" },
+      { name: "Action Surge", current: null, max: 2, recovery: "All uses on Short or Long Rest", certainty: "KNOWN" },
+      { name: "Indomitable", current: null, max: 3, recovery: "All uses on Long Rest", certainty: "KNOWN" },
     ]);
   });
   it("parses aligned DOCX table columns without inventing current HP", () => {
