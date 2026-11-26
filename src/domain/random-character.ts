@@ -235,6 +235,7 @@ export function generateRandomCharacter(random:Random, profile?:RandomCharacterP
   const character:Partial<PlayerCharacterState>={
     name:profile?.name ?? `${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography:{...biography,skillOrigins:[],weaponBackground:"",equipmentBackground:""},
     speciesAndClass:`${speciesLabel} · ${classLabel}, 1 уровень · Предыстория: ${backgroundLabel}`,
+    background: backgroundLabel,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
     abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
     hitDice:`1d${classData.die}`,baseSavingThrowBonuses:saves,savingThrowBonuses:saves,
