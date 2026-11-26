@@ -136,6 +136,7 @@ describe("player dossier summary extraction", () => {
       ["Second Wind", 4], ["Action Surge", 2], ["Indomitable", 3],
     ]);
     expect(result.inventory.some((item) => item.name.includes("Кожа Последнего Часа") && item.location === "WORN")).toBe(true);
+    expect(result.inventory.find((item) => /Cloak of Protection/i.test(item.name))?.attunement).toBe("UNKNOWN");
     expect(result.inventory.some((item) => item.location === "UNKNOWN")).toBe(true);
     expect(result.inventory.some((item) => item.name === "Личный дневник" && item.quantity === 1 && item.certainty === "APPROXIMATE")).toBe(true);
     expect(result.inventory.some((item) => item.name === "Несколько старых писем" && item.location === "UNKNOWN")).toBe(true);
