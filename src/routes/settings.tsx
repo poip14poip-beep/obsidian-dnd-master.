@@ -280,6 +280,22 @@ function SettingsPage() {
               />
             </div>
             <div className="space-y-1">
+              <Label htmlFor="cfg-load">Учёт переносимого веса</Label>
+              <select
+                id="cfg-load"
+                value={encumbranceMode}
+                onChange={(e) => setEncumbranceMode(e.target.value as typeof encumbranceMode)}
+                className="touch-target w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                disabled={s.confirmed}
+              >
+                <option value="UNSET">Не выбран — старт заблокирован</option>
+                <option value="STANDARD">Стандартные пределы переносимого веса</option>
+                <option value="VARIANT">Вариантные пороги перегрузки</option>
+                <option value="ABSTRACT">Абстрактный режим без расчёта веса</option>
+              </select>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Стандартный режим использует грузоподъёмность по Силе и размеру; вариантный добавляет пороги перегрузки. Если размер Лии неизвестен, точная грузоподъёмность останется UNKNOWN. Не выбирай режим за счёт догадки.</p>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="cfg-cal">Календарная система</Label>
               <Input
                 id="cfg-cal"
