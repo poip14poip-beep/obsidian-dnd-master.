@@ -5,7 +5,7 @@ import { createInitialPlayerCharacterState } from "./defaults";
 
 describe("generateRandomStart", () => {
   it("uses deterministic draws for city and scene while preserving full HP", () => {
-    const draws = [7, 2, 0, 13, 24];
+    const draws = [7, 2, 0];
     const result = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
@@ -18,6 +18,7 @@ describe("generateRandomStart", () => {
     expect(result.healthLabel).toBe("Без заметных ранений");
     expect(result.characterPatch.hpMax).toBeUndefined();
     expect(result.characterPatch.hpCurrent).toBe(184);
+    expect(draws).toHaveLength(0);
   });
 
   it("selects only one of the 16 canonically listed main cities", () => {
@@ -32,7 +33,8 @@ describe("generateRandomStart", () => {
   it("uses the technical calendar for a generated date and time without inventing a quest", () => {
     const result = generateRandomStart(184, () => 0);
     expect(result.date).toContain("2000 год");
-    expect(result.date).toContain("00:00");
+    expect(result.date).toContain("время не установлено");
+    expect(result.date).not.toMatch(/\\b[0-2]\\d:[0-5]\\d\\b/);
     expect(result.date).toContain("Технический календарь мастера 1.0");
     expect(result.narrative).toContain("не задание");
     expect(result.inventory).toEqual([]);
