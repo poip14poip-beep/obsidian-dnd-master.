@@ -396,16 +396,6 @@ function PlayPage() {
       event.target.value = "";
     }
   }
-  function verifyDossierSource() {
-    if (!dossier) return;
-    const result = verifySource(dossier.id);
-    if (!result.ok) setImportError(result.error);
-  }
-  function enableDossierContext() {
-    if (!dossier) return;
-    const result = setSourceContextEnabled(dossier.id, true);
-    if (!result.ok) setImportError(result.error);
-  }
   const confirmDossier = async () => {
     if (!parsed || !dossier || biographyBusy) return;
     setBiographyBusy(true);
