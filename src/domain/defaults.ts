@@ -25,7 +25,7 @@ export const DEFAULT_CAMPAIGN_PREFERENCES: CampaignPreferences = {
 export const DEFAULT_SOURCE_IDS = {
   GOVERNING: "src-obsidian-41",
   CANON: "src-ekdrasil-chronicle",
-  DOSSIER: "src-lia-vein-dossier",
+  DOSSIER: "src-player-character-dossier",
   SRD: "src-srd-5-2-1",
 } as const;
 
@@ -33,6 +33,7 @@ export function createInitialSources(): SourceDocument[] {
   return [
     {
       id: DEFAULT_SOURCE_IDS.GOVERNING,
+      playerVisible: false,
       title: "ОБСИДИАН 4.1",
       type: "GOVERNING_DOC",
       targetPartition: "SYSTEM_RULES",
@@ -69,6 +70,7 @@ export function createInitialSources(): SourceDocument[] {
     },
     {
       id: DEFAULT_SOURCE_IDS.SRD,
+      playerVisible: false,
       title: "SRD 5.2.1",
       type: "SUPPLEMENTAL",
       targetPartition: "SYSTEM_RULES",
@@ -86,10 +88,11 @@ export function createInitialSources(): SourceDocument[] {
     },
     {
       id: DEFAULT_SOURCE_IDS.DOSSIER,
-      title: "Досье персонажа игрока",
+      playerVisible: false,
+      title: "Лист персонажа текущей кампании",
       type: "PLAYER_DOSSIER",
       targetPartition: "PLAYER_CHARACTER_STATE",
-      originLabel: "Отдельный лист персонажа игрока (файл не прикреплён)",
+      originLabel: "Загружается игроком при подготовке конкретной кампании",
       contentStatus: "NOT_ATTACHED",
       reviewStatus: "UNREVIEWED",
       contextEnabled: false,
@@ -99,7 +102,7 @@ export function createInitialSources(): SourceDocument[] {
       checksum: "EMPTY",
       attachedAt: null,
       notes:
-        "Изолированный источник для текущего персонажа игрока. Персонаж выбирается игроком отдельно; источник никогда не вкладывается в CAMPAIGN_STATE.",
+        "Лист персонажа прикрепляется только к текущей кампании и хранится отдельно от канона Экдрасиля и управляющих правил мастера.",
       processing: { status: "NOT_PROCESSED", sha256: null, characterCount: 0, lineCount: 0, sectionCount: 0, chunkCount: 0, dateCandidateCount: 0, processedAt: null, warnings: [] },
     },
   ];
