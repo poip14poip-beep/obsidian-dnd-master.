@@ -154,6 +154,40 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, result: data }, 200, cors);
       }
 
+      case "save_snapshot": {
+        if (!hasOnlyKeys(body, ["action", "campaign_id", "parent_revision", "turn_number", "payload"]) ||
+            typeof body.campaign_id !== "string" ||
+            !Number.isSafeInteger(body.parent_revision) || Number(body.parent_revision) < 0 ||
+            !Number.isSafeInteger(body.turn_number) || Number(body.turn_number) < 0 ||
+            !isObject(body.payload)) {
+          return json({ error: "INVALID_SAVE_SNAPSHOT_PAYLOAD" }, 400, cors);
+        }
+        if (JSON.stringify(body.payload).length > 8_000_000) {
+          return json({ error: "CAMPAIGN_SNAPSHOT_TOO_LARGE" }, 413, cors);
+        }
+        const { data, error } = await admin.rpc("obsidian_api_save_campaign_snapshot", {
+          p_actor: actor,
+          p_campaign_id: body.campaign_id,
+          p_parent_revision: body.parent_revision,
+          p_turn_number: body.turn_number,
+          p_payload: body.payload,
+        });
+        if (error) return json({ error: "CAMPAIGN_SNAPSHOT_SAVE_FAILED", detail: error.message }, 409, cors);
+        return json({ ok: true, result: data }, 200, cors);
+      }
+
+      case "latest_snapshot": {
+        if (!hasOnlyKeys(body, ["action", "campaign_id"]) || typeof body.campaign_id !== "string") {
+          return json({ error: "INVALID_LATEST_SNAPSHOT_PAYLOAD" }, 400, cors);
+        }
+        const { data, error } = await admin.rpc("obsidian_api_get_latest_campaign_snapshot", {
+          p_actor: actor,
+          p_campaign_id: body.campaign_id,
+        });
+        if (error) return json({ error: "CAMPAIGN_SNAPSHOT_LOAD_FAILED", detail: error.message }, 404, cors);
+        return json({ ok: true, snapshot: data }, 200, cors);
+      }
+
       default:
         return json({ error: "UNKNOWN_ACTION" }, 400, cors);
     }
