@@ -235,6 +235,7 @@ describe("random free-roam start", () => {
     act(() => {
       applied = result.current.applyGeneratedStart({
         city: generated.city,
+        placeName: generated.placeName,
         date: generated.date,
         narrative: generated.narrative,
         locationDescription: generated.location.description,
