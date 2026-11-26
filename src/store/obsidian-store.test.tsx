@@ -44,6 +44,7 @@ function createReadySetupCollections() {
       },
     };
   });
+  initial.world_state.campaignPreferences = { allowedBooksAndOptions: "SRD 5.2.1", diceMethod: "Кубики в приложении, открытые броски", advancement: "Milestone", foodAndWater: "Учитывать по правилам выживания", randomEncounters: "Только по обоснованным таблицам", pvp: "Только по согласию игроков", deathAndResurrection: "Только базовые правила 2024", economyDetail: "Средняя детализация", contentBoundaries: "Согласовывать индивидуально", houseRules: "Не используется" };
   initial.world_state.setup = {
     sourcesConfirmed: true, parametersConfirmed: true, startPointConfirmed: true,
     characterConfirmed: true, noAutoImportAcknowledged: true, confirmed: false, confirmedAt: null,
