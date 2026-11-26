@@ -209,13 +209,6 @@ export async function applyEkdrasilSeed(
     now,
   );
   const characterChanged = playerCharacterState !== collections.player_character_state;
-  const allRequiredSourcesReady = [DEFAULT_SOURCE_IDS.GOVERNING, DEFAULT_SOURCE_IDS.CANON, DEFAULT_SOURCE_IDS.DOSSIER]
-    .every((id) => sources.some((source) =>
-      source.id === id && source.contentStatus === "ATTACHED" &&
-      source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" &&
-      source.contextEnabled === true,
-    ));
-
   const worldChanged = sourcesChanged || characterChanged;
   const worldState = worldChanged
     ? {
