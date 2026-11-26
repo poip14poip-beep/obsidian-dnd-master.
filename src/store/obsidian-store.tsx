@@ -957,7 +957,7 @@ export function ObsidianStoreProvider({
       ...input.characterPatch,
       stateVersion: previousCharacter.stateVersion + 1,
       currentLocationLabel: input.city.name,
-      inventory: input.inventory.map((item) => ({ ...item, id: makeId("inv") })),
+      inventory: input.inventory.length > 0 ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
       updatedAt: now,
     };
     const previousWorld = collections.world_state;
