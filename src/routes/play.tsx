@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
