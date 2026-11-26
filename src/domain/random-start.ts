@@ -170,7 +170,7 @@ export function generateRandomStart(
   const city = CITIES[cityIndex]!;
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
-  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000, index(24), index(60));
+  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000);
   const date = technicalDate.formatted;
   const background = options.generateBackgroundKit ? resolveBackground(options.background, index) : "Acolyte";
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
