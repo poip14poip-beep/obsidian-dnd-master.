@@ -146,6 +146,12 @@ const biographySchema: JsonRecord = {
   required: ["ageYears","ageCertainty","genderPresentation","appearance","appearanceDetails","birthplace","birthplaceSource","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire","biography","skillOrigins","weaponBackground","equipmentBackground","canonBasis","inventedDetailsNotice"],
 };
 
+// The random-character operation returns the complete dossier in one response.
+// This avoids a second browser-to-edge request after identity selection.
+const identityRequired = identitySchema.required as string[];
+identitySchema.properties = { ...(identitySchema.properties as JsonRecord), ...(biographySchema.properties as JsonRecord) };
+identitySchema.required = [...identityRequired, ...(biographySchema.required as string[]).filter((key) => !identityRequired.includes(key))];
+
 function tokens(usage: unknown): { input_tokens?: number; output_tokens?: number } | undefined {
   if (!isRecord(usage)) return undefined;
   const input = Number(usage.prompt_tokens);
