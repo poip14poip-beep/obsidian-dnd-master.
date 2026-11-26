@@ -59,8 +59,18 @@ export function loadAllCollections(storage: StorageLike | null): ObsidianCollect
   if (!storage) {
     return defaults;
   }
+  const savedSources = safeParse(storage.getItem(STORAGE_KEYS.sources), () => defaults.sources);
+  // Always refresh the immutable server-managed source markers from the current
+  // application defaults. Older localStorage snapshots may predate this field,
+  // which otherwise leaves the campaign permanently blocked after an upgrade.
+  const serverManagedDefaults = defaults.sources.filter((source) => source.serverManaged === true);
+  const nonManagedSources = savedSources.filter((source) => source.serverManaged !== true);
+  const sources = [
+    ...serverManagedDefaults,
+    ...nonManagedSources.filter((source) => !serverManagedDefaults.some((managed) => managed.id === source.id)),
+  ];
   return {
-    sources: safeParse(storage.getItem(STORAGE_KEYS.sources), () => defaults.sources),
+    sources,
     canon_facts: safeParse(storage.getItem(STORAGE_KEYS.canon_facts), () => defaults.canon_facts),
     world_state: safeParse(storage.getItem(STORAGE_KEYS.world_state), () => defaults.world_state),
     player_character_state: safeParse(
