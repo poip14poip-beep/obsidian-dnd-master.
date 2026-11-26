@@ -446,7 +446,7 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    ? [MODEL_ATTEMPTS[0]!]
+    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[2]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
       : highImpactTurn
@@ -529,7 +529,7 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: isCompatibilityRequest ? 3200 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 40_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 50_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
