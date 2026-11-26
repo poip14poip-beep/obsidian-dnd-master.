@@ -452,6 +452,7 @@ Deno.serve(async (req: Request) => {
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const isGameTurnRequest = !isCompatibilityRequest && !isBiographyRequest;
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
@@ -466,8 +467,10 @@ Deno.serve(async (req: Request) => {
       : isIdentityRequest || isBiographyRequest
         ? [MODEL_ATTEMPTS[0]!]
         : highImpactTurn
-        ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
-        : MODEL_ATTEMPTS;
+        ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!]
+        : isGameTurnRequest
+          ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
+          : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
@@ -547,9 +550,9 @@ Deno.serve(async (req: Request) => {
           // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
           max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        // Keep three sequential provider attempts within a mobile-safe request window.
-        // Ordinary game turns previously spent 3 × 35s and the Edge request was dropped.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000),
+        // Game turns need enough time for the model to finish generating its structured response.
+        // Limit them to two providers above; 50s per attempt stays within the Edge wall-clock budget.
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 50_000 : 18_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
