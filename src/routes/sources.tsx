@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { FileUp, Plus } from "lucide-react";
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/auth/auth-context";
+import { readSupabaseEnv } from "@/lib/supabase-auth";
 
 import { CertaintyBadge, SourceTypeBadge } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
@@ -38,6 +40,41 @@ export const Route = createFileRoute("/sources")({
 
 function SourcesPage() {
   const { sources, attachSourceContent, addSupplementalSource, verifySource, setSourceContextEnabled } = useObsidianStore();
+  const { session } = useAuth();
+  const [vaultBusy, setVaultBusy] = useState<"OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<Record<string, string>>({});
+  async function uploadMasterDocument(kind: "OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1", event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || vaultBusy) return;
+    const env = readSupabaseEnv();
+    if (!session?.access_token || !env.ok) {
+      toast.error("Для загрузки служебных документов требуется активная сессия Supabase.");
+      event.target.value = "";
+      return;
+    }
+    setVaultBusy(kind);
+    try {
+      if (file.name.toLowerCase().endsWith(".pdf")) throw new Error("PDF пока не поддерживается. Загрузи текстовую версию .txt/.md.");
+      const content = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
+      if (!content.trim()) throw new Error("Файл пуст или текст не удалось извлечь.");
+      const response = await fetch(env.config.url + "/functions/v1/obsidian-gm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token, apikey: env.config.publishableKey },
+        body: JSON.stringify({ operation: "STORE_GM_SOURCE", sourceKind: kind, title: file.name, content }),
+      });
+      const payload = await response.json().catch(() => null) as { stored?: boolean; source?: { sha256?: string; version?: number }; error?: { message?: string } } | null;
+      if (!response.ok || !payload?.stored) throw new Error(payload?.error?.message ?? "Сервер не подтвердил сохранение.");
+      const version = String(payload.source?.version ?? "UNKNOWN");
+      const hash = payload.source?.sha256 ?? "UNKNOWN";
+      setVaultStatus((current) => ({ ...current, [kind]: file.name + " · версия " + version + " · SHA-256 " + hash.slice(0, 12) }));
+      toast.success(kind === "OBSIDIAN_MASTER_PROMPT" ? "ОБСИДИАН 4.1 сохранён в закрытом хранилище мастера." : "SRD 5.2.1 сохранён в закрытом хранилище мастера.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить служебный документ.");
+    } finally {
+      setVaultBusy(null);
+      event.target.value = "";
+    }
+  }
   const playerVisibleSources = sources.filter((source) => source.playerVisible !== false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftContent, setDraftContent] = useState("");
@@ -140,7 +177,27 @@ function SourcesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4"><div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold text-foreground">Закрытое хранилище мастера</h2>
+        <p className="text-xs text-muted-foreground">Документы отправляются напрямую на сервер и не сохраняются в браузерном состоянии кампании. Их текст не возвращается в интерфейс и не включается в ответы игроку.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>ОБСИДИАН 4.1 · полный управляющий промт</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("OBSIDIAN_MASTER_PROMPT", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">MD, TXT или DOCX. Загружается один раз и далее подключается сервером.</span>
+          {vaultStatus.OBSIDIAN_MASTER_PROMPT && <span className="block text-[11px] text-emerald-500">{vaultStatus.OBSIDIAN_MASTER_PROMPT}</span>}
+        </label>
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>SRD 5.2.1 · правила D&D 2024</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("SRD_5_2_1", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">Нужна текстовая версия MD/TXT/DOCX; PDF пока не поддерживается.</span>
+          {vaultStatus.SRD_5_2_1 && <span className="block text-[11px] text-emerald-500">{vaultStatus.SRD_5_2_1}</span>}
+        </label>
+      </div>
+      {vaultBusy && <p className="text-xs text-muted-foreground">Загружаю и проверяю документ…</p>}
+    </div>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h1 className="text-xl font-bold text-foreground">Служебные источники мастера</h1>
