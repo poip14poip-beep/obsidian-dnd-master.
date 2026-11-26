@@ -111,7 +111,7 @@ function PlayPage() {
     setStartPending(false);
   }
 
-  function handleStartCampaign() {
+  async function handleStartCampaign() {
     setStartError(null);
     if (locked) return;
     if (!verifiedCoreSourcesReady) {
@@ -128,6 +128,34 @@ function PlayPage() {
         retainedInventory: character.inventory,
         generateBackgroundKit: character.sourceDossierId !== "GENERATED_RANDOM",
       });
+      const env = readSupabaseEnv();
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент сервера не готов.");
+      const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) throw new Error("Войди в приложение перед созданием предыстории.");
+      const sourceText = character.sourceDossierId === "GENERATED_RANDOM" ? "" : (sources.find(source => source.id === character.sourceDossierId)?.content ?? "").slice(0, 14000);
+      const { data: historyData, error: historyError } = await client.functions.invoke("obsidian-gm", {
+        body: {
+          operation: "GENERATE_CHARACTER_STORY",
+          model: "obsidian-free",
+          instructions: "Напиши на русском языке отдельную персональную предысторию ПОСЛЕДНЕГО МЕСЯЦА перед началом кампании. Это не биография всей жизни и не пересказ прошлого персонажа. Опиши последовательную цепочку событий примерно за 30 дней: где персонаж находился, чем занимался, что стало причиной отправиться в указанную точку старта, как он добрался туда и почему оказался именно там к указанной дате. Используй факты и характер из досье, не противоречь канону. Допускаются небольшие бытовые связующие детали, но не придумывай важные встречи, NPC, фракции, преступления, долги, квесты или события мирового масштаба без основания. 3–5 абзацев, 180–260 слов. Верни текст в поле biography; остальные поля заполни кратко на русском.",
+          input: JSON.stringify({ action: "Создать хронику последнего месяца перед стартом кампании", character: { ...character, sourceDossier: sourceText }, start: { city: generated.city, date: generated.date, locationDescription: generated.location.description, startNarrative: generated.narrative } }),
+        },
+      });
+      if (historyError) {
+        let detail = historyError.message || "Не удалось создать предысторию последнего месяца.";
+        if ("context" in historyError && historyError.context instanceof Response) {
+          const payload = await historyError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+          detail = payload?.error?.message ?? detail;
+        }
+        throw new Error(detail);
+      }
+      if (!historyData?.output_text) throw new Error("Мастер не вернул предысторию последнего месяца.");
+      const historyResult = JSON.parse(historyData.output_text) as { biography?: string };
+      const recentHistory = historyResult.biography?.trim();
+      if (!recentHistory || recentHistory.length < 250) throw new Error("Предыстория последнего месяца получилась слишком короткой. Кампания не запущена.");
+      const historySaved = updatePlayerCharacter({ recentPreCampaignHistory: recentHistory });
+      if (!historySaved.ok) throw new Error(historySaved.error);
       const result = applyGeneratedStart({
         city: generated.city,
         date: generated.date,
