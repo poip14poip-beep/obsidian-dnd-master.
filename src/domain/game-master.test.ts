@@ -38,7 +38,11 @@ describe("game master resolver", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
-    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const [endpoint, init] = fetcher.mock.calls[0]!;
+    expect(endpoint).toBe("https://test.supabase.co/functions/v1/obsidian-gm");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-user-jwt");
+    expect(new Headers(init?.headers).get("apikey")).toBe("sb_publishable_test");
+    const request = JSON.parse(init?.body as string);
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1");
     expect(request.instructions).toContain("SECOND WIND");
     expect(request.instructions).toContain("Fighter 20"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
