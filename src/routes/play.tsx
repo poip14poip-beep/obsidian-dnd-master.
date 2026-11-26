@@ -334,8 +334,8 @@ function PlayPage() {
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">1. Имя и основные данные</h3>
         <div className="overflow-hidden rounded-lg border">
           {[
-            ["Имя",candidate.summary.name],["Народ",candidate.summary.species],
-            ["Класс и уровень",candidate.summary.className+" · 1"],["Предыстория",candidate.summary.background],
+            ["Имя",candidate.summary.name],["Народ",candidate.summary.speciesRu],
+            ["Класс и уровень",candidate.summary.classNameRu+" · 1"],["Предыстория",candidate.summary.backgroundRu],
             ["Очки здоровья",String(candidate.summary.hitPoints)],["Класс доспеха",String(candidate.summary.armorClass)],
             ["Скорость",String(candidate.character.speedFeet ?? "UNKNOWN")+" футов"],
             ["Бонус мастерства",String(candidate.character.proficiencyBonus ?? "UNKNOWN")],
