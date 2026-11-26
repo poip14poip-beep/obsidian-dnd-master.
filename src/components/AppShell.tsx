@@ -11,6 +11,7 @@ import {
   Menu,
   ScrollText,
   ShieldCheck,
+  Swords,
   SlidersHorizontal,
   User,
   Users,
@@ -33,6 +34,7 @@ export type NavRoutePath =
   | "/factions"
   | "/time-map"
   | "/turns"
+  | "/game"
   | "/audit"
   | "/settings";
 
@@ -50,7 +52,8 @@ export const NAV_ITEMS: ReadonlyArray<{
   { to: "/npcs", label: "NPC", shortLabel: "NPC", icon: Users },
   { to: "/factions", label: "Фракции", shortLabel: "Фракции", icon: Flag },
   { to: "/time-map", label: "Время и карта", shortLabel: "Карта", icon: Clock },
-  { to: "/turns", label: "Ходы и журнал", shortLabel: "Ходы", icon: ScrollText },
+  { to: "/game", label: "Играть", shortLabel: "Игра", icon: Swords },
+  { to: "/turns", label: "Ходы и журнал", shortLabel: "Журнал", icon: ScrollText },
   { to: "/audit", label: "Проверка/аудит", shortLabel: "Аудит", icon: ShieldCheck },
   {
     to: "/settings",
@@ -60,7 +63,7 @@ export const NAV_ITEMS: ReadonlyArray<{
   },
 ];
 
-const MOBILE_BOTTOM_PATHS: ReadonlyArray<NavRoutePath> = ["/", "/turns", "/character", "/canon"];
+const MOBILE_BOTTOM_PATHS: ReadonlyArray<NavRoutePath> = ["/", "/game", "/character", "/canon"];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -128,7 +131,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
                 </span>
-                {item.to === "/turns" && !worldState.setup.confirmed && (
+                {item.to === "/game" && !worldState.setup.confirmed && (
                   <Lock className="h-3.5 w-3.5 text-status-approx" />
                 )}
               </Link>
@@ -218,7 +221,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         <Icon className="h-4 w-4 shrink-0" />
                         <span>{item.label}</span>
                       </span>
-                      {item.to === "/turns" && !worldState.setup.confirmed && (
+                      {item.to === "/game" && !worldState.setup.confirmed && (
                         <Lock className="h-3.5 w-3.5 text-status-approx" />
                       )}
                     </Link>
