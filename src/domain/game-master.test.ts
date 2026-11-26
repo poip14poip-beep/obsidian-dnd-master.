@@ -71,10 +71,16 @@ describe("game master resolver", () => {
   });
 
   it("creates a structured opening scene without a player action or state mutation", async () => {
-    const openingTurn = { ...validTurn, timeDeltaMinutes: 0, newInGameDate: context.world.currentInGameDate };
+    const openingTurn = {
+      ...validTurn, timeDeltaMinutes: 0,
+      newInGameDate: "12 Солар, 2000 год · 14:35 · Технический календарь мастера 1.0",
+      environment: { temperatureC: 21, temperatureCertainty: "APPROXIMATE" as const, weather: "Переменная облачность", lighting: "Дневной свет", visibility: "Хорошая", wind: "Слабый ветер", precipitation: "Без осадков", ambientSounds: "Голоса прохожих", ambientSmells: "Запах мокрого камня", notes: "Оценка мастера для вступительной сцены." },
+    };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(openingTurn) }), { status: 200 }));
-    const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch));
+    const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING", world: { ...context.world, calendarSystem: "Технический календарь мастера Экдрасиля 1.0" } }, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.timeDeltaMinutes).toBe(0);
+    expect(result.turn.newInGameDate).toBe(openingTurn.newInGameDate);
+    expect(result.turn.environment.temperatureC).toBe(21);
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     expect(request.instructions).toContain("СПЕЦИАЛЬНЫЙ РЕЖИМ OPENING");
     expect(request.input).toContain('"mode":"OPENING"');
@@ -83,7 +89,8 @@ describe("game master resolver", () => {
   it("strips attempted state mutations from opening output instead of rejecting the opening scene", async () => {
     const invalidOpening = {
       ...validTurn, timeDeltaMinutes: 1, hpDelta: -4,
-      newInGameDate: "invented date",
+      newInGameDate: "12 Солар, 2000 год · 14:35 · Технический календарь мастера 1.0",
+      environment: { temperatureC: 18, temperatureCertainty: "APPROXIMATE" as const, weather: "Ясно", lighting: "День", visibility: "Хорошая", wind: "Тихо", precipitation: "Нет", ambientSounds: "Город", ambientSmells: "Камень", notes: "Оценка." },
       consequenceText: "A new consequence",
       characterChanges: { inventory: [{ action: "ADD", name: "Лук", quantity: 1, notes: "Попытка выдать предмет", certainty: "KNOWN" }], resources: [], conditions: [], currencyDelta: { cp: 1, sp: 0, ep: 0, gp: 0, pp: 0 } },
     };
@@ -91,7 +98,7 @@ describe("game master resolver", () => {
     const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.timeDeltaMinutes).toBe(0);
     expect(result.turn.hpDelta).toBe(0);
-    expect(result.turn.newInGameDate).toBe(context.world.currentInGameDate);
+    expect(result.turn.newInGameDate).toBe(invalidOpening.newInGameDate);
     expect(result.turn.newLocationId).toBeNull();
     expect(result.turn.consequenceText).toBe("");
     expect(result.turn.questChanges).toEqual([]);
