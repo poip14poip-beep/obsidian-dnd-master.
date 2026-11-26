@@ -1519,7 +1519,7 @@ export function ObsidianStoreProvider({
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
         campaignMemory: activeDraft.campaignMemory?.trim() ?? "",
-        environment: activeDraft.environment,
+        ...(activeDraft.environment ? { environment: activeDraft.environment } : {}),
         questChanges: activeDraft.questChanges ?? [],
         characterChanges,
         npcChanges: activeDraft.npcChanges ?? [],
