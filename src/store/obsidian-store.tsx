@@ -340,7 +340,9 @@ export function ObsidianStoreProvider({
               certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
               checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
               attachedAt: hasText ? now : null,
-              ...(payload.processing ? { processing: payload.processing } : src.processing ? { processing: src.processing } : {}),
+              ...(hasText
+                ? (payload.processing ? { processing: payload.processing } : src.processing ? { processing: src.processing } : {})
+                : { processing: undefined }),
               ...(payload.canonSections ? { canonSections: payload.canonSections } : src.type === "WORLD_CANON" ? { canonSections: [] } : src.canonSections ? { canonSections: src.canonSections } : {}),
               ...(payload.dateMentions ? { dateMentions: payload.dateMentions } : src.type === "WORLD_CANON" ? { dateMentions: [] } : src.dateMentions ? { dateMentions: src.dateMentions } : {}),
             }
