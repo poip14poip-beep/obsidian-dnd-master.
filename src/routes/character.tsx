@@ -110,8 +110,14 @@ function CharacterPage() {
           </div>
         </section>
       )}
-      {worldState.startNarrative?.trim() && (
+      {character.recentPreCampaignHistory?.trim() && (
         <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Последний месяц перед кампанией</h2>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{ru(character.recentPreCampaignHistory)}</p>
+          <p className="text-xs text-muted-foreground">Отдельная предыстория, связывающая жизнь персонажа с точкой и датой начала приключения.</p>
+        </section>
+      )}
+            <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Обстоятельства начала кампании</h2>
           <p className="text-sm leading-relaxed whitespace-pre-wrap">{ru(worldState.startNarrative)}</p>
           <p className="text-xs text-muted-foreground">Описание точки старта, сохранённое при создании кампании. Оно не заменяет личную биографию или хронику последнего месяца.</p>
