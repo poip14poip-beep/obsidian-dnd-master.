@@ -358,6 +358,7 @@ export interface AuditEntry {
   id: string;
   timestamp: string;
   action:
+    | "CAMPAIGN_RESET_FOR_TRIAL"
     | "SETUP_CONFIRMED"
     | "TURN_COMMITTED"
     | "TURN_COMMIT_FAILED"
