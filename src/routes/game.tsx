@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, CheckCircle2, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
+import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
@@ -47,6 +47,7 @@ function GamePage() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
   const [explicitConfirm, setExplicitConfirm] = useState(false);
+  const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge">("chat");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const requiredSourceTypes = ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
@@ -147,6 +148,8 @@ function GamePage() {
           worldOutcome: result.turn.worldOutcome,
           gmNarration: formatArchivedGameMasterAnswer(result.turn, worldState, character, locations, nextTurnNumber),
           campaignMemory: result.turn.campaignMemory,
+          environment: result.turn.environment,
+          questChanges: result.turn.questChanges,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
           newInGameDate: result.turn.newInGameDate,
           newLocationId: result.turn.newLocationId ?? "",
@@ -266,6 +269,14 @@ function GamePage() {
         <p className="text-xs text-muted-foreground">Живой мастер · ОБСИДИАН 4.1 · D&D 5e (2024) · SRD 5.2.1</p>
       </header>
 
+      <nav aria-label="Игровые вкладки" className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-1">
+        {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
+          <Button key={key} type="button" size="sm" variant={activePanel === key ? "default" : "ghost"} className="min-w-0 px-1 text-[11px] sm:text-xs" onClick={() => setActivePanel(key)}><Icon className="mr-1 h-3.5 w-3.5 shrink-0" />{label}</Button>
+        ))}
+      </nav>
+
+      {activePanel === "chat" && (
+      <div className="space-y-4">
       <section className="panel-surface space-y-3 p-3">
         <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
           <div><p className="text-muted-foreground">Кампания</p><p className="mt-0.5 font-semibold text-foreground">{worldState.campaignName || "UNKNOWN"}</p></div>
