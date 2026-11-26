@@ -543,7 +543,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
+  let turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
   if (/technical calendar 1\.0/i.test(context.world.calendarSystem)) {
     const before = parseTechnicalDateTime(context.world.currentInGameDate);
     const after = parseTechnicalDateTime(turn.newInGameDate);
@@ -552,15 +552,29 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     }
   }
   if (context.mode === "OPENING") {
-    const c = turn.characterChanges;
-    const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
-    if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
-      turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null ||
-      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 || turn.questChanges.length > 0 ||
-      (context.world.environment !== undefined && Object.entries(context.world.environment).some(([key, value]) => turn.environment[key as keyof WorldEnvironment] !== value)) ||
-      c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged) {
-      throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены.", "OPENING_MUTATION_REJECTED");
-    }
+    // Opening narration is deliberately non-mutating. Models can vary harmless
+    // environment metadata while describing the scene; never persist that output.
+    // Rebuild every state-bearing field from the confirmed campaign snapshot.
+    turn = {
+      ...turn,
+      needsClarification: false,
+      clarificationQuestion: "",
+      timeDeltaMinutes: 0,
+      hpDelta: 0,
+      newInGameDate: context.world.currentInGameDate,
+      newLocationId: null,
+      consequenceText: "",
+      npcChanges: [],
+      questChanges: [],
+      rolls: [],
+      characterChanges: {
+        inventory: [],
+        resources: [],
+        conditions: [],
+        currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+      },
+      ...(context.world.environment ? { environment: context.world.environment } : {}),
+    };
   }
   return { turn, model, ...(usage ? { usage } : {}) };
 }
