@@ -1,6 +1,6 @@
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
-  name: string; quantity: number; notes: string; location: "WORN" | "OTHER"; certainty: "KNOWN" | "APPROXIMATE";
+  name: string; quantity: number; notes: string; location: "WORN" | "UNKNOWN"; certainty: "KNOWN" | "APPROXIMATE";
   startPolicy: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
 export interface DossierBasics {
@@ -58,7 +58,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   const speedMatch = normalizedText.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
   const hitDiceMatch = normalizedText.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
-  let inventoryLocation: "WORN" | "OTHER" | null = null;
+  let inventoryLocation: "WORN" | "UNKNOWN" | null = null;
   let inventoryStartPolicy: DossierInventoryItem["startPolicy"] | null = null;
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
@@ -66,7 +66,7 @@ export function extractDossierBasics(text: string): DossierBasics {
       inventoryLocation = "WORN";
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
     } else if (/^11\.2\./.test(heading)) {
-      inventoryLocation = "OTHER";
+      inventoryLocation = "UNKNOWN";
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
     } else if (/^11\.[3-5]\./.test(heading)) {
       inventoryLocation = "OTHER";
