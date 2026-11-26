@@ -10,6 +10,7 @@ const turn = {
   consequences: "Ничего не изменилось.", resourceAccounting: "HP и инвентарь без изменений.",
   nextAction: "Что ты делаешь?", summary: "Осмотр", worldOutcome: "Осмотр завершён.",
   timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "",
+  environment: { temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "" }, environmentReason: "Без изменений.", questChanges: [],
   rolls: [], npcChanges: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } },
   needsClarification: false, clarificationQuestion: "", stateNotes: [],
 } satisfies GameMasterTurn;
@@ -27,10 +28,24 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     expect(answer).not.toContain("\\n");
     expect(answer).toContain("ИГРОВОЙ ГОД: НЕ УСТАНОВЛЕНО");
     expect(answer).toContain("ПОГОДА: НЕ УСТАНОВЛЕНО");
+    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: НЕ УСТАНОВЛЕНО");
     expect(answer).toContain("СЕНСОРНОЕ ВОСПРИЯТИЕ");
     expect(answer).toContain("RAW / МЕХАНИКА");
     expect(answer).toContain("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ");
     expect(answer).toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
+  });
+
+  it("calculates week and weekday from Technical Calendar 1.0", () => {
+    const state = createInitialCollections();
+    state.world_state.calendarSystem = "Technical Calendar 1.0";
+    state.world_state.currentInGameDate = "2000 год, месяц 09, день 24; 06:25";
+    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 1);
+    expect(answer).toContain("ИГРОВОЙ ГОД: 2000");
+    expect(answer).toContain("МЕСЯЦ: 09");
+    expect(answer).toContain("ДЕНЬ: 24");
+    expect(answer).toContain("НЕДЕЛЯ ГОДА: 38");
+    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: 5");
+    expect(answer).toContain("ВРЕМЯ: 06:25");
   });
 
   it("shows a confirmed approximate year and labels the opening as outside turn numbering", () => {
