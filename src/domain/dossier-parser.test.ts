@@ -119,8 +119,8 @@ describe("player dossier summary extraction", () => {
     expect(result.resources.map((resource) => resource.max)).toEqual([4, 2, 3]);
   });
 
-  it("parses the complete bundled Lii dossier without inventing live state", () => {
-    const dossier = readFileSync("public/seed/Liya_Vein_Full_Dossier_Ekdrasil.md", "utf8");
+  it("parses the complete dossier fixture without inventing live state", () => {
+    const dossier = readFileSync("src/test/fixtures/Liya_Vein_Full_Dossier_Ekdrasil.md", "utf8");
     const result = extractDossierBasics(dossier);
     expect(result.name).toBe("ЛИЯ ВЕЙН");
     expect(result.level).toBe(21);

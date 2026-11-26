@@ -124,8 +124,13 @@ function isSha256(value: string | null | undefined): value is string {
 }
 
 function sourceContentStatus(source: SourceDocument): CloudSourceRow["content_status"] {
-  // Local attachment/processing is never equivalent to human verification.
-  return source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED"
+  // Permanent server-managed sources are referenced by metadata only; their
+  // full content lives in the private global GM base, not in campaign rows.
+  if (source.serverManaged) return "metadata_only";
+  return source.contentStatus === "ATTACHED" &&
+    source.processing?.status === "PROCESSED" &&
+    source.reviewStatus === "VERIFIED" &&
+    source.contextEnabled === true
     ? "indexed"
     : "metadata_only";
 }

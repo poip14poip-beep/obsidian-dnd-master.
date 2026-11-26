@@ -26,7 +26,10 @@ describe("cloud mapping primitives", () => {
 
   it("maps source types and never upgrades attachment to verification", async () => {
     const sources = createInitialCollections().sources;
+    sources[0]!.serverManaged = false;
     sources[0]!.contentStatus = "ATTACHED";
+    sources[0]!.reviewStatus = "VERIFIED";
+    sources[0]!.contextEnabled = true;
     sources[0]!.processing = {
       status: "PROCESSED",
       sha256: "a".repeat(64),
@@ -39,6 +42,8 @@ describe("cloud mapping primitives", () => {
       warnings: [],
     };
     sources[1]!.contentStatus = "ATTACHED";
+    sources[1]!.reviewStatus = "UNREVIEWED";
+    sources[1]!.contextEnabled = false;
     sources[1]!.reviewStatus = "UNREVIEWED";
     sources[1]!.contextEnabled = false;
 

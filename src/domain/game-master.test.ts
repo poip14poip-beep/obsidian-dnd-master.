@@ -29,7 +29,7 @@ describe("game master resolver", () => {
   it("blocks unverified or context-disabled source content before calling the model", async () => {
     const fetcher = vi.fn();
     const unverified = context.sources.map((item) => item.type === "GOVERNING_DOC"
-      ? { ...item, reviewStatus: "UNREVIEWED" as const }
+      ? { ...item, serverManaged: false }
       : item);
     await expect(resolvePlayerAction("test-user-jwt", { ...context, sources: unverified }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
@@ -49,9 +49,8 @@ describe("game master resolver", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-user-jwt");
     expect(new Headers(init?.headers).get("apikey")).toBe("sb_publishable_test");
     const request = JSON.parse(init?.body as string);
-    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1");
-    expect(request.instructions).toContain("SECOND WIND");
-    expect(request.instructions).toContain("Fighter 20"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
+    expect(request.instructions).toContain("Полный текст ОБСИДИАН 4.1 подключён на сервере");
+    expect(request.input).toContain("Тестовый персонаж"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
 
