@@ -27,7 +27,7 @@ export async function loadEkdrasilSeed(fetcher: typeof fetch = fetch): Promise<E
       return [key, await response.text()] as const;
     }),
   );
-  const bundle: Partial<EkdrasilSeedBundle> = {};
+  const bundle: EkdrasilSeedBundle = { governing: "", chronicle: "", dossier: "" };
   for (const [key, value] of entries) {
     bundle[key as keyof EkdrasilSeedBundle] = value;
   }
