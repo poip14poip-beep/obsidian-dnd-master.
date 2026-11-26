@@ -208,6 +208,8 @@ describe("clean trial campaign reset", () => {
   it("archives old campaign state from the active collections while preserving verified sources and the player character", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
+    initial.sources.push({ ...initial.sources[0]!, id: "old-campaign-map", title: "Старая карта кампании", type: "WORLD_CANON" });
+    initial.sources.push({ ...initial.sources[0]!, id: "srd-test", title: "SRD 5.2.1", type: "SUPPLEMENTAL", contentStatus: "ATTACHED", reviewStatus: "VERIFIED", contextEnabled: true, fileName: "SRD_5.2.1.txt", content: "Verified rules text" });
     initial.world_state.campaignName = "Старая кампания";
     initial.world_state.setup.confirmed = true;
     initial.locations = [{ id: "old-location", name: "Старое место", region: "UNKNOWN", description: "Старое состояние", certainty: "KNOWN", sourceId: "src-ekdrasil-chronicle" }];
@@ -231,6 +233,8 @@ describe("clean trial campaign reset", () => {
     expect(result.current.character.inventory).toHaveLength(0);
     expect(result.current.character.currentLocationLabel).toBe("UNKNOWN");
     expect(result.current.sources.every((source) => source.contentStatus === "ATTACHED")).toBe(true);
+    expect(result.current.sources.some((source) => source.id === "old-campaign-map")).toBe(false);
+    expect(result.current.sources.some((source) => source.id === "srd-test")).toBe(true);
     expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
   });
 });
