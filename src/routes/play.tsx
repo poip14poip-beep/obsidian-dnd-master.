@@ -23,10 +23,6 @@ function secureIndex(length: number): number {
   do { globalThis.crypto.getRandomValues(buffer); value = buffer[0]!; } while (value >= limit);
   return value % length;
 }
-function rollAbility(): number {
-  const dice = [0, 1, 2, 3].map(() => secureIndex(6) + 1).sort((a,b) => b-a);
-  return dice[0]! + dice[1]! + dice[2]!;
-}
 function PlayPage() {
   const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
