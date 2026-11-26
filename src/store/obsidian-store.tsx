@@ -878,9 +878,18 @@ export function ObsidianStoreProvider({
         stateVersion: collections.player_character_state.stateVersion + 1,
         updatedAt: now,
       };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "PLAYER_CHARACTER_UPDATED",
+        "OK",
+        "Лист персонажа обновлён вне игрового хода; игровое время не продвигалось.",
+        collections.world_state,
+        nextCharacter,
+      );
       return commitCollections({
         ...collections,
         player_character_state: nextCharacter,
+        audit_log: nextAudit,
       });
     },
     [collections, commitCollections],
