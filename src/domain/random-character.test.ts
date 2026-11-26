@@ -31,7 +31,9 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(result.character.speedFeet).toBe(30);
     expect(result.character.skillBonuses?.some((skill) => skill.name === "Perception")).toBe(true);
     expect(new Set(result.character.inventory?.map((entry) => entry.id)).size).toBe(result.character.inventory?.length);
-    expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Наследие фей");
+    expect(result.character.classFeaturesByLevel?.[0]?.features).not.toContain("Наследие фей");
+    expect(result.character.classFeaturesByLevel?.[0]?.features).not.toContain("Prestidigitation");
+    expect(result.character.biography?.preCampaignDesire).toBeTruthy();
     expect(result.character.armorClass).toBe(11 + Math.floor(((result.character.abilityScores?.dexterity ?? 10) - 10) / 2));
     expect(result.character.currency?.gp).toBeGreaterThanOrEqual(8);
     expect(result.character.skillBonuses?.find((skill) => skill.name === "Perception")?.basis).toContain("владение");
