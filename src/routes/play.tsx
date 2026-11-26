@@ -182,30 +182,36 @@ function PlayPage() {
     const { client, envResult } = getSupabaseAuthClient();
     if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
     const { data: sessionData, error: sessionError } = await client.auth.getSession();
-    if (sessionError || !sessionData.session?.access_token) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
-    const { data, error } = await client.functions.invoke("obsidian-gm", {
-      body: {
-        operation: "VALIDATE_CHARACTER_COMPATIBILITY",
-        model: "obsidian-free",
-        instructions: "Проведи независимую проверку персонажа на совместимость с каноном Экдрасиля и D&D 2024 / SRD 5.2.1. Используй закрытую хронику, ОБСИДИАН 4.1, SRD и руководство создания персонажей. Проверяй народ, место рождения, социальную среду, биографию, организационные/исторические ссылки, классовые особенности, навыки, оружие, броню, предметы и магические утверждения. Не считай неизвестное несовместимым: помести в unknowns. Не выдумывай подтверждение. INCOMPATIBLE только при прямом конфликте с источниками или запрещённой механике; COMPATIBLE_WITH_NOTES при устранимых/неподтверждённых деталях; INSUFFICIENT_DATA если не хватает ключевых сведений. Не исправляй персонажа сам. Для каждого конфликта укажи основание и нужное изменение. Ответ строго по схеме.",
-        input: JSON.stringify({ action: "Автоматическая проверка совместимости персонажа с миром Экдрасиль", character: characterData }),
-      },
-    });
-    if (error) {
-      let detail = error.message || "Не удалось проверить персонажа мастером.";
-      if ("context" in error && error.context instanceof Response) {
-        const responseText = await error.context.clone().text().catch(() => "");
-        try {
-          const payload = JSON.parse(responseText) as { error?: { message?: string; code?: string } };
-          detail = [payload.error?.code, payload.error?.message].filter(Boolean).join(": ") || detail;
-        } catch {
-          if (responseText) detail = responseText.slice(0, 500);
-        }
-      }
-      throw new Error("Проверка через Supabase SDK: " + detail);
+    const sessionToken = sessionData.session?.access_token;
+    if (sessionError || !sessionToken) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
+    let response: Response;
+    try {
+      response = await fetch(`${env.config.url.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${sessionToken.trim()}`,
+          apikey: env.config.publishableKey,
+        },
+        body: JSON.stringify({
+          operation: "VALIDATE_CHARACTER_COMPATIBILITY",
+          model: "obsidian-free",
+          instructions: "Выполни серверный аудит листа персонажа по ОБСИДИАН 4.1, SRD 5.2.1, хронике Экдрасиля и руководству генерации. Верни только структурированный отчёт проверки.",
+          input: JSON.stringify({ action: "Полный аудит совместимости импортируемого персонажа с D&D 2024 и каноном Экдрасиля", ...((characterData && typeof characterData === "object") ? characterData as Record<string, unknown> : { character: characterData }) }),
+        }),
+      });
+    } catch {
+      throw new Error("Не удалось подключиться к серверу мастера. Проверь интернет-соединение и повтори попытку.");
     }
-    if (!data?.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
-    const report = JSON.parse(data.output_text) as { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
+    const payload = await response.json().catch(() => null) as { output_text?: string; error?: { code?: string; message?: string } } | null;
+    if (!response.ok) {
+      const detail = payload?.error?.message ?? `Сервер мастера вернул HTTP ${response.status}.`;
+      throw new Error([payload?.error?.code, detail].filter(Boolean).join(": "));
+    }
+    if (!payload?.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
+    let report: { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
+    try { report = JSON.parse(payload.output_text); }
+    catch { throw new Error("Мастер вернул некорректный отчёт проверки. Персонаж не импортирован."); }
     if (!["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"].includes(report.status)) throw new Error("Некорректный статус проверки персонажа.");
     if (report.status === "INCOMPATIBLE" || report.status === "INSUFFICIENT_DATA") {
       throw new Error("Проверка совместимости: " + report.summary + (report.conflicts?.length ? " Конфликты: " + report.conflicts.join("; ") : "") + (report.unknowns?.length ? " Неизвестно: " + report.unknowns.join("; ") : ""));
@@ -426,7 +432,7 @@ function PlayPage() {
     try {
       // Send the parsed dossier only. The original file can contain a large amount
       // of repeated prose and is not needed for a rules/canon compatibility check.
-      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName });
+      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, dossierText: dossier.content });
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
       setBiographyBusy(false);
