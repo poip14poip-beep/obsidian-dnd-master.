@@ -1,6 +1,7 @@
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
   name: string; quantity: number; notes: string; location: "WORN" | "UNKNOWN"; certainty: "KNOWN" | "APPROXIMATE";
+  attunement?: "ATTUNED" | "NOT_ATTUNED" | "UNKNOWN";
   startPolicy: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
 export interface DossierBasics {
@@ -90,6 +91,7 @@ export function extractDossierBasics(text: string): DossierBasics {
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
     inventory.push({ name, quantity, notes, location: inventoryLocation, startPolicy: inventoryStartPolicy,
+      ...( /Cloak of Protection/i.test(name) ? { attunement: "UNKNOWN" as const } : {}),
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
   const personalInventoryRows = lines.flatMap((line, index) => {
