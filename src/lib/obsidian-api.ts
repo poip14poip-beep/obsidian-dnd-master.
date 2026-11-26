@@ -261,3 +261,37 @@ export async function loadLatestCloudCampaignSnapshot(
   }
   return callObsidianApi({ action: "latest_snapshot", campaign_id: campaignId.trim() });
 }
+
+
+const CLOUD_CAMPAIGN_LINK_KEY = "obsidian_control::cloud_campaign_link_v1";
+
+export interface CloudCampaignLink {
+  campaignId: string;
+  revision: number;
+}
+
+/** Local pointer only; it contains no campaign data or secrets. */
+export function getCloudCampaignLink(): CloudCampaignLink | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(CLOUD_CAMPAIGN_LINK_KEY);
+    if (!raw) return null;
+    const value: unknown = JSON.parse(raw);
+    if (!isRecord(value) || typeof value.campaignId !== "string" ||
+        !isUuid(value.campaignId) || !Number.isSafeInteger(value.revision) ||
+        Number(value.revision) < 0) return null;
+    return { campaignId: value.campaignId, revision: Number(value.revision) };
+  } catch {
+    return null;
+  }
+}
+
+export function setCloudCampaignLink(link: CloudCampaignLink | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (!link) window.localStorage.removeItem(CLOUD_CAMPAIGN_LINK_KEY);
+    else window.localStorage.setItem(CLOUD_CAMPAIGN_LINK_KEY, JSON.stringify(link));
+  } catch {
+    // The campaign still works locally; the UI reports cloud-link persistence failures separately.
+  }
+}
