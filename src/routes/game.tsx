@@ -1,6 +1,7 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
 import { AlertTriangle, CheckCircle2, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -32,8 +33,8 @@ function GamePage() {
     sessionLog, turnDraft, updateTurnDraft, checkTurnDraft, commitTurnDraft, lastStorageError,
   } = useObsidianStore();
 
-  const [apiKey, setApiKey] = useState("");
-  const [gmModel, setGmModel] = useState("gpt-4.1-mini");
+  const { session } = useAuth();
+  const gmModel = "gpt-4.1-mini";
   const [opening, setOpening] = useState("");
   const [openingBusy, setOpeningBusy] = useState(false);
   const [playerAction, setPlayerAction] = useState("");
@@ -99,13 +100,13 @@ function GamePage() {
       setGmError("Подготовка не пройдена. Проверь три обработанных и подтверждённых источника, лист персонажа и подтверждение старта.");
       return;
     }
-    if (!apiKey.trim()) {
-      setGmError("Введи OpenAI API-ключ. Он останется только в памяти этой страницы.");
+    if (!session?.access_token) {
+      setGmError("Для работы мастера войди в аккаунт. Локальный гостевой режим не может обращаться к защищённому API.");
       return;
     }
     setOpeningBusy(true);
     try {
-      const result = await resolvePlayerAction(apiKey, makeContext("", "OPENING"), { model: gmModel });
+      const result = await resolvePlayerAction(session.access_token, makeContext("", "OPENING"), { model: gmModel });
       setOpening(formatCampaignOpening(result.turn, worldState, character, locations));
       setGmTurn(null);
       toast.success("Вступление готово. Ход не создан, время и состояние не изменены.");
@@ -118,13 +119,13 @@ function GamePage() {
 
   async function handleResolveAction(actionOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
-    if (!actionToResolve.trim() || !apiKey.trim() || !setupReady || draftReady) return;
+    if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
     setGmTurn(null);
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
-      const result = await resolvePlayerAction(apiKey, makeContext(actionToResolve, "ACTION"), { model: gmModel });
+      const result = await resolvePlayerAction(session.access_token, makeContext(actionToResolve, "ACTION"), { model: gmModel });
       setGmTurn(result.turn);
       const waitingForRoll = result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
       if (!result.turn.needsClarification && !waitingForRoll) {
@@ -289,17 +290,14 @@ function GamePage() {
 
       <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">Подключение мастера</h2></div>
-        <div className="space-y-1.5">
-          <Label htmlFor="game-api-key">OpenAI API-ключ</Label>
-          <Input id="game-api-key" type="password" autoComplete="off" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" className="touch-target" />
-          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию, localStorage или журнал. Запросы к OpenAI API тарифицируются отдельно от подписки ChatGPT.</p>
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="game-model">Модель</Label>
-          <Input id="game-model" value={gmModel} onChange={(event) => setGmModel(event.target.value)} className="touch-target" />
+        <div className="space-y-1.5 rounded-lg border border-border bg-background/50 p-3">
+          <p className="text-sm font-medium text-foreground">Защищённое подключение к мастеру</p>
+          <p className="text-[11px] text-muted-foreground">OpenAI API-ключ хранится только в секретах серверной функции. Браузер не получает и не отправляет сам ключ.</p>
+          <p className={session?.access_token ? "text-[11px] text-status-verified" : "text-[11px] text-status-approx"}>{session?.access_token ? "Аккаунт подключён · серверная авторизация активна" : "Для вызова мастера необходимо войти в аккаунт"}</p>
+          <p className="text-[11px] text-muted-foreground">Модель: {gmModel}</p>
         </div>
         {sessionLog.lastTurnNumber === 0 && !opening && (
-          <Button type="button" className="touch-target w-full" disabled={!setupReady || !apiKey.trim() || openingBusy} onClick={() => void handleOpenCampaign()}>
+          <Button type="button" className="touch-target w-full" disabled={!setupReady || !session?.access_token || openingBusy} onClick={() => void handleOpenCampaign()}>
             <Sparkles className="mr-2 h-4 w-4" />{openingBusy ? "Мастер готовит вступление…" : "Начать кампанию · открыть сцену"}
           </Button>
         )}
@@ -379,7 +377,7 @@ function GamePage() {
         <section className="panel-surface space-y-2 p-3">
           <Label htmlFor="player-action">Что делает {character.name}?</Label>
           <Textarea id="player-action" rows={3} value={playerAction} onChange={(event) => setPlayerAction(event.target.value)} placeholder="Опиши действие своими словами. Можешь попытаться сделать что угодно — мастер проверит возможность, механику и последствия." />
-          <Button type="button" className="touch-target w-full" disabled={!playerAction.trim() || !apiKey.trim() || gmBusy} onClick={() => void handleResolveAction()}>
+          <Button type="button" className="touch-target w-full" disabled={!playerAction.trim() || !session?.access_token || gmBusy} onClick={() => void handleResolveAction()}>
             <Send className="mr-2 h-4 w-4" />{gmBusy ? "Мастер отвечает…" : "Отправить мастеру"}
           </Button>
         </section>
