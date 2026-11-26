@@ -50,9 +50,10 @@ function PlayPage() {
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
   const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
-      source.type === type && source.contentStatus === "ATTACHED" &&
-      source.content.trim().length > 0 && source.processing?.status === "PROCESSED" &&
-      source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+      source.type === type && (type === "GOVERNING_DOC"
+        ? source.serverManaged === true
+        : source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
+          source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true)
     )
   );
 
@@ -75,7 +76,7 @@ function PlayPage() {
     setStartError(null);
     if (locked) return;
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском проверь ОБСИДИАН 4.1 и Хронику Экдрасиля; для загруженного досье также требуется его проверка и включение в контекст.");
+      setStartError("Перед запуском проверь серверную готовность ОБСИДИАН 4.1, Хронику Экдрасиля и, если персонаж загружен, его отдельный лист.");
       return;
     }
     if (!characterReady) {
