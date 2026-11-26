@@ -53,7 +53,7 @@ describe("generateRandomStart", () => {
     expect(result.inventory.map((item) => item.name)).not.toContain("Короткий лук");
     expect(result.inventory.map((item) => item.name)).not.toContain("Дорожная одежда");
     expect(result.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined)).toBe(true);
-    expect(result.characterPatch.currency).toEqual({ cp: 1, sp: 1, ep: 0, gp: 20, pp: 0 });
+    expect(result.characterPatch.currency).toEqual({ cp: 1, sp: 1, ep: 0, gp: 10, pp: 0 });
     expect(result.characterPatch.background).toBe("Soldier");
     expect(result.narrative).toContain("Случайный стартовый капитал");
   });
