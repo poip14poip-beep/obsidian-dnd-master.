@@ -61,27 +61,25 @@ function mapSupabaseError(message: string): string {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  // Do not evaluate VITE_* values during SSR/prerender. The browser bundle
-  // receives them at build time; the server-side shell must remain neutral.
-  const [status, setStatus] = useState<AuthStatus>("loading");
+  const initialEnv = readSupabaseEnv();
+
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    initialEnv.ok ? "loading" : "unconfigured",
+  );
   const [guestMode, setGuestMode] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [configError, setConfigError] = useState<string | null>(null);
-  const [missingEnvKeys, setMissingEnvKeys] = useState<string[]>([]);
+  const [configError] = useState<string | null>(() => (initialEnv.ok ? null : initialEnv.error));
+  const [missingEnvKeys] = useState<string[]>(() => (initialEnv.ok ? [] : initialEnv.missingKeys));
   const [authError, setAuthError] = useState<string | null>(null);
   const [isRecoverySession, setIsRecoverySession] = useState(false);
 
   const hydrateSession = useCallback(async () => {
     const { client, envResult } = getSupabaseAuthClient();
     if (!envResult.ok || !client) {
-      setConfigError(envResult.ok ? "Клиент Auth не готов." : envResult.error);
-      setMissingEnvKeys(envResult.ok ? [] : envResult.missingKeys);
       setStatus("unconfigured");
       return;
     }
-    setConfigError(null);
-    setMissingEnvKeys([]);
 
     setStatus("loading");
     setAuthError(null);
@@ -134,13 +132,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const { client, envResult } = getSupabaseAuthClient();
     if (!envResult.ok || !client) {
-      setConfigError(envResult.ok ? "Клиент Auth не готов." : envResult.error);
-      setMissingEnvKeys(envResult.ok ? [] : envResult.missingKeys);
       setStatus("unconfigured");
       return;
     }
-    setConfigError(null);
-    setMissingEnvKeys([]);
 
     const { data: listener } = client.auth.onAuthStateChange((event, nextSession) => {
       if (event === "PASSWORD_RECOVERY") {
