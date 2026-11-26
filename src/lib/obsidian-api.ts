@@ -204,3 +204,60 @@ export async function commitCloudTurn(
   }
   return callObsidianApi({ action: "commit_turn", draft_id: draftId.trim() });
 }
+
+
+export interface ObsidianCloudSnapshotMetadata {
+  success?: boolean;
+  verified?: boolean;
+  idempotent?: boolean;
+  snapshot_id?: string;
+  revision: number;
+  parent_revision: number | null;
+  turn_number: number;
+  payload_sha256?: string;
+  created_at?: string;
+}
+
+export interface ObsidianCloudSnapshot {
+  found: boolean;
+  revision: number;
+  snapshot_id?: string;
+  parent_revision?: number | null;
+  turn_number?: number;
+  payload_sha256?: string;
+  created_at?: string;
+  payload?: Record<string, unknown>;
+}
+
+/** Save a complete, checksummed backup envelope as a new append-only cloud revision. */
+export async function saveCloudCampaignSnapshot(
+  campaignId: string,
+  parentRevision: number,
+  turnNumber: number,
+  payload: Record<string, unknown>,
+): Promise<ObsidianApiResult<{ result: ObsidianCloudSnapshotMetadata }>> {
+  if (!isUuid(campaignId.trim())) {
+    return { ok: false, error: { code: "INVALID_CAMPAIGN_ID", message: "Укажи корректный UUID облачной кампании." } };
+  }
+  if (!Number.isSafeInteger(parentRevision) || parentRevision < 0 ||
+      !Number.isSafeInteger(turnNumber) || turnNumber < 0) {
+    return { ok: false, error: { code: "INVALID_SNAPSHOT_REVISION", message: "Некорректная версия или номер игрового хода." } };
+  }
+  return callObsidianApi({
+    action: "save_snapshot",
+    campaign_id: campaignId.trim(),
+    parent_revision: parentRevision,
+    turn_number: turnNumber,
+    payload,
+  });
+}
+
+/** Read the newest append-only cloud backup; no local state is modified. */
+export async function loadLatestCloudCampaignSnapshot(
+  campaignId: string,
+): Promise<ObsidianApiResult<{ snapshot: ObsidianCloudSnapshot }>> {
+  if (!isUuid(campaignId.trim())) {
+    return { ok: false, error: { code: "INVALID_CAMPAIGN_ID", message: "Укажи корректный UUID облачной кампании." } };
+  }
+  return callObsidianApi({ action: "latest_snapshot", campaign_id: campaignId.trim() });
+}
