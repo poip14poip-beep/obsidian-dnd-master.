@@ -171,7 +171,7 @@ Deno.serve(async (req: Request) => {
           temperature: 0.25,
           max_tokens: 8192,
         }),
-        signal: AbortSignal.timeout(30_000),
+        signal: AbortSignal.timeout(55_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
