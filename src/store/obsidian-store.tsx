@@ -191,7 +191,7 @@ export interface ObsidianStoreValue {
     inventory: Array<Omit<InventoryItem, "id">>;
     replaceInventory?: boolean;
   }) => PersistVerifyResult;
-  saveOpeningScene: (openingScene: string) => PersistVerifyResult;
+  saveOpeningScene: (openingScene: string, state?: { date?: string; environment?: WorldEnvironment }) => PersistVerifyResult;
   updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
   confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
   resetForTrialCampaign: () => PersistVerifyResult;
@@ -1011,7 +1011,7 @@ export function ObsidianStoreProvider({
     });
   }, [collections, commitCollections, lastIntegrityReport]);
 
-  const saveOpeningScene: ObsidianStoreValue["saveOpeningScene"] = useCallback((openingScene) => {
+  const saveOpeningScene: ObsidianStoreValue["saveOpeningScene"] = useCallback((openingScene, state) => {
     const text = openingScene.trim();
     if (!text) {
       return { ok: false, error: "Пустую вступительную сцену нельзя сохранить.", report: lastIntegrityReport };
@@ -1028,6 +1028,8 @@ export function ObsidianStoreProvider({
       ...currentWorld,
       openingScene: text,
       openingSceneGeneratedAt: now,
+      ...(state?.date ? { startInGameDate: state.date, currentInGameDate: state.date } : {}),
+      ...(state?.environment ? { environment: state.environment } : {}),
       stateVersion: currentWorld.stateVersion + 1,
       updatedAt: now,
     };
