@@ -366,11 +366,15 @@ function GamePage() {
               {cloudSyncStatus === "ERROR" && <p className="mt-1 text-muted-foreground">Игровой ход уже сохранён локально. Облачная копия не подтверждена.</p>}
             </div>
           </div>
-          {cloudSyncStatus === "ERROR" && (
+          {cloudSyncStatus === "ERROR" && (cloudSyncMessage?.includes("В облаке уже есть другая версия") ? (
+            <Button asChild type="button" variant="secondary" size="sm" className="touch-target">
+              <Link to="/settings">Загрузить актуальную версию</Link>
+            </Button>
+          ) : (
             <Button type="button" variant="secondary" size="sm" className="touch-target" onClick={() => void retryCloudSnapshot()}>
               <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Повторить сохранение
             </Button>
-          )}
+          ))}
         </section>
       )}
 
