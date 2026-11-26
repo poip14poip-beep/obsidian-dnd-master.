@@ -16,6 +16,15 @@ export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
 
+type CharacterCompatibilityReport = {
+  status: "COMPATIBLE" | "COMPATIBLE_WITH_NOTES";
+  summary: string;
+  conflicts: string[];
+  unknowns: string[];
+  requiredChanges: string[];
+  supportedFacts: string[];
+};
+
 function secureIndex(length: number): number {
   if (!Number.isInteger(length) || length < 1 || !globalThis.crypto?.getRandomValues) {
     throw new Error("Криптографический генератор случайных чисел недоступен.");
@@ -34,6 +43,7 @@ function PlayPage() {
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [compatibilityReport, setCompatibilityReport] = useState<CharacterCompatibilityReport | null>(null);
   const [startPending, setStartPending] = useState(false);
   const [startBusy, setStartBusy] = useState(false);
   const startInFlightRef = useRef(false);
@@ -254,6 +264,12 @@ function PlayPage() {
     try { report = JSON.parse(payload.output_text); }
     catch { throw new Error("Мастер вернул некорректный отчёт проверки. Персонаж не импортирован."); }
     if (!["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"].includes(report.status)) throw new Error("Некорректный статус проверки персонажа.");
+    if (typeof report.summary !== "string" ||
+        !Array.isArray(report.conflicts) || !Array.isArray(report.unknowns) ||
+        !Array.isArray(report.requiredChanges) || !Array.isArray(report.supportedFacts) ||
+        [...report.conflicts, ...report.unknowns, ...report.requiredChanges, ...report.supportedFacts].some((item) => typeof item !== "string")) {
+      throw new Error("Отчёт проверки персонажа имеет неполную структуру.");
+    }
     if (report.status === "INCOMPATIBLE" || report.status === "INSUFFICIENT_DATA") {
       throw new Error("Проверка совместимости: " + report.summary + (report.conflicts?.length ? " Конфликты: " + report.conflicts.join("; ") : "") + (report.unknowns?.length ? " Неизвестно: " + report.unknowns.join("; ") : ""));
     }
@@ -433,6 +449,7 @@ function PlayPage() {
     setConfirmed(false);
     setBiographyReady(false);
     setImportError(null);
+    setCompatibilityReport(null);
   };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -470,11 +487,14 @@ function PlayPage() {
     if (!parsed || !dossier || biographyBusy) return;
     setBiographyBusy(true);
     setImportError(null);
+    setCompatibilityReport(null);
     try {
       // Send the parsed dossier only. The original file can contain a large amount
       // of repeated prose and is not needed for a rules/canon compatibility check.
-      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, sourceText: dossier.content, sourceTextTail: dossier.content.slice(-10_000) });
+      const report = await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, sourceText: dossier.content, sourceTextTail: dossier.content.slice(-10_000) });
+      setCompatibilityReport(report as CharacterCompatibilityReport);
     } catch (error) {
+      setCompatibilityReport(null);
       setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
       setBiographyBusy(false);
       return;
@@ -545,6 +565,13 @@ function PlayPage() {
         <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Новая кампания автоматически подготовит стартовое состояние персонажа: полные HP, восстановленные классовые ресурсы, отсутствие временных HP и состояний, случайный стартовый капитал по предыстории и стартовую локацию.</div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
         {importError && <p className="text-xs text-destructive">{importError}</p>}
+        {compatibilityReport && <div className="space-y-2 rounded border border-primary/30 p-3 text-sm" role="status">
+          <p className="font-medium">{compatibilityReport.status === "COMPATIBLE" ? "Проверка совместимости пройдена" : "Персонаж совместим с замечаниями"}</p>
+          <p>{compatibilityReport.summary}</p>
+          {compatibilityReport.conflicts.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Замечания проверки</p><ul className="list-disc pl-5">{compatibilityReport.conflicts.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+          {compatibilityReport.unknowns.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Неизвестные данные</p><ul className="list-disc pl-5">{compatibilityReport.unknowns.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+          {compatibilityReport.requiredChanges.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Рекомендованные изменения — не применяются автоматически</p><ul className="list-disc pl-5">{compatibilityReport.requiredChanges.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+        </div>}
         {biographyBusy && <p className="text-sm text-primary">Мастер автоматически сверяет персонажа с хроникой Экдрасиля и SRD 5.2.1…</p>}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button disabled={locked || !parsed || confirmed || biographyBusy} onClick={() => void confirmDossier()}>{biographyBusy ? "Проверяю совместимость…" : "Проверить и импортировать персонажа"}</Button>
