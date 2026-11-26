@@ -94,6 +94,8 @@ export interface EntityRevision {
 
 export interface NpcRecord {
   id: string;
+  /** False hides GM-only records from the player-facing NPC registry; the GM model still receives them. */
+  playerVisible?: boolean;
   name: string;
   role: string;
   locationId: string | null;
