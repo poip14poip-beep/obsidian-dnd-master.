@@ -117,6 +117,11 @@ export function createInitialWorldState(): WorldState {
     elapsedMinutes: 0,
     encumbranceMode: "UNSET",
     campaignPreferences: DEFAULT_CAMPAIGN_PREFERENCES,
+    quests: [],
+    environment: {
+      temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN",
+      visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "",
+    },
     startLocationName: "UNKNOWN",
     currentLocationId: null,
     setup: {

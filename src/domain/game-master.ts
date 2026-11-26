@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
 import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 
@@ -12,6 +12,7 @@ export interface GameMasterTurn {
   mechanics: string; consequences: string; resourceAccounting: string; nextAction: string;
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
+  environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
   rolls: Array<{ label: string; formula: string; result: string }>;
   npcChanges: NpcTurnChange[];
   characterChanges: {
@@ -42,13 +43,30 @@ const turnSchema = {
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
       role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
+      playerVisible: { type: "boolean" },
       locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
       certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["factSummary", "acquisitionPath", "certainty"] } },
-    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions"] } },
+      playerKnowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        factSummary: { type: "string" }, acquisitionPath: { type: "string" },
+        certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["factSummary", "acquisitionPath", "certainty"] } },
+    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
+    environment: { type: "object", additionalProperties: false, properties: {
+      temperatureC: { type: ["number", "null"] }, temperatureCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      weather: { type: "string" }, lighting: { type: "string" }, visibility: { type: "string" }, wind: { type: "string" },
+      precipitation: { type: "string" }, ambientSounds: { type: "string" }, ambientSmells: { type: "string" }, notes: { type: "string" },
+    }, required: ["temperatureC", "temperatureCertainty", "weather", "lighting", "visibility", "wind", "precipitation", "ambientSounds", "ambientSmells", "notes"] },
+    environmentReason: { type: "string" },
+    questChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+      action: { type: "string", enum: ["CREATE", "UPDATE"] }, title: { type: "string" }, description: { type: "string" },
+      objectives: { type: "array", items: { type: "string" } }, status: { type: "string", enum: ["RUMOR", "ACTIVE", "ON_HOLD", "COMPLETED", "FAILED"] },
+      giverName: { type: ["string", "null"] }, locationName: { type: ["string", "null"] }, deadline: { type: ["string", "null"] },
+      reward: { type: "string" }, sourcePath: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
+    }, required: ["action", "title", "description", "objectives", "status", "giverName", "locationName", "deadline", "reward", "sourcePath", "certainty", "reason"] } },
     characterChanges: { type: "object", additionalProperties: false, properties: {
       inventory: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         action: { type: "string", enum: ["ADD", "REMOVE", "SET"] }, name: { type: "string" },
@@ -68,7 +86,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "environment", "environmentReason", "questChanges", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -255,7 +273,7 @@ function extractOutputText(payload: unknown): string {
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
-function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[]): GameMasterTurn {
+function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[], knownQuests: CampaignQuest[] = [], contextWorldEnvironment?: WorldEnvironment): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
@@ -264,13 +282,37 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     !Array.isArray(turn["rolls"]) || !Array.isArray(turn["stateNotes"]))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
   if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
+  const environment = turn["environment"] as Record<string, unknown> | undefined;
+  if (!environment || !Number.isFinite(environment["temperatureC"] === null ? 0 : environment["temperatureC"]) ||
+      !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(environment["temperatureCertainty"])) ||
+      ["weather", "lighting", "visibility", "wind", "precipitation", "ambientSounds", "ambientSmells", "notes"].some((key) => typeof environment[key] !== "string") ||
+      typeof turn["environmentReason"] !== "string" || !(turn["environmentReason"] as string).trim() ||
+      (environment["temperatureC"] === null && environment["temperatureCertainty"] === "KNOWN") ||
+      (environment["temperatureC"] !== null && environment["temperatureCertainty"] === "UNKNOWN")) {
+    throw new GameMasterError("Мастер не вернул полный блок текущего окружения.", "INVALID_ENVIRONMENT");
+  }
+  if (!Array.isArray(turn["questChanges"])) throw new GameMasterError("Мастер не вернул список изменений журнала заданий.", "INVALID_QUEST_CHANGES");
+  for (const quest of turn["questChanges"] as Array<Record<string, unknown>>) {
+    if (!["CREATE", "UPDATE"].includes(String(quest["action"])) || typeof quest["title"] !== "string" || !quest["title"].trim() ||
+        typeof quest["description"] !== "string" || !Array.isArray(quest["objectives"]) || quest["objectives"].some((item) => typeof item !== "string") ||
+        !["RUMOR", "ACTIVE", "ON_HOLD", "COMPLETED", "FAILED"].includes(String(quest["status"])) ||
+        (quest["giverName"] !== null && typeof quest["giverName"] !== "string") || (quest["locationName"] !== null && typeof quest["locationName"] !== "string") ||
+        (quest["deadline"] !== null && typeof quest["deadline"] !== "string") || typeof quest["reward"] !== "string" ||
+        typeof quest["sourcePath"] !== "string" || !quest["sourcePath"].trim() ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(quest["certainty"])) || typeof quest["reason"] !== "string") {
+      throw new GameMasterError("Некорректная запись журнала заданий.", "INVALID_QUEST_CHANGE");
+    }
+    const existingQuest = knownQuests.find((item) => item.title.toLocaleLowerCase() === (quest["title"] as string).toLocaleLowerCase());
+    if (quest["action"] === "CREATE" && existingQuest) throw new GameMasterError(`Задание «${quest["title"]}» уже есть в журнале; используй UPDATE.`, "DUPLICATE_QUEST");
+    if (quest["action"] === "UPDATE" && !existingQuest) throw new GameMasterError(`Нельзя обновить неизвестное Лии задание «${quest["title"]}».`, "UNKNOWN_QUEST_UPDATE");
+  }
   for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc["action"])) || typeof npc["name"] !== "string" || !npc["name"].trim() ||
-        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["resources"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" ||
+        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["resources"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" || typeof npc["playerVisible"] !== "boolean" ||
         (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
         (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
-        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"])) {
+        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
     }
     const existingNpc = knownNpcs.find((item) => item.name.toLocaleLowerCase() === (npc["name"] as string).toLocaleLowerCase());
@@ -289,7 +331,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     if (npc["factionName"] !== null && !knownFactions.some((item) => item.name.toLocaleLowerCase() === (npc["factionName"] as string).toLocaleLowerCase())) {
       throw new GameMasterError("Для NPC «" + npc["name"] + "» указана неизвестная фракция.", "UNKNOWN_NPC_FACTION");
     }
-    for (const knowledge of npc["knowledgeAdditions"] as Array<Record<string, unknown>>) {
+    for (const knowledge of [...npc["knowledgeAdditions"] as Array<Record<string, unknown>>, ...npc["playerKnowledgeAdditions"] as Array<Record<string, unknown>>]) {
       if (typeof knowledge["factSummary"] !== "string" || !knowledge["factSummary"].trim() ||
           typeof knowledge["acquisitionPath"] !== "string" || !knowledge["acquisitionPath"].trim() ||
           !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge["certainty"]))) {
@@ -347,8 +389,13 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   const hasCharacterDelta = (changes["inventory"] as unknown[]).length > 0 ||
     (changes["resources"] as unknown[]).length > 0 || (changes["conditions"] as unknown[]).length > 0 ||
     Object.values(currency).some((amount) => amount !== 0);
-  const hasWorldDelta = (turn["npcChanges"] as unknown[]).length > 0 || turn["newLocationId"] !== null ||
-    (turn["consequenceText"] as string).trim().length > 0;
+  const baseEnvironment = contextWorldEnvironment ?? null;
+  const returnedEnvironment = environment as Record<string, unknown>;
+  const hasEnvironmentDelta = baseEnvironment
+    ? Object.entries(baseEnvironment).some(([key, value]) => returnedEnvironment[key] !== value)
+    : Object.entries(returnedEnvironment).some(([key, value]) => key === "temperatureC" ? value !== null : key === "temperatureCertainty" ? value !== "UNKNOWN" : key === "notes" ? value !== "" : value !== "UNKNOWN");
+  const hasWorldDelta = (turn["npcChanges"] as unknown[]).length > 0 || (turn["questChanges"] as unknown[]).length > 0 ||
+    turn["newLocationId"] !== null || (turn["consequenceText"] as string).trim().length > 0 || hasEnvironmentDelta;
   if ((turn["needsClarification"] || hasPendingRoll) && (
     (turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
     hasCharacterDelta || hasWorldDelta
@@ -357,6 +404,16 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   }
   return turn as unknown as GameMasterTurn;
 }
+function parseTechnicalDateTime(value: string): number | null {
+  const match = value.match(/(?:^|\D)(\d{1,4})\s*(?:год)?\s*,?\s*месяц\s*(\d{1,2})\s*,?\s*день\s*(\d{1,2})\s*[;, ]+([01]\d|2[0-3]):([0-5]\d)/i);
+  if (!match) return null;
+  const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+  const hour = Number(match[4]), minute = Number(match[5]);
+  if (month < 1 || month > 13 || day < 1 || (month <= 12 ? day > 30 : day > 5)) return null;
+  const ordinal = month <= 12 ? (month - 1) * 30 + day : 360 + day;
+  return year * 365 * 1440 + (ordinal - 1) * 1440 + hour * 60 + minute;
+}
+
 export async function resolvePlayerAction(sessionToken: string, context: GameMasterContext,
   options: { model?: string; fetcher?: typeof fetch; supabaseUrl?: string; publishableKey?: string } = {}): Promise<GameMasterResult> {
   if (!sessionToken.trim()) throw new GameMasterError("Войди в аккаунт, чтобы использовать игрового мастера.", "AUTH_REQUIRED");
@@ -423,12 +480,15 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     requirements: [
       ...(context.mode === "OPENING" ? [
         "Это вступительная сцена, а не действие персонажа и не игровой ход. summary = «Вступительная сцена кампании»; worldOutcome = «Вступление показано; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
-        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], characterChanges содержит пустые массивы и нулевую currencyDelta.",
+        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], questChanges=[], environment в точности повторяет campaign.environment или сохраняет UNKNOWN для неизвестных полей, characterChanges содержит пустые массивы и нулевую currencyDelta.",
         "Не придумывай новые сведения о мире, NPC, фракциях, истории или событиях. Используй startNarrative и подтверждённые источники. Неизвестные поля оставь UNKNOWN/НЕ УСТАНОВЛЕНО.",
         "campaignMemory отражает только подтверждённую стартовую ситуацию и релевантные известные сведения. sensoryDescription — только сенсорная информация, которую Лия может воспринимать в этой стартовой сцене. spatialAccounting не выдумывает позиции и расстояния. mechanics указывает, что проверка не требуется, поскольку персонаж ещё не совершал действия. nextAction задаёт открытый вопрос без навязывания вариантов."
       ] : []),
       "Верни отдельные обязательные блоки campaignMemory, sensoryDescription, spatialAccounting, mechanics, consequences, resourceAccounting и nextAction. narration — только описание сцены.",
-      "Не придумывай дату, погоду, освещение, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE.",
+      "Не придумывай дату, погоду, освещение, температуру, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE. Используй календарь campaign.calendarSystem. Для Technical Calendar 1.0 рассчитывай год/месяц/день/порядковый день года/неделю/день недели строго из даты; не придумывай названия месяцев. Время продвигай на фактическую длительность действия, а не на один чат-ответ.",
+      "Верни environment как полное текущее состояние окружающей среды: измеримая температура °C или null, certainty, погода, освещение, видимость, ветер, осадки, слышимые фоновые звуки и запахи. Не меняй неизменившиеся поля без причины. Изменения среды должны иметь причинное основание: время суток, место, высота, погода, сезон, укрытие или событие; environmentReason объясняет, почему состояние осталось прежним или изменилось. Не выдумывай числовую температуру: если нет источника/основания, temperatureC=null и certainty=UNKNOWN.",
+      "Журнал заданий содержит только поручения, слухи, обещания, цели или обязательства, которые Лия действительно узнала через наблюдение, документ, разговор или иной установленный канал. Не создавай квест ради сюжета. Не превращай случайную сцену в задание. CREATE — только при первом фактическом обнаружении; UPDATE — только существующей записи. sourcePath обязателен и описывает конкретный канал получения информации. Не раскрывай скрытые задачи NPC, о которых Лия не знает.",
+      "Журнал знаний NPC — это знания Лии о NPC, не знания самого NPC. playerVisible=true только если Лия лично увидела/услышала NPC или узнала о нём по конкретному каналу. playerKnowledgeAdditions — только факты, реально известные Лии; sourcePath/acquisitionPath обязателен. knowledgeAdditions — отдельно то, что знает сам NPC. Не смешивай эти два набора. Если Лия видит незнакомца, можно создать открытую запись с UNKNOWN-личностью и только наблюдаемыми деталями.",
       "sensoryDescription содержит только то, что персонаж реально воспринимает; если новых ощущений нет, так и напиши.",
       "spatialAccounting показывает только известные позиции, расстояния и препятствия; не выводи точные расстояния из художественного описания.",
       "mechanics указывает применённое правило/источник, проверку, модификатор, преимущество/помеху, DC/AC и результат; если бросок не нужен, объясни почему.",
@@ -475,13 +535,21 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions);
+  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
+  if (/technical calendar 1\.0/i.test(context.world.calendarSystem)) {
+    const before = parseTechnicalDateTime(context.world.currentInGameDate);
+    const after = parseTechnicalDateTime(turn.newInGameDate);
+    if (before !== null && (after === null || after - before !== turn.timeDeltaMinutes)) {
+      throw new GameMasterError("Новая дата/время не совпадает с длительностью действия по Technical Calendar 1.0. Ход не принят.", "CALENDAR_DELTA_MISMATCH");
+    }
+  }
   if (context.mode === "OPENING") {
     const c = turn.characterChanges;
     const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
     if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
       turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null ||
-      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 ||
+      turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 || turn.questChanges.length > 0 ||
+      (context.world.environment !== undefined && Object.entries(context.world.environment).some(([key, value]) => turn.environment[key as keyof WorldEnvironment] !== value)) ||
       c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged) {
       throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены.", "OPENING_MUTATION_REJECTED");
     }

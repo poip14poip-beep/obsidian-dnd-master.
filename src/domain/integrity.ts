@@ -142,6 +142,20 @@ export function validateTurnDraft(
     for (const knowledge of change.knowledgeAdditions) {
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
+    for (const knowledge of change.playerKnowledgeAdditions) {
+      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание Лии о NPC «${change.name}» должно иметь содержание и канал получения.`);
+    }
+  }
+  const existingQuests = worldState.quests ?? [];
+  for (const change of draft.questChanges ?? []) {
+    const existing = existingQuests.find((quest) => quest.title.toLocaleLowerCase() === change.title.toLocaleLowerCase());
+    if (change.action === "CREATE" && existing) errors.push(`Задание «${change.title}» уже существует; используйте UPDATE.`);
+    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить неизвестное Лии задание «${change.title}».`);
+    if (!change.title.trim() || !change.sourcePath.trim() || !change.description.trim()) errors.push("Запись задания должна иметь название, описание и источник получения информации.");
+  }
+  if (draft.environment) {
+    if (!draft.environment.weather.trim() || !draft.environment.lighting.trim() || !draft.environment.visibility.trim() || !draft.environment.temperatureCertainty) errors.push("Блок окружения должен содержать явные значения или UNKNOWN.");
+    if (draft.environment.temperatureC !== null && (!Number.isFinite(draft.environment.temperatureC) || draft.environment.temperatureC < -90 || draft.environment.temperatureC > 65)) errors.push("Температура вне допустимого физического диапазона; проверьте источник.");
   }
   const changes = draft.characterChanges;
   if (changes) {
@@ -269,7 +283,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     (f) => !f.sourceId || (!sourceIds.has(f.sourceId) && f.sourceId !== "MANUAL_GM_ENTRY"),
   );
   const npcKnowledgeMissingPath = npcs.flatMap((npc) =>
-    npc.knowledge
+    [...npc.knowledge, ...(npc.playerKnowledge ?? [])]
       .filter((k) => !k.acquisitionPath.trim() || !k.sourceId.trim())
       .map((k) => `${npc.name}: ${k.factSummary}`),
   );
@@ -279,7 +293,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     label: "Происхождение фактов и путей знания NPC",
     passed: provenanceOk,
     details: provenanceOk
-      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC: ${npcs.reduce((acc, n) => acc + n.knowledge.length, 0)}.`
+      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC и игрока: ${npcs.reduce((acc, n) => acc + n.knowledge.length + (n.playerKnowledge?.length ?? 0), 0)}.`
       : `Фактов без источника: ${factsWithoutSource.length}; знаний NPC без пути получения: ${npcKnowledgeMissingPath.length}.`,
   });
 

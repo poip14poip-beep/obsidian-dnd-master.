@@ -12,7 +12,7 @@ const context: GameMasterContext = {
   character: { schemaVersion: 1, stateVersion: 1, sourceDossierId: "dossier", name: "Лия", nameCertainty: "KNOWN", speciesAndClass: "Человек / Воин", level: 20, hpCurrent: 100, hpMax: 100, hpTemp: 0, armorClass: 18, statsCertainty: "KNOWN", currentLocationLabel: "UNKNOWN", conditions: [], resources: [], inventory: [], notes: "", updatedAt: "2026-01-01T00:00:00Z" },
   canonFacts: [], npcs: [], factions: [], locations: [], timelineEvents: [], journal: [],
 };
-const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
+const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", environment: { temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "" }, environmentReason: "Без изменений.", questChanges: [], rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 const testOptions = (fetcher: typeof fetch) => ({ fetcher, supabaseUrl: "https://test.supabase.co", publishableKey: "sb_publishable_test" });
 
 describe("game master resolver", () => {
@@ -55,6 +55,22 @@ describe("game master resolver", () => {
     expect(request.input).toContain("Досье игрока");
   });
 
+  it("rejects a date/time that does not match the declared action duration", async () => {
+    const mismatched = { ...validTurn, timeDeltaMinutes: 15, newInGameDate: "2000, месяц 09, день 24; 06:41" };
+    const timedContext = { ...context, world: { ...context.world, calendarSystem: "Technical Calendar 1.0", currentInGameDate: "2000, месяц 09, день 24; 06:25" } };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(mismatched) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", timedContext, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "CALENDAR_DELTA_MISMATCH" });
+  });
+
+  it("keeps discovered quest entries separate and rejects duplicate quest creation", async () => {
+    const quest = { id: "quest-1", title: "Найти архив", description: "Узнать, где находится архив.", objectives: ["Найти сведения"], status: "RUMOR" as const, giverName: null, locationName: null, deadline: null, reward: "", sourcePath: "Услышанный разговор", certainty: "KNOWN" as const, lastUpdatedInGameDate: context.world.currentInGameDate, playerVisible: true as const };
+    const duplicate = { ...validTurn, questChanges: [{ action: "CREATE", title: quest.title, description: quest.description, objectives: quest.objectives, status: quest.status, giverName: null, locationName: null, deadline: null, reward: "", sourcePath: quest.sourcePath, certainty: "KNOWN", reason: "Повторное создание" }] };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(duplicate) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", { ...context, world: { ...context.world, quests: [quest] } }, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "DUPLICATE_QUEST" });
+  });
+
   it("creates a structured opening scene without a player action or state mutation", async () => {
     const openingTurn = { ...validTurn, timeDeltaMinutes: 0, newInGameDate: context.world.currentInGameDate };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(openingTurn) }), { status: 200 }));
@@ -90,7 +106,7 @@ describe("game master resolver", () => {
       goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN" as const, sourceId: "test",
       locked: false, knowledge: [], version: 1, history: [] };
     const duplicate = { ...validTurn, npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN",
-      attitudeToPlayer: "UNKNOWN", locationName: null, factionName: null, certainty: "KNOWN", reason: "test", knowledgeAdditions: [] }] };
+      attitudeToPlayer: "UNKNOWN", playerVisible: false, locationName: null, factionName: null, certainty: "KNOWN", reason: "test", knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(duplicate) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", { ...context, npcs: [existingNpc] }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "DUPLICATE_NPC" });
@@ -109,8 +125,8 @@ describe("game master resolver", () => {
   });
   it("rejects NPC or location changes while a player roll is pending", async () => {
     const invalidPending = { ...validTurn, rolls: [{ label: "Атлетика", formula: "1d20+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
-      npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN",
-        locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", knowledgeAdditions: [] }] };
+      npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", playerVisible: false,
+        locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidPending) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_CLARIFICATION_DELTA" });

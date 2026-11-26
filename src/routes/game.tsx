@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, CheckCircle2, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
+import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
@@ -47,6 +47,7 @@ function GamePage() {
   const [draftReady, setDraftReady] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
   const [explicitConfirm, setExplicitConfirm] = useState(false);
+  const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge">("chat");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const requiredSourceTypes = ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
@@ -70,12 +71,6 @@ function GamePage() {
   const formattedGmAnswer = gmTurn
     ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber)
     : "";
-
-  useEffect(() => {
-    if (worldState.startNarrative?.trim() && !opening) {
-      setOpening(worldState.startNarrative);
-    }
-  }, [worldState.startNarrative, opening]);
 
   useEffect(() => {
     if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
@@ -110,12 +105,6 @@ function GamePage() {
       setGmError("Для работы мастера войди в аккаунт. Локальный гостевой режим не может обращаться к защищённому API.");
       return;
     }
-    if (worldState.startNarrative?.trim()) {
-      setOpening(worldState.startNarrative);
-      setGmTurn(null);
-      toast.success("Восстановлена подтверждённая вступительная сцена. Ход не создан, время не изменено.");
-      return;
-    }
     setOpeningBusy(true);
     try {
       const result = await resolvePlayerAction(session.access_token, makeContext("", "OPENING"), { model: gmModel });
@@ -147,6 +136,8 @@ function GamePage() {
           worldOutcome: result.turn.worldOutcome,
           gmNarration: formatArchivedGameMasterAnswer(result.turn, worldState, character, locations, nextTurnNumber),
           campaignMemory: result.turn.campaignMemory,
+          environment: result.turn.environment,
+          questChanges: result.turn.questChanges,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
           newInGameDate: result.turn.newInGameDate,
           newLocationId: result.turn.newLocationId ?? "",
@@ -276,10 +267,23 @@ function GamePage() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
           <span>Календарь: {worldState.calendarSystem || "НЕ УСТАНОВЛЕН"}</span>
           <span>Сохранено ходов: {sessionLog.lastTurnNumber}</span>
+          <span>Следующий ход: #{String(nextTurnNumber).padStart(4, "0")}</span>
           <span>HP: {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"}</span>
+          <span>Температура: {worldState.environment?.temperatureC == null ? "НЕ УСТАНОВЛЕНО" : worldState.environment.temperatureC + " °C"}</span>
+          <span>Погода: {worldState.environment?.weather || "НЕ УСТАНОВЛЕНО"}</span>
+          <span>Освещение: {worldState.environment?.lighting || "НЕ УСТАНОВЛЕНО"}</span>
+          <span>Видимость: {worldState.environment?.visibility || "НЕ УСТАНОВЛЕНО"}</span>
         </div>
       </section>
 
+      <nav aria-label="Игровые вкладки" className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-1">
+        {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
+          <Button key={key} type="button" size="sm" variant={activePanel === key ? "default" : "ghost"} className="min-w-0 px-1 text-[11px] sm:text-xs" onClick={() => setActivePanel(key)}><Icon className="mr-1 h-3.5 w-3.5 shrink-0" />{label}</Button>
+        ))}
+      </nav>
+
+      {activePanel === "chat" && (
+      <div className="space-y-4">
       {!setupReady && (
         <section className="panel-surface space-y-3 border-status-approx/40 p-4">
           <div className="flex items-center gap-2"><Lock className="h-5 w-5 text-status-approx" /><h2 className="font-semibold text-foreground">Кампания не готова к игре</h2></div>
@@ -317,11 +321,11 @@ function GamePage() {
       </section>
 
       {opening && (
-        <section className="space-y-3 rounded-xl border border-primary/30 bg-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">Вступительная сцена</p>
+        <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер · вступление</p>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{opening}</div>
-          <p className="border-t border-border pt-2 text-xs text-muted-foreground">Вступление не является действием Лии и не продвигает игровое время. Первое действие игрока будет записано как ход #0001.</p>
-        </section>
+          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Это вступительная сцена, а не ход. Игровое время не продвинуто. Первое действие Лии будет записано как ход #0001.</p>
+        </article>
       )}
 
       <section className="space-y-3" aria-live="polite">
@@ -397,9 +401,80 @@ function GamePage() {
       )}
 
       <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
-        <Link to="/turns" className="underline underline-offset-2">Журнал и ручная проверка</Link>
+        <Link to="/turns" className="underline underline-offset-2">Полный журнал ходов</Link>
         <Link to="/character" className="underline underline-offset-2">Лист персонажа</Link>
       </div>
+      </div>
+      )}
+
+      {activePanel === "inventory" && (
+        <section className="space-y-3">
+          <div className="panel-surface flex items-center justify-between gap-3 p-3">
+            <div><p className="text-xs text-muted-foreground">Предметов и стеков</p><p className="text-xl font-semibold">{character.inventory.filter((item) => item.quantity > 0).length}</p></div>
+            <div className="text-right"><p className="text-xs text-muted-foreground">Известный вес</p><p className="text-xl font-semibold">{character.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined) ? character.inventory.reduce((sum, item) => sum + (item.unitWeightLb ?? 0) * item.quantity, 0).toFixed(1) + " lb" : "Частично известен"}</p></div>
+          </div>
+          <div className="panel-surface space-y-2 p-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><Backpack className="h-4 w-4"/>Снаряжение и предметы</h2>
+            {character.inventory.length === 0 ? <p className="text-sm text-muted-foreground">Инвентарь пуст или ещё не загружен.</p> : character.inventory.filter((item) => item.quantity > 0).map((item) => (
+              <article key={item.id} className="rounded-lg border border-border bg-background/50 p-3">
+                <div className="flex items-start justify-between gap-2"><p className="text-sm font-medium">{item.name}</p><span className="mono-code text-xs">×{item.quantity}</span></div>
+                <p className="mt-1 text-[11px] text-muted-foreground">{item.location === "WORN" ? "Надето" : item.location === "CARRIED" ? "При себе" : item.location === "STORED" ? "На хранении" : item.location === "DROPPED" ? "Оставлено" : item.location === "UNKNOWN" ? "Место неизвестно" : "Место хранения не уточнено"} · {item.unitWeightLb == null ? "вес UNKNOWN" : item.unitWeightLb + " lb / шт."} · {item.certainty}</p>
+                {item.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{item.notes}</p>}
+              </article>
+            ))}
+          </div>
+          <div className="panel-surface space-y-2 p-3">
+            <h2 className="text-sm font-semibold">Деньги</h2>
+            {character.currency ? <div className="grid grid-cols-5 gap-1 text-center text-xs">{(["pp","gp","ep","sp","cp"] as const).map((coin) => <div key={coin} className="rounded-md bg-background/60 p-2"><p className="text-muted-foreground">{coin.toUpperCase()}</p><p className="mt-1 font-semibold">{character.currency?.[coin] ?? 0}</p></div>)}</div> : <p className="text-sm text-muted-foreground">Денежный остаток не установлен.</p>}
+          </div>
+          <div className="panel-surface space-y-2 p-3">
+            <h2 className="text-sm font-semibold">Ресурсы персонажа</h2>
+            {character.resources.length === 0 ? <p className="text-sm text-muted-foreground">Нет отдельных ресурсов в реестре.</p> : character.resources.map((resource) => <div key={resource.id} className="flex items-center justify-between gap-2 border-b border-border py-2 last:border-0"><span className="text-sm">{resource.name}</span><span className="mono-code text-xs">{resource.current ?? "?"}/{resource.max ?? "?"}</span></div>)}
+          </div>
+        </section>
+      )}
+
+      {activePanel === "quests" && (
+        <section className="panel-surface space-y-3 p-3">
+          <div className="flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-sm font-semibold"><ClipboardList className="h-4 w-4"/>Журнал заданий</h2><span className="mono-code text-xs">{(worldState.quests ?? []).length}</span></div>
+          <p className="text-xs text-muted-foreground">Здесь появляются только поручения, слухи и цели, о которых Лия действительно узнала. Скрытые задачи мира и NPC не отображаются.</p>
+          {(worldState.quests ?? []).length === 0 ? <div className="rounded-lg border border-dashed border-border p-5 text-center"><p className="text-sm font-medium">Пока нет известных заданий</p><p className="mt-1 text-xs text-muted-foreground">Когда Лия узнает о задании, слухе или обязательстве через реальный внутриигровой источник, мастер добавит его сюда.</p></div> : (worldState.quests ?? []).map((quest) => {
+            const statusLabel = quest.status === "RUMOR" ? "Слух / зацепка" : quest.status === "ACTIVE" ? "Активно" : quest.status === "ON_HOLD" ? "Отложено" : quest.status === "COMPLETED" ? "Выполнено" : "Провалено";
+            return <article key={quest.id} className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
+              <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{quest.title}</h3><span className="rounded-md bg-secondary px-2 py-1 text-[10px]">{statusLabel}</span></div>
+              <p className="whitespace-pre-wrap text-xs leading-relaxed">{quest.description}</p>
+              {quest.objectives.length > 0 && <ul className="list-disc space-y-1 pl-4 text-xs">{quest.objectives.map((objective, index) => <li key={index}>{objective}</li>)}</ul>}
+              <div className="space-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
+                <p>Источник: {quest.sourcePath}</p>
+                {quest.giverName && <p>Кто сообщил: {quest.giverName}</p>}
+                {quest.locationName && <p>Место: {quest.locationName}</p>}
+                {quest.deadline && <p>Срок: {quest.deadline}</p>}
+                {quest.reward && <p>Награда: {quest.reward}</p>}
+                <p>Достоверность: {quest.certainty} · Обновлено: {quest.lastUpdatedInGameDate}</p>
+              </div>
+            </article>;
+          })}
+        </section>
+      )}
+
+      {activePanel === "knowledge" && (
+        <section className="space-y-3">
+          <div className="panel-surface space-y-1 p-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><BookOpen className="h-4 w-4"/>Журнал знаний</h2>
+            <p className="text-xs text-muted-foreground">Только сведения, известные Лии. Личные цели, тайны и знания самих NPC остаются скрытыми.</p>
+          </div>
+          {npcs.filter((npc) => npc.playerVisible === true || (npc.playerKnowledge?.length ?? 0) > 0).length === 0 ? <div className="panel-surface rounded-lg border border-dashed p-5 text-center"><p className="text-sm font-medium">Пока нет известных NPC</p><p className="mt-1 text-xs text-muted-foreground">Когда Лия увидит человека, познакомится с ним или узнает о нём из разговора/документа, мастер создаст запись и будет дополнять её.</p></div> : npcs.filter((npc) => npc.playerVisible === true || (npc.playerKnowledge?.length ?? 0) > 0).map((npc) => (
+            <article key={npc.id} className="panel-surface space-y-2 p-3">
+              <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{npc.name}</h3><span className="text-[10px] text-muted-foreground">{npc.certainty}</span></div>
+              <p className="text-xs text-muted-foreground">{npc.role}</p>
+              <p className="text-xs">Последнее известное место: {locations.find((location) => location.id === npc.locationId)?.name ?? "НЕ УСТАНОВЛЕНО"}</p>
+              <div className="border-t border-border pt-2"><p className="mb-2 text-[11px] font-semibold text-muted-foreground">Что известно Лии</p>{(npc.playerKnowledge ?? []).length === 0 ? <p className="text-xs text-muted-foreground">Пока известно только существование/наблюдение этого NPC; личность и подробности неизвестны.</p> : <ul className="space-y-2">{npc.playerKnowledge!.map((fact) => <li key={fact.id} className="rounded-md bg-background/60 p-2"><p className="text-xs">{fact.factSummary}</p><p className="mt-1 text-[10px] text-muted-foreground">{fact.certainty} · {fact.inGameDate} · Источник: {fact.acquisitionPath}</p></li>)}</ul>}</div>
+            </article>
+          ))}
+          {canonFacts.filter((fact) => fact.layer === "PLAYER_KNOWLEDGE").length > 0 && <div className="panel-surface space-y-2 p-3"><h3 className="text-sm font-semibold">Другие известные факты</h3>{canonFacts.filter((fact) => fact.layer === "PLAYER_KNOWLEDGE").map((fact) => <div key={fact.id} className="border-b border-border py-2 last:border-0"><p className="text-xs font-medium">{fact.title}</p><p className="text-xs">{fact.statement}</p><p className="mt-1 text-[10px] text-muted-foreground">{fact.certainty} · {fact.inGameDate} · {fact.acquisitionPath}</p></div>)}</div>}
+        </section>
+      )}
+
     </main>
   );
 }
