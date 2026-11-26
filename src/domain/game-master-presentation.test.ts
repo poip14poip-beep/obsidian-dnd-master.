@@ -15,58 +15,33 @@ const turn = {
   needsClarification: false, clarificationQuestion: "", stateNotes: [],
 } satisfies GameMasterTurn;
 
-describe("OBSIDIAN 4.1 GM answer formatting", () => {
-  it("renders the mandatory header and all answer blocks without inventing missing data", () => {
+describe("player-facing game chat formatting", () => {
+  it("shows numbered turn, location, date, time, temperature, sensory detail and scene as a chat message", () => {
     const state = createInitialCollections();
-    state.world_state.campaignName = "Пробная кампания";
-    state.world_state.currentInGameDate = "День 1, 08:00";
-    state.player_character_state.currentLocationLabel = "UNKNOWN";
-    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 7);
-    expect(answer).toContain("ХОД #0007");
-    expect(answer).toContain("\nКАМПАНИЯ:");
-    expect(answer).toContain("ВРЕМЯ: 08:00");
-    expect(answer).not.toContain("\\n");
-    expect(answer).toContain("ИГРОВОЙ ГОД: НЕ УСТАНОВЛЕНО");
-    expect(answer).toContain("ПОГОДА: НЕ УСТАНОВЛЕНО");
-    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: НЕ УСТАНОВЛЕНО");
-    expect(answer).toContain("СЕНСОРНОЕ ВОСПРИЯТИЕ");
-    expect(answer).toContain("RAW / МЕХАНИКА");
-    expect(answer).toContain("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ");
-    expect(answer).toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
-  });
-
-  it("calculates week and weekday from Technical Calendar 1.0", () => {
-    const state = createInitialCollections();
-    state.world_state.calendarSystem = "Technical Calendar 1.0";
     state.world_state.currentInGameDate = "2000 год, месяц 09, день 24; 06:25";
-    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 1);
-    expect(answer).toContain("ИГРОВОЙ ГОД: 2000");
-    expect(answer).toContain("МЕСЯЦ: 09");
-    expect(answer).toContain("ДЕНЬ: 24");
-    expect(answer).toContain("НЕДЕЛЯ ГОДА: 38");
-    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: 5");
-    expect(answer).toContain("ВРЕМЯ: 06:25");
-  });
-
-  it("renders the five additional days in Technical Calendar 1.0 without inventing a thirteenth month", () => {
-    const state = createInitialCollections();
     state.world_state.calendarSystem = "Technical Calendar 1.0";
-    state.world_state.currentInGameDate = "2000, месяц 13, день 05; 23:59";
-    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 2);
-    expect(answer).toContain("МЕСЯЦ: ДОПОЛНИТЕЛЬНЫЕ ДНИ");
-    expect(answer).toContain("ДЕНЬ: 05");
-    expect(answer).toContain("НЕДЕЛЯ ГОДА: 53");
-    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: 1");
+    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 1);
+    expect(answer).toContain("ХОД #0001");
+    expect(answer).toContain("МЕСТО:");
+    expect(answer).toContain("ДАТА:");
+    expect(answer).toContain("ВРЕМЯ: 06:25 · УТРО");
+    expect(answer).toContain("ТЕМПЕРАТУРА:");
+    expect(answer).toContain("СЕНСОРНОЕ ВОСПРИЯТИЕ");
+    expect(answer).toContain("ОПИСАНИЕ СЦЕНЫ");
+    expect(answer).toContain("Ветер шевелит траву.");
+    expect(answer).not.toContain("RAW / МЕХАНИКА");
+    expect(answer).not.toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
   });
 
-  it("shows a confirmed approximate year and labels the opening as outside turn numbering", () => {
+  it("shows one-time prehistory before the first action without assigning it a turn number", () => {
     const state = createInitialCollections();
     state.world_state.currentInGameDate = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
     const opening = formatCampaignOpening(turn, state.world_state, state.player_character_state, []);
-    expect(opening).toContain("ХОД #0001 · НАЧАЛО КАМПАНИИ");
-    expect(opening).toContain("ИГРОВОЙ ГОД: 2000 (APPROXIMATE)");
-    expect(opening).toContain("МЕСЯЦ: НЕ УСТАНОВЛЕНО");
-    expect(opening).toContain("НАЧАЛЬНАЯ СЦЕНА · ИГРОВОЕ ВРЕМЯ НЕ ПРОДВИНУТО");
-    expect(opening).not.toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
+    expect(opening).toContain("ПРЕДЫСТОРИЯ · КАК ТЫ ОКАЗАЛСЯ ЗДЕСЬ");
+    expect(opening).toContain("Недавно персонаж прибыл сюда.");
+    expect(opening).toContain("МЕСТО:");
+    expect(opening).toContain("СЕНСОРНОЕ ВОСПРИЯТИЕ");
+    expect(opening).toContain("ТЕКУЩАЯ СЦЕНА");
+    expect(opening).not.toContain("ХОД #");
   });
 });
