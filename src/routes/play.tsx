@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
@@ -7,6 +7,8 @@ import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
 import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
+import { extractDocxText } from "@/domain/docx-text";
+import { processSourceContent } from "@/domain/source-processing";
 
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
@@ -24,7 +26,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
+  const { sources, updatePlayerCharacter, attachSourceContent, verifySource, setSourceContextEnabled, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
@@ -33,6 +35,7 @@ function PlayPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -140,8 +143,54 @@ function PlayPage() {
     }
   };
   const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
+  async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || dossierUploadBusy) return;
+    setDossierUploadBusy(true);
+    try {
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        throw new Error("PDF пока не поддерживается. Загрузи лист персонажа в DOCX, TXT или MD.");
+      }
+      const content = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
+      if (!content.trim()) throw new Error("Файл пуст или текст не удалось извлечь.");
+      const source = sources.find((item) => item.type === "PLAYER_DOSSIER");
+      if (!source) throw new Error("Не найден отдельный источник листа персонажа.");
+      const processed = await processSourceContent(
+        { id: source.id, title: "Лист персонажа текущей кампании", type: "PLAYER_DOSSIER", fileName: file.name },
+        content,
+      );
+      const attached = attachSourceContent(source.id, {
+        fileName: file.name,
+        content,
+        originLabel: "Загружено для текущей кампании: " + file.name,
+        notes: "Лист персонажа относится только к этой кампании. Он не является частью канона Экдрасиля или правил мастера.",
+        processing: processed.processing,
+      });
+      if (!attached.ok) throw new Error(attached.error);
+      setImportError(null);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Не удалось загрузить лист персонажа.");
+    } finally {
+      setDossierUploadBusy(false);
+      event.target.value = "";
+    }
+  }
+  function verifyDossierSource() {
+    if (!dossier) return;
+    const result = verifySource(dossier.id);
+    if (!result.ok) setImportError(result.error);
+  }
+  function enableDossierContext() {
+    if (!dossier) return;
+    const result = setSourceContextEnabled(dossier.id, true);
+    if (!result.ok) setImportError(result.error);
+  }
   const confirmDossier = () => {
     if (!parsed || !dossier) return;
+    if (dossier.reviewStatus !== "VERIFIED" || dossier.contextEnabled !== true) {
+      setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
+      return;
+    }
     const invalidResource = parsed.resources.find((resource) => {
       const raw = resourceCurrentInputs[resource.name];
       if (raw === undefined || raw.trim() === "") return false;
@@ -199,8 +248,8 @@ function PlayPage() {
     </section>
     {mode === "DOSSIER" && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Проверка досье перед импортом</h2>
-      {!parsed ? <p className="text-sm text-destructive">Досье не прикреплено. Открой раздел источников и добавь файл персонажа.</p> : <>
-        <p className="text-sm">Источник: <strong>{dossier?.title}</strong> · статус: {dossier?.reviewStatus ?? "UNKNOWN"}</p>
+      {!parsed ? <div className="space-y-2"><p className="text-sm text-muted-foreground">Лист персонажа загружается отдельно для этой кампании. Он не входит в канон Экдрасиля и не является частью системных правил мастера.</p><label className="block space-y-1.5 text-sm font-medium"><span>Файл персонажа (.docx, .txt, .md)</span><input type="file" accept=".docx,.txt,.md,.json,.csv" disabled={dossierUploadBusy || locked} onChange={handleDossierUpload} className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-primary-foreground" /></label>{dossierUploadBusy && <p className="text-xs text-muted-foreground">Читаю и обрабатываю лист персонажа…</p>}</div> : <>
+        <p className="text-sm">Файл: <strong>{dossier?.fileName ?? "UNKNOWN"}</strong> · статус: {dossier?.reviewStatus ?? "UNKNOWN"}</p>{dossier?.reviewStatus !== "VERIFIED" && <Button type="button" variant="outline" onClick={verifyDossierSource} disabled={dossier?.processing?.status !== "PROCESSED"}>Подтвердить проверку листа</Button>}{dossier?.reviewStatus === "VERIFIED" && dossier.contextEnabled !== true && <Button type="button" variant="outline" onClick={enableDossierContext}>Разрешить мастеру учитывать этот лист</Button>}{dossier?.contextEnabled === true && <p className="text-xs text-emerald-500">Лист проверен и доступен мастеру в контексте текущей кампании.</p>}
         <dl className="grid grid-cols-2 gap-2 text-sm">{[
           ["Имя",parsed.name],["Вид и класс",parsed.speciesAndClass],["Уровень",parsed.level],["Макс. HP",parsed.hitPointMaximum],["КД без плаща",parsed.armorClass === null ? null : parsed.armorClass - 1],["КД с настроенным плащом",parsed.armorClass],["Бонус мастерства",parsed.proficiencyBonus],["Скорость",parsed.speedFeet],["Навыков",parsed.skillBonuses.length],["Атак",parsed.weaponAttacks.length],["Классовых уровней с особенностями",parsed.classFeaturesByLevel.length],["Предметов",parsed.inventory.length],["Ресурсов",parsed.resources.length]
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
