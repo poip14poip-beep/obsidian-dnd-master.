@@ -1027,7 +1027,18 @@ export function ObsidianStoreProvider({
       ...blank,
       // Preserve verified source documents and the isolated player dossier import.
       sources: collections.sources,
-      player_character_state: collections.player_character_state,
+      player_character_state: {
+        ...collections.player_character_state,
+        stateVersion: collections.player_character_state.stateVersion + 1,
+        hpCurrent: null,
+        hpTemp: null,
+        currentLocationLabel: "UNKNOWN",
+        conditions: [],
+        resources: collections.player_character_state.resources.map((resource) => ({ ...resource, current: null })),
+        inventory: [],
+        currency: undefined,
+        updatedAt: now,
+      },
       audit_log: {
         ...blank.audit_log,
         entries: [{
@@ -1037,12 +1048,12 @@ export function ObsidianStoreProvider({
           status: "OK",
           details: "Создано чистое состояние пробной кампании. Источники и PLAYER_CHARACTER_STATE сохранены; старые NPC, фракции, локации, факты, события, ходы и журнал не перенесены. Перед сбросом пользователь подтвердил создание резервной копии.",
           campaignVersion: blank.world_state.stateVersion,
-          characterVersion: collections.player_character_state.stateVersion,
+          characterVersion: collections.player_character_state.stateVersion + 1,
           turnNumber: null,
           checksumSnapshot: computeChecksum({
             resetAt: now,
             preservedSourceIds: collections.sources.map((source) => source.id),
-            characterVersion: collections.player_character_state.stateVersion,
+            characterVersion: collections.player_character_state.stateVersion + 1,
           }),
         }],
       },
