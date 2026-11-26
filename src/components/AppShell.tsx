@@ -121,7 +121,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
                 </span>
-                {item.to === "/turns" && !worldState.setup.confirmed && (
+                {item.to === "/game" && !worldState.setup.confirmed && (
                   <Lock className="h-3.5 w-3.5 text-status-approx" />
                 )}
               </Link>
@@ -211,7 +211,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                         <Icon className="h-4 w-4 shrink-0" />
                         <span>{item.label}</span>
                       </span>
-                      {item.to === "/turns" && !worldState.setup.confirmed && (
+                      {item.to === "/game" && !worldState.setup.confirmed && (
                         <Lock className="h-3.5 w-3.5 text-status-approx" />
                       )}
                     </Link>
