@@ -183,8 +183,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <Menu className="h-5 w-5" />
               </button>
             </SheetTrigger>
-            <SheetContent side="left" className="w-72 border-sidebar-border bg-sidebar p-0">
-              <SheetHeader className="border-b border-sidebar-border px-4 py-4 text-left">
+            <SheetContent side="left" className="flex h-[100dvh] w-72 flex-col overflow-hidden border-sidebar-border bg-sidebar p-0">
+              <SheetHeader className="shrink-0 border-b border-sidebar-border px-4 py-4 text-left">
                 <SheetTitle className="text-base font-bold text-sidebar-foreground">
                   Obsidian Control
                 </SheetTitle>
@@ -197,10 +197,20 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <p className="text-[10px] text-status-approx">
                   Локальный слой · облачная синхронизация не подключена
                 </p>
+                {guestMode && (
+                  <button
+                    type="button"
+                    onClick={() => void handleLogout()}
+                    className="touch-target mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-sidebar-border bg-card px-3 py-2 text-sm font-medium text-foreground"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Выйти из гостевого режима
+                  </button>
+                )}
               </SheetHeader>
               <nav
                 aria-label="Все разделы навигации"
-                className="flex flex-col gap-1 overflow-y-auto p-2.5"
+                className="min-h-0 flex flex-1 flex-col gap-1 overflow-y-auto overscroll-contain p-2.5"
               >
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
@@ -228,7 +238,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   );
                 })}
               </nav>
-              <div className="border-t border-sidebar-border p-3">
+              <div className="shrink-0 border-t border-sidebar-border p-3">
                 <button
                   type="button"
                   onClick={() => void handleLogout()}
