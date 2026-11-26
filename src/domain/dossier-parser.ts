@@ -61,17 +61,17 @@ export function extractDossierBasics(text: string): DossierBasics {
   let inventoryLocation: "WORN" | "OTHER" | null = null;
   let inventoryStartPolicy: DossierInventoryItem["startPolicy"] | null = null;
   for (const line of lines) {
-    const heading = line.replace(/^#{1,6}\\s*/, "");
-    if (/^11\\.1\\./.test(heading)) {
+    const heading = line.replace(/^#{1,6}\s*/, "");
+    if (/^11\.1\./.test(heading)) {
       inventoryLocation = "WORN";
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
-    } else if (/^11\\.2\\./.test(heading)) {
+    } else if (/^11\.2\./.test(heading)) {
       inventoryLocation = "OTHER";
       inventoryStartPolicy = "KEEP_FROM_DOSSIER";
-    } else if (/^11\\.[3-5]\\./.test(heading)) {
+    } else if (/^11\.[3-5]\./.test(heading)) {
       inventoryLocation = "OTHER";
       inventoryStartPolicy = "REGENERATE_AT_START";
-    } else if (/^11\\.(?:6|7|8|9|10|11)\\./.test(heading) || /^12\\./.test(heading)) {
+    } else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) {
       inventoryLocation = null;
       inventoryStartPolicy = null;
     }
