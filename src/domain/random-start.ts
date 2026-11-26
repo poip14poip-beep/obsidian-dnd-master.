@@ -94,7 +94,7 @@ function itemWeight(name: string, index: RandomIndex, notes = ""): { weight: num
   const found = exact.find(([pattern]) => pattern.test(n));
   if (found) return { weight: found[1], approximate: false };
   // A small, explicit estimate is preferable to leaving ordinary clothing or kit mass blank.
-  const range = /оруж|меч|кинжал|лук|топор|weapon|sword|dagger|bow|axe/.test(n) ? [1, 6]
+  const range: [number, number] = /оруж|меч|кинжал|лук|топор|weapon|sword|dagger|bow|axe/.test(n) ? [1, 6]
     : /доспех|брон|armor|armour/.test(n) ? [8, 25]
     : /одежд|роб|плащ|сапог|clothing|robe|cloak|boots/.test(n) ? [1, 5]
     : [0.25, 3];
