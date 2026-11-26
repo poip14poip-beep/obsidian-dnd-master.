@@ -16,12 +16,21 @@ export const Route = createFileRoute("/character")({
   component: CharacterPage,
 });
 
+const RU_TERMS: Array<[RegExp, string]> = [
+[/Second Wind/gi,"Второе дыхание"],[/Action Surge/gi,"Всплеск действий"],[/Indomitable/gi,"Несгибаемость"],[/Fighting Style/gi,"Боевой стиль"],[/Weapon Mastery/gi,"Мастерство владения оружием"],[/Tactical Mind/gi,"Тактический ум"],[/Tactical Shift/gi,"Тактическое смещение"],[/Tactical Master/gi,"Тактическое мастерство"],[/Studied Attacks/gi,"Изученные атаки"],[/Improved Critical/gi,"Улучшенный критический удар"],[/Remarkable Athlete/gi,"Выдающийся атлет"],[/Additional Fighting Style/gi,"Дополнительный боевой стиль"],[/Ability Score Improvement/gi,"Увеличение характеристик"],[/Extra Attack/gi,"Дополнительная атака"],[/Heroic Warrior/gi,"Героический воин"],[/Superior Critical/gi,"Превосходный критический удар"],[/Champion/gi,"Чемпион"],[/Fighter/gi,"Воин"],[/Rogue/gi,"Плут"],[/Barbarian/gi,"Варвар"],[/Human/gi,"Человек"],[/Dark Elf/gi,"Тёмный эльф"],[/Half-Elf/gi,"Полуэльф"],[/Beastfolk/gi,"Зверолюд"],[/Athletics/gi,"Атлетика"],[/Acrobatics/gi,"Акробатика"],[/Sleight of Hand/gi,"Ловкость рук"],[/Stealth/gi,"Скрытность"],[/Arcana/gi,"Магия"],[/History/gi,"История"],[/Investigation/gi,"Расследование"],[/Insight/gi,"Проницательность"],[/Perception/gi,"Внимательность"],[/Survival/gi,"Выживание"],[/Animal Handling/gi,"Обращение с животными"],[/Medicine/gi,"Медицина"],[/Nature/gi,"Природа"],[/Religion/gi,"Религия"],[/Deception/gi,"Обман"],[/Intimidation/gi,"Запугивание"],[/Performance/gi,"Выступление"],[/Persuasion/gi,"Убеждение"],[/Dueling/gi,"Дуэлянт"],[/Defense/gi,"Защита"],[/Sap/gi,"Ослабление"],[/Nick/gi,"Дополнительный удар"],[/Push/gi,"Отталкивание"],[/Slow/gi,"Замедление"],[/Cloak of Protection/gi,"Защитный плащ"],[/Boots of Elvenkind/gi,"Эльфийские сапоги"],[/Studded Leather/gi,"Украшенный заклёпками кожаный доспех"],[/UNKNOWN/g,"Неизвестно"],[/WORN/g,"Надето"],[/CARRIED/g,"При себе"],[/STORED/g,"Хранится отдельно"],[/DROPPED/g,"Оставлено"],[/OTHER/g,"Другое"],[/MEDIUM/g,"Средний"],[/SMALL/g,"Маленький"],[/TINY/g,"Крошечный"],[/LARGE/g,"Большой"],[/HUGE/g,"Огромный"],[/GARGANTUAN/g,"Гигантский"],[/STANDARD/g,"Обычный"],[/VARIANT/g,"Вариантный"],[/ABSTRACT/g,"Условный"]];
+function ru(value: string | number | null | undefined): string {
+ if (value === null || value === undefined || value === "") return "Неизвестно";
+ let result = String(value);
+ for (const [pattern, replacement] of RU_TERMS) result = result.replace(pattern, replacement);
+ return result.replace(/\\bft\\b/gi, "фут.").replace(/\\blb\\b/gi, "фунт").replace(/\\bHP\\b/g, "ОЗ");
+}
+
 function Value({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="rounded-md border border-border bg-background/50 p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mono-code mt-1 break-words text-sm font-semibold text-foreground">
-        {value === null || value === undefined || value === "" ? "UNKNOWN" : value}
+        {ru(value)}
       </p>
     </div>
   );
@@ -50,7 +59,7 @@ function CharacterPage() {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <CertaintyBadge status={character.statsCertainty} />
           <span className="text-muted-foreground">
-            Источник: {dossier?.title ?? character.sourceDossierId} · {dossier?.contentStatus === "ATTACHED" ? "прикреплён" : "не прикреплён"}
+            Источник: {ru(dossier?.title ?? character.sourceDossierId)} · {dossier?.contentStatus === "ATTACHED" ? "прикреплён" : "не прикреплён"}
           </span>
         </div>
       </header>
@@ -58,27 +67,54 @@ function CharacterPage() {
       {character.biography && (
         <section className="panel-surface space-y-3 p-4">
           <h2 className="text-sm font-semibold text-foreground">Биография</h2>
-          <p className="text-sm leading-relaxed">{character.biography.biography}</p>
+          <p className="text-sm leading-relaxed">{ru(character.biography.biography)}</p>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            <Value label="Возраст" value={character.biography.ageYears === null ? "UNKNOWN" : character.biography.ageYears} />
-            <Value label="Место рождения" value={character.biography.birthplace} />
-            <Value label="Внешность" value={character.biography.appearance} />
+            <Value label="Возраст" value={character.biography.ageYears === null ? "Неизвестно" : character.biography.ageYears} />
+            <Value label="Место рождения" value={ru(character.biography.birthplace)} />
+            <Value label="Внешность" value={ru(character.biography.appearance)} />
           </div>
-          <p className="text-xs text-muted-foreground">{character.biography.inventedDetailsNotice}</p>
+          <p className="text-xs text-muted-foreground">{ru(character.biography.inventedDetailsNotice)}</p>
           <details className="rounded-md border border-border p-3">
             <summary className="cursor-pointer text-sm font-medium">Подробности личности и прошлого</summary>
             <div className="mt-2 space-y-2 text-sm">
-              <p><strong>Семья:</strong> {character.biography.family}</p>
-              <p><strong>Воспитание:</strong> {character.biography.upbringing}</p>
-              <p><strong>События:</strong> {character.biography.lifeEvents.join(" ")}</p>
-              <p><strong>Характер:</strong> {character.biography.personalityTraits.join(", ")}</p>
-              <p><strong>Идеал:</strong> {character.biography.ideal}</p>
-              <p><strong>Привязанность:</strong> {character.biography.bond}</p>
-              <p><strong>Слабость:</strong> {character.biography.flaw}</p>
-              <p><strong>Мотивация:</strong> {character.biography.motivation}</p>
-              <p className="text-xs text-muted-foreground">Основа канона: {character.biography.canonBasis.join("; ")}</p>
+              <p><strong>Семья:</strong> {ru(character.biography.family)}</p>
+              <p><strong>Воспитание:</strong> {ru(character.biography.upbringing)}</p>
+              <p><strong>События:</strong> {ru(character.biography.lifeEvents.join(" "))}</p>
+              <p><strong>Характер:</strong> {ru(character.biography.personalityTraits.join(", "))}</p>
+              <p><strong>Идеал:</strong> {ru(character.biography.ideal)}</p>
+              <p><strong>Привязанность:</strong> {ru(character.biography.bond)}</p>
+              <p><strong>Слабость:</strong> {ru(character.biography.flaw)}</p>
+              <p><strong>Мотивация:</strong> {ru(character.biography.motivation)}</p>
+              <p className="text-xs text-muted-foreground">Основа канона: {ru(character.biography.canonBasis.join("; "))}</p>
             </div>
           </details>
+        </section>
+      )}
+      {character.biography?.appearanceDetails && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
+          <p className="text-sm leading-relaxed">{ru(character.biography.appearance)}</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {([
+              ["Рост", character.biography.appearanceDetails.height], ["Телосложение", character.biography.appearanceDetails.build],
+              ["Кожа", character.biography.appearanceDetails.skin], ["Волосы", character.biography.appearanceDetails.hair],
+              ["Глаза", character.biography.appearanceDetails.eyes], ["Лицо", character.biography.appearanceDetails.face],
+              ["Одежда", character.biography.appearanceDetails.clothing], ["Обувь", character.biography.appearanceDetails.footwear],
+              ["Аксессуары", character.biography.appearanceDetails.accessories], ["Отличительные черты", character.biography.appearanceDetails.distinctiveFeatures],
+              ["Первое впечатление", character.biography.appearanceDetails.firstImpression],
+            ] as const).map(([label, value]) => (
+              <div key={label} className="rounded-md border border-border bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm leading-relaxed">{ru(value)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      {worldState.startNarrative?.trim() && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Обстоятельства начала кампании</h2>
+          <p className="text-sm leading-relaxed whitespace-pre-wrap">{ru(worldState.startNarrative)}</p>
+          <p className="text-xs text-muted-foreground">Описание точки старта, сохранённое при создании кампании. Оно не заменяет личную биографию или хронику последнего месяца.</p>
         </section>
       )}
       <section className="panel-surface space-y-3 p-4">
@@ -93,7 +129,7 @@ function CharacterPage() {
           <Value label="Класс Доспеха (КД)" value={character.armorClass} />
           <Value label="Бонус мастерства" value={character.proficiencyBonus} />
           <Value label="Размер существа" value={character.size ?? "UNKNOWN"} />
-          <Value label="Скорость" value={character.speedFeet === null || character.speedFeet === undefined ? "UNKNOWN" : `${character.speedFeet} ft`} />
+          <Value label="Скорость" value={character.speedFeet === null || character.speedFeet === undefined ? "UNKNOWN" : `${character.speedFeet} фут.`} />
         </div>
         {stats && (
           <div className="space-y-2">
@@ -128,7 +164,7 @@ function CharacterPage() {
             <ul className="divide-y divide-border">
               {character.skillBonuses.map((skill) => (
                 <li key={skill.name} className="flex items-center justify-between gap-3 py-2 text-sm">
-                  <span>{skill.name}</span><span className="mono-code font-semibold">{skill.bonus >= 0 ? `+${skill.bonus}` : skill.bonus}</span>
+                  <span>{ru(skill.name)}</span><span className="mono-code font-semibold">{skill.bonus >= 0 ? `+${skill.bonus}` : skill.bonus}</span>
                 </li>
               ))}
             </ul>
@@ -143,7 +179,7 @@ function CharacterPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <strong>{attack.weapon}</strong><span className="mono-code">Атака {attack.attackBonus >= 0 ? `+${attack.attackBonus}` : attack.attackBonus}</span>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">Урон: {attack.damage} · Mastery: {attack.mastery}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Урон: {ru(attack.damage)} · Владение оружием: {ru(attack.mastery)}</p>
                 </div>
               ))}
             </div>
@@ -155,7 +191,7 @@ function CharacterPage() {
             <ul className="mt-2 space-y-2">
               {character.classFeaturesByLevel.map((feature) => (
                 <li key={feature.level} className="text-sm">
-                  <strong className="mono-code mr-2">{feature.level} ур.</strong>{feature.features}
+                  <strong className="mono-code mr-2">{feature.level} ур.</strong>{ru(feature.features)}
                 </li>
               ))}
             </ul>
@@ -172,13 +208,13 @@ function CharacterPage() {
             {character.resources.map((resource) => (
               <div key={resource.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3">
                 <div>
-                  <p className="text-sm font-medium">{resource.name}</p>
-                  <p className="text-xs text-muted-foreground">Восстановление: {resource.recovery}</p>
+                  <p className="text-sm font-medium">{ru(resource.name)}</p>
+                  <p className="text-xs text-muted-foreground">Восстановление: {ru(resource.recovery)}</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <p className="mono-code text-sm font-semibold">{resource.current ?? "?"}/{resource.max ?? "?"}</p>
                   <input
-                    aria-label={`Фактический остаток ресурса ${resource.name}`}
+                    aria-label={`Фактический остаток ресурса ${ru(resource.name)}`}
                     type="number" min={0} max={resource.max ?? undefined} step={1}
                     value={resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current))}
                     onChange={(event) => setResourceDrafts((current) => ({ ...current, [resource.id]: event.target.value }))}
@@ -198,7 +234,7 @@ function CharacterPage() {
                       const result = updateCharacterResource(resource.id, value);
                       if (result.ok) {
                         setResourceDrafts((current) => { const { [resource.id]: _saved, ...rest } = current; return rest; });
-                        toast.success(`Остаток ресурса «${resource.name}» обновлён без продвижения игрового времени.`);
+                        toast.success(`Остаток ресурса «${ru(resource.name)}» обновлён без продвижения игрового времени.`);
                       }
                       else toast.error(result.error);
                     }}
@@ -214,9 +250,9 @@ function CharacterPage() {
       <section className="panel-surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-foreground">Инвентарь ({character.inventory.length})</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Value label="Известный переносимый вес" value={`${load.knownCarriedWeightLb.toFixed(2)} lb`} />
-          <Value label="Вес монет" value={load.currencyWeightLb === null ? "UNKNOWN" : `${load.currencyWeightLb.toFixed(2)} lb`} />
-          <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "UNKNOWN" : `${load.carryingCapacityLb} lb`} />
+          <Value label="Известный переносимый вес" value={`${load.knownCarriedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Вес монет" value={load.currencyWeightLb === null ? "UNKNOWN" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "UNKNOWN" : `${load.carryingCapacityLb} фунт.`} />
           <Value label="Статус нагрузки" value={load.encumbranceStatus} />
         </div>
         {load.unknownCarriedItems.length > 0 && (
@@ -236,21 +272,21 @@ function CharacterPage() {
             {character.inventory.map((item) => (
               <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <div>
-                  <span className="font-medium">{item.name}</span>
+                  <span className="font-medium">{ru(item.name)}</span>
                   <span className="mono-code ml-2 text-xs text-muted-foreground">×{item.quantity}</span>
-                  {item.notes && <p className="text-xs text-muted-foreground">{item.notes}</p>}
+                  {item.notes && <p className="text-xs text-muted-foreground">{ru(item.notes)}</p>}
                   {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {item.attunement}</p>}
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {item.location ?? "UNKNOWN"} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} lb/ед.`}
+                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? "вес UNKNOWN" : `${item.unitWeightLb} фунт/ед.`}
                 </span>
               </li>
             ))}
           </ul>
         )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <Value label="Хранится отдельно" value={`${load.storedWeightLb.toFixed(2)} lb`} />
-          <Value label="Оставлено" value={`${load.droppedWeightLb.toFixed(2)} lb`} />
+          <Value label="Хранится отдельно" value={`${load.storedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Оставлено" value={`${load.droppedWeightLb.toFixed(2)} фунт.`} />
           <Value label="Режим нагрузки" value={worldState.encumbranceMode} />
           <Value label="Перегруз" value={load.overCapacity === null ? "UNKNOWN" : load.overCapacity ? "Да" : "Нет"} />
         </div>
@@ -259,7 +295,7 @@ function CharacterPage() {
       {character.notes.trim() && (
         <section className="panel-surface space-y-2 p-4">
           <h2 className="text-sm font-semibold">Примечания</h2>
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{character.notes}</p>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{ru(character.notes)}</p>
         </section>
       )}
     </div>
