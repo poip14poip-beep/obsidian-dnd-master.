@@ -144,8 +144,8 @@ export function formatCampaignOpening(
   locations: LocationRecord[],
 ): string {
   return formatGameMasterAnswer(turn, world, character, locations, 1)
-    .replace("ХОД #0001 · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", "ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001")
-    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "НЕ ИГРОВОЙ ХОД · ВРЕМЯ И СОСТОЯНИЕ НЕ ИЗМЕНЕНЫ");
+    .replace("ХОД #0001 · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", "ХОД #0001 · НАЧАЛО КАМПАНИИ")
+    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "НАЧАЛЬНАЯ СЦЕНА · ИГРОВОЕ ВРЕМЯ НЕ ПРОДВИНУТО");
 }
 
 /** Stores a structured answer without a misleading pending/unsaved label in the append-only journal. */
