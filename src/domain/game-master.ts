@@ -303,6 +303,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Досье персонажа должно быть загружено, обработано, проверено пользователем и включено в контекст ИИ.",
     "PLAYER_DOSSIER_NOT_READY",
   );
+  const verifiedRulesContext = selectRulesContext(context.sources, context.action);
   const system = [
     "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
     "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
@@ -316,6 +317,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
     "=== РЕЕСТР ПРАВИЛ D&D 2024 / SRD 5.2.1 ===",
     `Ruleset: ${DND_2024_RULESET.id}; source: ${DND_2024_RULESET.source}; license: ${DND_2024_RULESET.license}.`,
+    "Используй проверенные выдержки SRD из пользовательского контекста ниже, если они доступны; соблюдай точный текст и не расширяй его домыслами.",
     "Используй только редакцию 2024 / SRD 5.2.1 как базовую. Не смешивай с правилами 2014. Если конкретная способность, заклинание, предмет, класс, монстр или опциональное правило не переданы в доступных источниках, не выдумывай его текст и параметры: верни RULE UNCERTAINTY, назови недостающий источник и останови только затронутую часть разрешения.",
     "Реестр покрытия правил (BASELINE_FORMULA можно вычислять; REFERENCE_REQUIRED требует точного описания правила/статблока; NOT_IN_SRD требует отдельного разрешённого источника; CAMPAIGN_OPTION нельзя включать без выбора кампании):\n" + DND_2024_RULE_COVERAGE.map((entry) => `${entry.domain}: ${entry.coverage} — ${entry.note} [${entry.source}]`).join("\n"),
     "При проверке D20 учитывай модификатор характеристики, владение, преимущество/помеху, Exhaustion 2024 и другие подтверждённые эффекты ровно один раз. DC фиксируй до броска. Не трактуй натуральные 1/20 как универсальные автоматические провал/успех.",
@@ -326,6 +328,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   const user = {
     action: context.action, campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
+    verifiedRulesReference: verifiedRulesContext,
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
     recentJournal: context.journal.slice(-12),
