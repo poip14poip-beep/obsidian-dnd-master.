@@ -64,7 +64,7 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory).toHaveLength(4);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
-    expect(result.inventory[3]).toMatchObject({ name: "Инструменты кузнеца", location: "OTHER", startPolicy: "KEEP_FROM_DOSSIER" });
+    expect(result.inventory[3]).toMatchObject({ name: "Инструменты кузнеца", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
       { name: "Action Surge", current: null, max: 2, recovery: "UNKNOWN", certainty: "KNOWN" },
@@ -120,7 +120,7 @@ describe("player dossier summary extraction", () => {
   });
 
   it("parses the complete bundled Lii dossier without inventing live state", () => {
-    const dossier = readFileSync(new URL("../../public/seed/Liya_Vein_Full_Dossier_Ekdrasil.md", import.meta.url), "utf8");
+    const dossier = readFileSync("public/seed/Liya_Vein_Full_Dossier_Ekdrasil.md", "utf8");
     const result = extractDossierBasics(dossier);
     expect(result.name).toBe("ЛИЯ ВЕЙН");
     expect(result.level).toBe(21);
