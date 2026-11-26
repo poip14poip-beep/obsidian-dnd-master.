@@ -196,8 +196,8 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     bond:"Сохраняет личную вещь, напоминающую о семье.",
     flaw:"Неохотно просит о помощи, даже когда она необходима.",
     motivation,
-    biography:Персонаж родился в "+origin[0]+", в области "+origin[1]+" на континенте "+origin[2]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
-    canonBasis:["Хроника Экдрасиля, Том III: столица "+origin[1]+" — "+origin[0]+"."],
+    biography:"Персонаж родился в "+origin[0]+", в области "+origin[1]+" на континенте "+origin[2]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
+    canonBasis:["Хроника Экдрасиля, Том XI, §44: город "+origin[0]+" — "+origin[1]+", континент "+origin[2]+"."],
     inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
   };
   const character:Partial<PlayerCharacterState>={
