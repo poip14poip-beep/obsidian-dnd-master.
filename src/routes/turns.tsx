@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -240,11 +240,16 @@ function TurnsPage() {
 
       <SetupGateBanner confirmed={worldState.setup.confirmed} />
 
+      <section className="panel-surface flex flex-wrap items-center justify-between gap-3 border-primary/30 p-3">
+        <div><p className="text-sm font-semibold text-foreground">Основное окно кампании — игровой чат</p><p className="text-xs text-muted-foreground">Здесь остаются журнал, ручная проверка и резервные инструменты.</p></div>
+        <Link to="/game" className="touch-target inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Открыть игровой чат</Link>
+      </section>
+
       <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
-            <p className="text-xs text-muted-foreground">Модель получает полный ОБСИДИАН 4.1, актуальное состояние и релевантные фрагменты Экдрасиля.</p>
+            <h2 className="text-base font-semibold text-foreground">Игровой мастер · ручной резервный режим</h2>
+            <p className="text-xs text-muted-foreground">Для обычной игры открой отдельную вкладку «Играть». Здесь оставлен ручной резервный интерфейс и инструменты журнала.</p>
           </div>
           <span className="mono-code rounded border border-primary/30 px-2 py-1 text-[10px] text-primary">AI GM</span>
         </div>
