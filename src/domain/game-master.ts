@@ -82,7 +82,7 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
           score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
       });
     }
-    const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
+    const lines = source.content.replace(/\r\n?/g, "\n").replace(/\f/g, "\n\n").split("\n");
     const paragraphs: Array<{ text: string; startLine: number; endLine: number }> = [];
     let current: string[] = [];
     let startLine = 1;
