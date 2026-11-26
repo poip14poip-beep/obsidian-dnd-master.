@@ -184,7 +184,6 @@ function GamePage() {
         ...result.turn,
         timeDeltaMinutes: 0,
         hpDelta: 0,
-        newInGameDate: worldState.currentInGameDate,
         newLocationId: null,
         consequenceText: "",
         questChanges: [],
@@ -194,10 +193,13 @@ function GamePage() {
           inventory: [], resources: [], conditions: [],
           currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
         },
-        environment: worldState.environment ?? result.turn.environment,
+        environment: result.turn.environment,
       };
       const openingText = formatCampaignOpening(openingTurn, worldState, character, locations);
-      const saved = saveOpeningScene(openingText);
+      const saved = saveOpeningScene(openingText, {
+        date: openingTurn.newInGameDate,
+        environment: openingTurn.environment,
+      });
       if (!saved.ok) throw new Error(saved.error ?? "Не удалось сохранить вступительную сцену.");
       setOpening(openingText);
       setGmTurn(null);
