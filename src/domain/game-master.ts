@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
 import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 
@@ -273,7 +273,7 @@ function extractOutputText(payload: unknown): string {
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
-function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[]): GameMasterTurn {
+function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[], knownQuests: CampaignQuest[] = []): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
@@ -300,8 +300,9 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(quest["certainty"])) || typeof quest["reason"] !== "string") {
       throw new GameMasterError("Некорректная запись журнала заданий.", "INVALID_QUEST_CHANGE");
     }
-    const existingQuest = (knownNpcs.length >= 0 ? [] : []) as unknown[];
-    void existingQuest;
+    const existingQuest = knownQuests.find((item) => item.title.toLocaleLowerCase() === (quest["title"] as string).toLocaleLowerCase());
+    if (quest["action"] === "CREATE" && existingQuest) throw new GameMasterError(`Задание «${quest["title"]}» уже есть в журнале; используй UPDATE.`, "DUPLICATE_QUEST");
+    if (quest["action"] === "UPDATE" && !existingQuest) throw new GameMasterError(`Нельзя обновить неизвестное Лии задание «${quest["title"]}».`, "UNKNOWN_QUEST_UPDATE");
   }
   for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc["action"])) || typeof npc["name"] !== "string" || !npc["name"].trim() ||
@@ -517,7 +518,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions);
+  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? []);
   if (context.mode === "OPENING") {
     const c = turn.characterChanges;
     const currencyChanged = Object.values(c.currencyDelta).some((amount) => amount !== 0);
