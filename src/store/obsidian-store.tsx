@@ -1041,13 +1041,18 @@ export function ObsidianStoreProvider({
     const next: ObsidianCollections = {
       ...blank,
       // Preserve verified source documents and the isolated player dossier import.
-      sources: collections.sources.filter((source) =>
-        source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
-        source.id === DEFAULT_SOURCE_IDS.CANON ||
-        source.id === DEFAULT_SOURCE_IDS.DOSSIER ||
-        source.id === DEFAULT_SOURCE_IDS.SRD ||
-        (source.type === "SUPPLEMENTAL" && /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
-      ),
+      sources: collections.sources
+        .filter((source) =>
+          source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
+          source.id === DEFAULT_SOURCE_IDS.CANON ||
+          source.id === DEFAULT_SOURCE_IDS.DOSSIER ||
+          source.id === DEFAULT_SOURCE_IDS.SRD ||
+          (source.type === "SUPPLEMENTAL" && /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
+        )
+        .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
+          (source.reviewStatus !== "VERIFIED" || source.processing.status !== "PROCESSED")
+          ? { ...source, contextEnabled: false }
+          : source),
       player_character_state: {
         ...characterWithoutCurrency,
         stateVersion: collections.player_character_state.stateVersion + 1,
