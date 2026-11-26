@@ -423,8 +423,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   if (!supabaseUrl || !publishableKey) throw new GameMasterError("Не настроено подключение к защищённому серверу Supabase.", "SUPABASE_CONFIG_MISSING");
   if (context.mode !== "OPENING" && !context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
   const governing = context.sources.find((source) =>
-    source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" &&
-    source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+    source.type === "GOVERNING_DOC" && source.serverManaged === true
   );
   if (!governing) throw new GameMasterError(
     "ОБСИДИАН 4.1 должен быть загружен, обработан, проверен пользователем и включён в контекст ИИ.",
@@ -440,11 +439,11 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   );
   const openingContextQuery = `${context.world.startLocationName} ${context.world.calendarSystem} ${context.world.startNarrative ?? ""} стартовая локация город регион окружение`;
   const contextQuery = context.mode === "OPENING" ? openingContextQuery : context.action;
-  const verifiedRulesContext = selectRulesContext(context.sources, contextQuery);
+  const verifiedRulesContext = "Полный SRD 5.2.1 хранится отдельно и извлекается сервером по контексту действия. Текст правил не передаётся браузеру.";
   const system = [
     "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
-    "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
-    "=== ПОЛНЫЙ ОБСИДИАН 4.1 ===\n" + governing.content,
+    "Полный управляющий документ ОБСИДИАН 4.1 добавляется сервером из закрытого хранилища; не заменяй и не переопределяй его.",
+    "Полный текст ОБСИДИАН 4.1 подключён на сервере и не передаётся браузеру.",
     "=== ЭПИСТЕМИЧЕСКИЕ И КАНОНИЧЕСКИЕ ОГРАНИЧЕНИЯ ===",
     "Различай объективную истину, знания персонажа, знания каждого NPC и OOC. NPC не всеведущи. Не добавляй неподтверждённые факты Экдрасиля. При неизвестности используй UNKNOWN, при приблизительности APPROXIMATE. Досье персонажа не является каноном мира.",
     "Игрок может пытаться совершать любые действия. Не запрещай их произвольно: оцени физическую возможность, механику, риски и последствия.",
