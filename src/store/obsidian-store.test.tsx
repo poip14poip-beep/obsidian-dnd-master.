@@ -184,7 +184,7 @@ describe("random free-roam start", () => {
       });
       expect(imported.ok).toBe(true);
     });
-    const draws = [7, 2, 1, 18, 42];
+    const draws = [7, 2, 1, 18, 42, 0, 0, 0, 0, 0];
     const generated = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
