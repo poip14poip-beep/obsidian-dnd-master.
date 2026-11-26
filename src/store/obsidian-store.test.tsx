@@ -283,7 +283,8 @@ describe("clean trial campaign reset", () => {
     expect(result.current.sources.filter((source) => source.id !== DEFAULT_SOURCE_IDS.SRD && source.id !== DEFAULT_SOURCE_IDS.DOSSIER).every((source) => source.contentStatus === "ATTACHED")).toBe(true);
     expect(result.current.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD)?.contentStatus).toBe("NOT_ATTACHED");
     expect(result.current.sources.some((source) => source.id === "old-campaign-map")).toBe(false);
-    expect(result.current.sources.some((source) => source.id === "srd-test")).toBe(true);
+    expect(result.current.sources.some((source) => source.id === "srd-test")).toBe(false);
+    expect(result.current.sources.find((source) => source.type === "GOVERNING_DOC")?.serverManaged).toBe(true);
     expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
   });
 });
