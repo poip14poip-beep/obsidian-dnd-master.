@@ -1080,7 +1080,7 @@ export function ObsidianStoreProvider({
         source.id === DEFAULT_SOURCE_IDS.CANON ||
         source.id === DEFAULT_SOURCE_IDS.SRD ||
         (source.type === "SUPPLEMENTAL" &&
-          /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) &&
+          /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) &&
           source.reviewStatus === "VERIFIED" && source.contextEnabled),
       )
       .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
