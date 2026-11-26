@@ -5,7 +5,6 @@ type Random = (length: number) => number;
 type ClassKey = "Fighter" | "Rogue" | "Barbarian";
 type BackgroundKey = "Soldier" | "Criminal";
 type SpeciesKey = "Human" | "Elf" | "Dark Elf" | "Gnome" | "Red Dwarf" | "Half-Elf" | "Beastfolk";
-type ElfLineage = "Drow" | "High Elf" | "Wood Elf";
 
 const ABILITIES: Ability[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 const SKILL_ABILITY: Record<string, Ability> = {
@@ -82,9 +81,14 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const classData=CLASS_DATA[className];
   const backgroundData=BACKGROUND_DATA[background];
   const speciesData=SPECIES_DATA[species];
-  const elfLineage: ElfLineage | null = null;
-  // SRD 5.2.1: Keen Senses grants proficiency in Perception; it is not a choice among skills.
-  const speciesSkills:string[] = speciesData.skill ? [speciesData.skill] : [];\n  const speciesSkillPool=[...(speciesData.skillOptions ?? [])];\n  while(speciesSkills.length < (speciesData.skillCount ?? 0)){const picked=choose(speciesSkillPool,random);speciesSkillPool.splice(speciesSkillPool.indexOf(picked),1);speciesSkills.push(picked);}\n  const elfKeenSkill = speciesSkills[0] ?? null;
+  // Species skills are granted by the selected Ekdrasil profile.
+  const speciesSkills:string[] = speciesData.skill ? [speciesData.skill] : [];
+  const speciesSkillPool=[...(speciesData.skillOptions ?? [])];
+  while(speciesSkills.length < (speciesData.skillCount ?? 0)){
+    const picked=choose(speciesSkillPool,random);
+    speciesSkillPool.splice(speciesSkillPool.indexOf(picked),1);
+    speciesSkills.push(picked);
+  }
   const rolls=ABILITIES.map((ability)=>({ability,total:rollStat(random)}));
   // Assign rolled scores to abilities in random order, then apply the background's legal ability increases.
   const shuffled=[...ABILITIES];
@@ -102,8 +106,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   while(chosenClassSkills.length<classSkillCount){
     const next=choose(classSkills,random); classSkills.splice(classSkills.indexOf(next),1); chosenClassSkills.push(next);
   }
-  const skills=[...new Set([...chosenClassSkills,...backgroundData.skills])];
-  if(elfKeenSkill && !skills.includes(elfKeenSkill)) skills.push(elfKeenSkill);
+  const skills=[...new Set([...chosenClassSkills,...backgroundData.skills,...speciesSkills])];
   const proficiency=2;
   const expertisePool=[...skills];
   const expertiseSkills:string[]=[];
@@ -129,9 +132,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     :className==="Rogue"
       ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
-  const lineageText = "";
-  const dwarfText = "";
-  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`,lineageText,dwarfText].filter(Boolean);
+  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
     speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
