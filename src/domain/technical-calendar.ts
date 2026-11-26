@@ -62,3 +62,47 @@ export function resolveTechnicalDate(dayOfYear: number, year: number): Technical
     formatted: `${dayOfMonth} ${month}, ${year} год · время не установлено · ${TECHNICAL_CALENDAR_NAME}`,
   };
 }
+
+
+/**
+ * Advances the technical date by full 24-hour periods since the campaign start.
+ * The campaign start clock is intentionally unknown, so the first calendar day
+ * begins at campaign start rather than assuming an invented midnight.
+ */
+export function advanceTechnicalDateByElapsedMinutes(
+  startDate: string,
+  elapsedMinutes: number,
+): string | null {
+  if (!Number.isInteger(elapsedMinutes) || elapsedMinutes < 0) return null;
+
+  const datePart = startDate.split(" · ")[0]?.trim();
+  if (!datePart) return null;
+
+  let dayOfYear: number | null = null;
+  let year: number | null = null;
+
+  const regularDate = datePart.match(/^(\d{1,2})\s+(.+),\s*(\d+)\s+год$/);
+  if (regularDate) {
+    const day = Number(regularDate[1]);
+    const monthName = regularDate[2];
+    year = Number(regularDate[3]);
+    const monthIndex = TECHNICAL_SEASONS.flatMap((season) => season.months)
+      .findIndex((month) => month === monthName);
+    if (monthIndex < 0 || day < 1 || day > TECHNICAL_CALENDAR_DAYS_PER_MONTH) return null;
+    dayOfYear = monthIndex * TECHNICAL_CALENDAR_DAYS_PER_MONTH + day;
+  } else {
+    const intercalaryDate = datePart.match(/^(.+),\s*(\d+)\s+год$/);
+    if (!intercalaryDate) return null;
+    const intercalaryIndex = INTERCALARY_DAYS.findIndex((name) => name === intercalaryDate[1]);
+    if (intercalaryIndex < 0) return null;
+    year = Number(intercalaryDate[2]);
+    dayOfYear = TECHNICAL_CALENDAR_MONTH_COUNT * TECHNICAL_CALENDAR_DAYS_PER_MONTH + intercalaryIndex + 1;
+  }
+
+  if (year === null || !Number.isInteger(year) || year < 0 || dayOfYear === null) return null;
+  const absoluteDay = year * TECHNICAL_CALENDAR_DAYS_PER_YEAR + dayOfYear - 1 +
+    Math.floor(elapsedMinutes / 1440);
+  const nextYear = Math.floor(absoluteDay / TECHNICAL_CALENDAR_DAYS_PER_YEAR);
+  const nextDayOfYear = (absoluteDay % TECHNICAL_CALENDAR_DAYS_PER_YEAR) + 1;
+  return resolveTechnicalDate(nextDayOfYear, nextYear).formatted;
+}
