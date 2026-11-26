@@ -5,7 +5,7 @@ import { createInitialPlayerCharacterState } from "./defaults";
 
 describe("generateRandomStart", () => {
   it("uses deterministic draws for city and scene while preserving full HP", () => {
-    const draws = [7, 2];
+    const draws = [7, 2, 0, 13, 24];
     const result = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
@@ -29,9 +29,11 @@ describe("generateRandomStart", () => {
     }
   });
 
-  it("does not invent an exact date, cash balance, or quest", () => {
+  it("uses the technical calendar for a generated date and time without inventing a quest", () => {
     const result = generateRandomStart(184, () => 0);
-    expect(result.date).toContain("день и время UNKNOWN");
+    expect(result.date).toContain("2000 год");
+    expect(result.date).toContain("00:00");
+    expect(result.date).toContain("Технический календарь мастера 1.0");
     expect(result.narrative).toContain("не задание");
     expect(result.inventory).toEqual([]);
     expect(result.characterPatch.hpMax).toBeUndefined();
