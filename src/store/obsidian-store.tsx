@@ -334,8 +334,9 @@ export function ObsidianStoreProvider({
               originLabel: payload.originLabel.trim() || src.originLabel,
               notes: payload.notes,
               contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
-              reviewStatus: "UNREVIEWED" as const,
-              contextEnabled: false,
+              reviewStatus: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256)
+                ? ("VERIFIED" as const) : ("UNREVIEWED" as const),
+              contextEnabled: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256),
               certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
               checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
               attachedAt: hasText ? now : null,
