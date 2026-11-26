@@ -4,7 +4,7 @@ import { generateRandomStart, RANDOM_START_CITY_COUNT } from "./random-start";
 describe("generateRandomStart", () => {
   it("uses supplied deterministic draws for city, scene, health and HP", () => {
     const draws = [7, 2, 1, 18];
-    const result = generateRandomStart((length) => {
+    const result = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
       return value;
@@ -23,7 +23,7 @@ describe("generateRandomStart", () => {
     expect(RANDOM_START_CITY_COUNT).toBe(16);
     for (let cityIndex = 0; cityIndex < RANDOM_START_CITY_COUNT; cityIndex += 1) {
       const draws = [cityIndex, 0, 0];
-      const result = generateRandomStart((length) => {
+      const result = generateRandomStart(184, (length) => {
         const value = draws.shift();
         if (value === undefined || value >= length) throw new Error("Invalid test draw");
         return value;
@@ -35,7 +35,7 @@ describe("generateRandomStart", () => {
 
   it("does not invent an exact date, cash balance, or quest", () => {
     const draws = [0, 0, 0];
-    const result = generateRandomStart((length) => {
+    const result = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
       return value;
@@ -56,7 +56,7 @@ describe("generateRandomStart", () => {
     ];
     for (const item of cases) {
       const draws = [...item.draws];
-      const result = generateRandomStart((length) => {
+      const result = generateRandomStart(184, (length) => {
         const value = draws.shift();
         if (value === undefined || value >= length) throw new Error("Invalid test draw");
         return value;
