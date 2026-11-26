@@ -123,7 +123,11 @@ function PlayPage() {
       return;
     }
     try {
-      const generated = generateRandomStart(character.hpMax ?? 0);
+      const generated = generateRandomStart(character.hpMax ?? 0, undefined, {
+        background: character.background ?? undefined,
+        retainedInventory: character.inventory,
+        generateBackgroundKit: character.sourceDossierId !== "GENERATED_RANDOM",
+      });
       const result = applyGeneratedStart({
         city: generated.city,
         date: generated.date,
@@ -436,10 +440,11 @@ function PlayPage() {
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
-      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: "UNKNOWN" } : {}) })),
+      background: parsed.background ?? undefined,
+      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: "KEEP_FROM_DOSSIER" as const, ...(item.attunement ? { attunement: "UNKNOWN" as const } : {}) })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.max, max: item.max, recovery: item.recovery, certainty: item.certainty })),
       conditions: [],
-      currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+      // Starting money is generated from the character's background at campaign start.
       currentLocationLabel: "Будет определено при запуске кампании",
       notes: "Загружено из проверенного досье. Новая кампания автоматически начинает персонажа с полными HP, нулевыми временными HP, восстановленными классовыми ресурсами, без состояний и с нулевым стартовым балансом, если иное не указано в листе. Стартовая локация назначается при запуске кампании.",
     });
