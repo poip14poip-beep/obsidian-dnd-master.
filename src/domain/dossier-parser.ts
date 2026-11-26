@@ -1,6 +1,6 @@
 export interface DossierResource { name: string; current: null; max: number; recovery: string; certainty: "KNOWN"; }
 export interface DossierInventoryItem {
-  name: string; quantity: number; notes: string; location: "WORN" | "UNKNOWN"; certainty: "KNOWN" | "APPROXIMATE";
+  name: string; quantity: number; notes: string; location: "WORN" | "CARRIED" | "UNKNOWN"; certainty: "KNOWN" | "APPROXIMATE";
   attunement?: "ATTUNED" | "NOT_ATTUNED" | "UNKNOWN";
   startPolicy: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
@@ -59,7 +59,7 @@ export function extractDossierBasics(text: string): DossierBasics {
   const speedMatch = normalizedText.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
   const hitDiceMatch = normalizedText.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
-  let inventoryLocation: "WORN" | "UNKNOWN" | null = null;
+  let inventoryLocation: "WORN" | "CARRIED" | "UNKNOWN" | null = null;
   let inventoryStartPolicy: DossierInventoryItem["startPolicy"] | null = null;
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
@@ -90,7 +90,9 @@ export function extractDossierBasics(text: string): DossierBasics {
     if (!name) continue;
     const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
-    inventory.push({ name, quantity, notes, location: inventoryLocation, startPolicy: inventoryStartPolicy,
+    const explicitLocation = /^(?:Катана в ножнах|Кинжал)$/i.test(name) ? "CARRIED" as const : inventoryLocation;
+    const explicitLocationNote = explicitLocation === "CARRIED" && name === "Катана в ножнах" ? "Досье указывает: закреплена по диагонали на спине." : explicitLocation === "CARRIED" && name === "Кинжал" ? "Досье указывает ножны кинжала на поясе." : "";
+    inventory.push({ name, quantity, notes: [notes, explicitLocationNote].filter(Boolean).join("; "), location: explicitLocation, startPolicy: inventoryStartPolicy,
       ...( /Cloak of Protection/i.test(name) ? { attunement: "UNKNOWN" as const } : {}),
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
