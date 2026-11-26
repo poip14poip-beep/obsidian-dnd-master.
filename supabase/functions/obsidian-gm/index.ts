@@ -312,7 +312,7 @@ Deno.serve(async (req: Request) => {
     .map((paragraph) => {
       const haystack = paragraph.toLowerCase();
       const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
-      const headingBoost = /^#{1,4}\\s/m.test(paragraph) ? 1 : 0;
+      const headingBoost = /^#{1,4}\s/m.test(paragraph) ? 1 : 0;
       return { paragraph, score: score + headingBoost };
     })
     .filter((item) => item.score > 0)
