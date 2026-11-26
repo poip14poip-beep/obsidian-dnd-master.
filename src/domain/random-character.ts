@@ -48,13 +48,13 @@ const BACKGROUND_DATA = {
 } as const;
 
 const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string;skillOptions?:string[];skillCount?:number}> = {
-  Human:{size:"MEDIUM",speed:30,hp:0,traits:"Народная гибкость (домашнее правило Экдрасиля): владение одним навыком на выбор." ,skill:""},
+  Human:{size:"MEDIUM",speed:30,hp:0,traits:"Народная гибкость (домашнее правило Экдрасиля): владение одним навыком на выбор.",skillOptions:["Acrobatics","Animal Handling","Arcana","Athletics","Deception","History","Insight","Intimidation","Investigation","Medicine","Nature","Perception","Performance","Persuasion","Religion","Sleight of Hand","Stealth","Survival"],skillCount:1},
   Elf:{size:"MEDIUM",speed:30,hp:0,traits:"Наследие фей: преимущество на спасброски для избегания или окончания состояния Очарован; транс: 4 часа медитации вместо сна; острые чувства — владение Восприятием.",skill:"Perception"},
-  "Dark Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Сумеречное зрение (домашнее правило Экдрасиля): тёмное зрение 60 футов; выдержка: владение одним навыком из Проницательности или Выживания.",skill:""},
+  "Dark Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Сумеречное зрение (домашнее правило Экдрасиля): тёмное зрение 60 футов; выдержка: владение одним навыком из Проницательности или Выживания.",skillOptions:["Insight","Survival"],skillCount:1},
   Gnome:{size:"MEDIUM",speed:30,hp:0,traits:"Гномья наблюдательность (домашнее правило Экдрасиля): владение Расследованием; инженерная сноровка: владение одним ремесленным инструментом.",skill:"Investigation"},
-  "Red Dwarf":{size:"MEDIUM",speed:30,hp:1,traits:"Крепкое сложение (домашнее правило Экдрасиля): +1 HP на 1 уровне; владение Атлетикой или Выживанием.",skill:""},
-  "Half-Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Смешанное наследие (домашнее правило Экдрасиля): владение двумя навыками на выбор.",skill:""},
-  Beastfolk:{size:"MEDIUM",speed:30,hp:0,traits:"Разнообразная телесная адаптация (домашнее правило Экдрасиля): выбери один навык — Атлетика, Восприятие или Выживание. Индивидуальные особенности зверолюда описываются отдельно и не дают дополнительных механических преимуществ.",skill:""},
+  "Red Dwarf":{size:"MEDIUM",speed:30,hp:1,traits:"Крепкое сложение (домашнее правило Экдрасиля): +1 HP на 1 уровне; владение Атлетикой или Выживанием.",skillOptions:["Athletics","Survival"],skillCount:1},
+  "Half-Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Смешанное наследие (домашнее правило Экдрасиля): владение двумя навыками на выбор.",skillOptions:["Acrobatics","Animal Handling","Arcana","Athletics","Deception","History","Insight","Intimidation","Investigation","Medicine","Nature","Perception","Performance","Persuasion","Religion","Sleight of Hand","Stealth","Survival"],skillCount:2},
+  Beastfolk:{size:"MEDIUM",speed:30,hp:0,traits:"Разнообразная телесная адаптация (домашнее правило Экдрасиля): владение одним навыком — Атлетика, Восприятие или Выживание. Индивидуальные особенности зверолюда описываются отдельно и не дают дополнительных механических преимуществ.",skillOptions:["Athletics","Perception","Survival"],skillCount:1},
 };
 
 const GIVEN_NAMES = ["Арен","Брен","Кайр","Лиор","Мира","Селин","Тарен","Эйра","Вейл","Нерис","Оррин","Илана"];
