@@ -238,7 +238,7 @@ function PlayPage() {
       <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
     </section>}
     {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайная заготовка создана, но ещё не является полным листом персонажа. До запуска нужно завершить её сборку по D&D 2024.</p>}
-    {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/turns">Перейти к игре</Link></div>}
+    {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/game">Перейти к игре</Link></div>}
     <div className="flex flex-wrap gap-3 text-sm"><Link className="underline" to="/settings">Мастер подготовки кампании</Link><Link className="underline" to="/character">Открыть лист персонажа</Link><Link className="underline" to="/">На главную</Link></div>
   </main>;
 }
