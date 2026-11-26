@@ -356,9 +356,13 @@ Deno.serve(async (req: Request) => {
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
-  const orderedModelAttempts = highImpactTurn
-    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
-    : MODEL_ATTEMPTS;
+  // Character creation must finish comfortably inside the Edge Function wall-clock limit.
+  // Two bounded attempts are more reliable than three long sequential waits.
+  const orderedModelAttempts = isIdentityRequest || isBiographyRequest
+    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!]
+    : highImpactTurn
+      ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
+      : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
@@ -412,7 +416,7 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: 8192,
         }),
-        signal: AbortSignal.timeout(55_000),
+        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 32_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
