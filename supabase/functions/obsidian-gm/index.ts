@@ -287,12 +287,37 @@ Deno.serve(async (req: Request) => {
   const rulesContext = selectedRules.length
     ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
-  const canonTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
+  const canonSearchParts = [actionText];
+  try {
+    const parsed = JSON.parse(inputText);
+    if (isRecord(parsed)) {
+      const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
+      const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
+      canonSearchParts.push(
+        String(campaign.startLocationName ?? ""),
+        String(campaign.currentInGameDate ?? ""),
+        String(campaign.startNarrative ?? ""),
+        String(character.speciesAndClass ?? ""),
+      );
+      for (const key of ["knownLocations", "knownNpcs", "knownFactions"] as const) {
+        const records = parsed[key];
+        if (Array.isArray(records)) {
+          for (const item of records) if (isRecord(item)) canonSearchParts.push(String(item.name ?? ""));
+        }
+      }
+    }
+  } catch { /* action text remains the safe minimum query */ }
+  const canonTerms = [...new Set([...canonSearchParts.join(" ").toLowerCase().split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
   const selectedCanon = canonParagraphs
-    .map((paragraph) => ({ paragraph, score: canonTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
+    .map((paragraph) => {
+      const haystack = paragraph.toLowerCase();
+      const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
+      const headingBoost = /^#{1,4}\\s/m.test(paragraph) ? 1 : 0;
+      return { paragraph, score: score + headingBoost };
+    })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 14)
+    .slice(0, 18)
     .map((item) => item.paragraph);
   const canonContext = selectedCanon.length
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
