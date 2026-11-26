@@ -376,7 +376,7 @@ Deno.serve(async (req: Request) => {
     .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 36 : 12)
+    .slice(0, isCompatibilityRequest ? 12 : 12)
     .map((item) => item.paragraph);
   const rulesContext = selectedRules.length
     ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
@@ -413,7 +413,7 @@ Deno.serve(async (req: Request) => {
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 18)
+    .slice(0, isCompatibilityRequest ? 8 : 18)
     .map((item) => item.paragraph);
   const canonContext = selectedCanon.length
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
@@ -426,7 +426,7 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
+    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
       : highImpactTurn
@@ -448,8 +448,7 @@ Deno.serve(async (req: Request) => {
     "ИНВЕНТАРЬ И СТАРТ: аудитируй то, что действительно записано в загруженном листе. Не считай отсутствие веса, неизвестное место хранения, неизвестный текущий остаток расходников или денег автоматическим конфликтом: стартовая процедура приложения отдельно нормализует состояние. Не разрешай мастеру переносить в стартовый инвентарь все строки досье автоматически: при старте сохраняются одежда, оружие и броня; прочие предметы подлежат отдельной случайной генерации по предыстории и правилам кампании. В рамках проверки только укажи, что требует нормализации на старте.",
     "СТАТУСЫ: COMPATIBLE — все существенные проверки пройдены, конфликтов нет; COMPATIBLE_WITH_NOTES — прямых конфликтов нет, но есть неизвестные, неподтверждённые детали или нормализация на старте; INCOMPATIBLE — только доказанное противоречие канону или невозможная/недопустимая механика; INSUFFICIENT_DATA — файл не читается или отсутствуют ключевые поля, без которых невозможно идентифицировать/проверить лист. Не используй INCOMPATIBLE из-за одного UNKNOWN.",
     "КРИТИЧЕСКИ ВАЖНО: не исправляй, не переписывай, не балансируй и не импортируй персонажа. Не придумывай отсутствующие значения. Для каждого конфликта укажи конкретное поле, значение из досье, подтверждённое правило/факт и причину. В supportedFacts перечисли только подтверждённые совпадения; conflicts — только доказанные противоречия; unknowns — всё неподтверждённое/неизвестное; requiredChanges — только обязательные исправления для допуска. Ответ на русском, строго JSON.",
-    masterPrompt,
-    characterGuideContext,
+    "ОБСИДИАН 4.1: соблюдай его иерархию источников, правила контроля качества, канонические ограничения Экдрасиля, стартовую нормализацию и запрет на выдумывание/автоисправление. Для этой проверки используй только специализированный регламент аудита выше; не загружай весь управляющий документ и методичку генерации в контекст модели.",
     "=== ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1 ===",
     rulesContext,
     "=== ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ ХРОНИКИ ЭКДРАСИЛЯ ===",
@@ -497,7 +496,7 @@ Deno.serve(async (req: Request) => {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
-      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id });
+      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id, systemChars: serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -514,7 +513,7 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: isCompatibilityRequest ? 5000 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? (attempt.id === MODEL_ATTEMPTS[1]!.id ? 22_000 : 14_000) : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 24_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
