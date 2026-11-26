@@ -79,7 +79,7 @@ function OverviewPage() {
         </div>
       )}
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed} />
+      <SetupGateBanner confirmed={worldState.setup.confirmed || sessionLog.lastTurnNumber > 0} />
 
       <div className="panel-surface border-border/80 bg-surface-elevated/60 px-3.5 py-2.5 text-xs text-muted-foreground">
         <strong className="text-foreground">Локальное хранилище браузера:</strong> данные
