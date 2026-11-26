@@ -320,9 +320,9 @@ function GamePage() {
         <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-primary" /><h2 className="text-sm font-semibold text-foreground">Подключение мастера</h2></div>
         <div className="space-y-1.5 rounded-lg border border-border bg-background/50 p-3">
           <p className="text-sm font-medium text-foreground">Защищённое подключение к мастеру</p>
-          <p className="text-[11px] text-muted-foreground">Ключ OpenRouter хранится только в секретах серверной функции. Браузер не получает и не отправляет сам ключ.</p>
+          <p className="text-[11px] text-muted-foreground">Ключ RouterAI хранится только в секретах серверной функции. Браузер не получает и не отправляет сам ключ.</p>
           <p className={session?.access_token ? "text-[11px] text-status-verified" : "text-[11px] text-status-approx"}>{session?.access_token ? "Аккаунт подключён · серверная авторизация активна" : "Для вызова мастера необходимо войти в аккаунт"}</p>
-          <p className="text-[11px] text-muted-foreground">Бесплатный стек: OpenRouter Free → ERNIE Flash → Ling 3.2 → Gemma 4</p>
+          <p className="text-[11px] text-muted-foreground">RouterAI · DeepSeek V4.1 Flash</p>
         </div>
         {sessionLog.lastTurnNumber === 0 && !opening && (
           <Button type="button" className="touch-target w-full" disabled={!setupReady || !session?.access_token || openingBusy} onClick={() => void handleOpenCampaign()}>
