@@ -27,7 +27,7 @@ function rollAbility(): number {
   return dice[0]! + dice[1]! + dice[2]!;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup } = useObsidianStore();
+  const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -54,6 +54,21 @@ function PlayPage() {
       source.reviewStatus === "VERIFIED" && source.contextEnabled === true
     )
   );
+
+  function handleResetCampaign() {
+    if (!window.confirm("Очистить активную кампанию в приложении? Будут удалены текущий персонаж, старое досье, NPC, задания, сцена и игровые ходы. Источники ОБСИДИАН 4.1 и Хроника Экдрасиля останутся. Это действие нельзя отменить.")) return;
+    const result = resetForTrialCampaign();
+    if (!result.ok) {
+      setStartError(result.error);
+      return;
+    }
+    setMode(null);
+    setCandidate(null);
+    setConfirmed(false);
+    setImportError(null);
+    setStartError(null);
+    setStartPending(false);
+  }
 
   function handleStartCampaign() {
     setStartError(null);
@@ -180,7 +195,7 @@ function PlayPage() {
   };
   return <main className="mx-auto max-w-3xl space-y-4 p-4 pb-20">
     <header className="space-y-1"><p className="text-xs uppercase tracking-wider text-primary">ОБСИДИАН 4.1 · подготовка</p><h1 className="text-2xl font-bold">Играть в Экдрасиль</h1><p className="text-sm text-muted-foreground">Сначала выбери источник персонажа. Ничего не записывается в активный лист до твоего подтверждения.</p></header>
-    {locked && <div className="rounded border border-amber-500/40 p-3 text-sm"><Lock className="mr-2 inline h-4 w-4"/>Кампания уже подтверждена или содержит игровые ходы. Изменение стартового персонажа заблокировано.</div>}
+    {locked && <div className="rounded border border-amber-500/40 p-3 text-sm"><Lock className="mr-2 inline h-4 w-4"/>Кампания уже подтверждена или содержит игровые ходы. Изменение стартового персонажа заблокировано. <Button type="button" variant="destructive" size="sm" className="mt-3 w-full" onClick={handleResetCampaign}>Очистить активную кампанию и начать заново</Button></div>}{startError && locked && <p role="alert" className="text-sm text-destructive">{startError}</p>}
     <section className="grid gap-3 sm:grid-cols-2">
       <button disabled={locked} onClick={loadDossier} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><FileText className="mb-2 h-6 w-6"/><h2 className="font-semibold">Загрузить существующее досье</h2><p className="mt-1 text-sm text-muted-foreground">Распознать подтверждённые поля, показать неизвестные данные и только затем предложить импорт.</p></button>
       <button disabled={locked} onClick={randomize} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><Dice5 className="mb-2 h-6 w-6"/><h2 className="font-semibold">Создать случайного персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Сгенерировать первичную заготовку с бросками характеристик, видом и классом.</p></button>
