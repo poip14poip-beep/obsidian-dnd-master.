@@ -41,9 +41,9 @@ const CLASS_DATA = {
 } as const;
 
 const BACKGROUND_DATA = {
-  Acolyte: { abilities:["intelligence","wisdom","charisma"] as Ability[], feat:"Magic Initiate (Cleric)", skills:["Insight","Religion"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга молитв",1,"Книга"],["Священный символ",1,"Фокусировка"],["Пергамент",10,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
+  Acolyte: { abilities:["intelligence","wisdom","charisma"] as Ability[], feat:"Ритуальная подготовка (адаптация Экдрасиля)", skills:["Insight","Religion"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга молитв",1,"Книга"],["Священный символ",1,"Фокусировка"],["Пергамент",10,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
   Criminal: { abilities:["dexterity","constitution","intelligence"] as Ability[], feat:"Alert", skills:["Sleight of Hand","Stealth"], tool:"Воровские инструменты", gear:[["Кинжал",2,"1d4 колющий; Finesse, Light"],["Воровские инструменты",1,"Инструмент"],["Ломик",1,"Инструмент"],["Мешочек",2,"Контейнер"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",16,"16 GP"]], alternativeGold:50 },
-  Sage: { abilities:["constitution","intelligence","wisdom"] as Ability[], feat:"Magic Initiate (Wizard)", skills:["Arcana","History"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга истории",1,"Книга"],["Пергамент",8,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
+  Sage: { abilities:["constitution","intelligence","wisdom"] as Ability[], feat:"Исследовательская подготовка (адаптация Экдрасиля)", skills:["Arcana","History"], tool:"Каллиграфические принадлежности", gear:[["Каллиграфические принадлежности",1,"Инструмент"],["Книга истории",1,"Книга"],["Пергамент",8,"Листы пергамента"],["Роба",1,"Одежда"],["Золотые монеты",8,"8 GP"]], alternativeGold:50 },
   Soldier: { abilities:["strength","dexterity","constitution"] as Ability[], feat:"Savage Attacker", skills:["Athletics","Intimidation"], tool:"Игровой набор (выбрать вид)", gear:[["Копьё",1,"1d6 колющий; Thrown, Versatile; mastery Sap"],["Короткий лук",1,"1d6 колющий"],["Стрелы",20,"Боеприпасы"],["Игровой набор",1,"Инструмент"],["Набор целителя",1,"Стабилизация и лечение"],["Колчан",1,"Для стрел"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",14,"14 GP"]], alternativeGold:50 },
 } as const;
 
@@ -131,12 +131,12 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes],index)=>item(String(name),Number(qty),String(notes),index));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];
   const featDescription=backgroundData.feat==="Alert"
-    ?"Alert: добавляет бонус мастерства к инициативе; после броска инициативы может поменяться местами с инициативой согласного союзника."
+    ?"Alert (SRD 5.2.1): бонус мастерства к инициативе; после броска инициативы можно поменяться местами с инициативой согласного союзника."
     :backgroundData.feat==="Savage Attacker"
-      ?"Savage Attacker: один раз за ход при попадании оружием бросает кости урона дважды и выбирает результат."
-      :backgroundData.feat==="Magic Initiate (Cleric)"
-        ?"Magic Initiate (Cleric): два заговора и одно заклинание 1-го уровня из списка жреца; заклинательная характеристика — Мудрость."
-        :"Magic Initiate (Wizard): два заговора и одно заклинание 1-го уровня из списка волшебника; заклинательная характеристика — Интеллект.";
+      ?"Savage Attacker (SRD 5.2.1): один раз за ход при попадании оружием бросить кости урона дважды и выбрать результат."
+      :backgroundData.feat==="Ритуальная подготовка (адаптация Экдрасиля)"
+        ?"Ритуальная подготовка (домашняя адаптация Экдрасиля): знание религиозных обрядов, символики, погребальных традиций и документированных ритуальных схем. Не даёт заклинаний, сверхъестественного канала или автоматического контакта с ангелами."
+        :"Исследовательская подготовка (домашняя адаптация Экдрасиля): методика архивного поиска, анализа древних записей, алхимических описаний и символических систем. Не даёт заклинаний и не позволяет мгновенно создавать магические эффекты.";
   const classProficiencies=className==="Fighter"
     ?"Владение: все доспехи, щиты, простое и воинское оружие."
     :className==="Rogue"
@@ -144,9 +144,12 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
   const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
   const origins = [
-    ["Вальдгард","Арденхольм"],["Элион","Солемар"],["Аэлиндор","Лиарен"],
-    ["Кхар-Дорн","Дорн-Кар"],["Крейнхольм","Вестмар"],["Тар-Нер","Неррат"],
-    ["Равенск","Кардения"],["Морвейн","Эстерваль"],["Греймарк","Драугмарк"],
+    ["Вальдгард","Арденхольм","Вальтерра"],["Элион","Солемар","Вальтерра"],["Аэлиндор","Лиарен","Вальтерра"],
+    ["Кхар-Дорн","Дорн-Кар","Вальтерра"],["Крейнхольм","Вестмар","Вальтерра"],["Тар-Нер","Неррат","Вальтерра"],
+    ["Равенск","Кардения","Вальтерра"],["Морвейн","Эстерваль","Вальтерра"],["Греймарк","Драугмарк","Вальтерра"],
+    ["Азра-Кал","Заракх","Сахр-Зар"],["Рахимар","Кас-Рахим","Сахр-Зар"],["Ша-Мер","Мерзах","Сахр-Зар"],
+    ["Вальдрум","Северная область","Нордвальд"],["Скайнхейм","Северная область","Нордвальд"],
+    ["Эйргард","Северная область","Нордвальд"],["Морнхольд","Северная область","Нордвальд"],
   ] as const;
   const origin=choose(origins,random);
   const appearance=choose([
@@ -185,15 +188,15 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const age=18+random(63);
   const biography = {
     ageYears:age, ageCertainty:"KNOWN" as const, genderPresentation:"UNKNOWN",
-    appearance, birthplace:origin[0]+", "+origin[1]+", Вальтерра",
-    birthplaceSource:"Хроника Экдрасиля, Том III, перечень государств и столиц; личное место рождения сгенерировано.",
+    appearance, birthplace:origin[0]+", "+origin[1]+", "+origin[2],
+    birthplaceSource:"Хроника Экдрасиля, Том XI, §44: подтверждённый главный город и государство/область; конкретное рождение в городе сгенерировано.",
     family, upbringing:"Детство прошло в "+origin[0]+". "+family,
     lifeEvents:[event], personalityTraits:[...traits],
     ideal:"Самостоятельность и право самому выбирать свой путь.",
     bond:"Сохраняет личную вещь, напоминающую о семье.",
     flaw:"Неохотно просит о помощи, даже когда она необходима.",
     motivation,
-    biography:"Персонаж родился в "+origin[0]+", столице государства "+origin[1]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
+    biography:Персонаж родился в "+origin[0]+", в области "+origin[1]+" на континенте "+origin[2]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
     canonBasis:["Хроника Экдрасиля, Том III: столица "+origin[1]+" — "+origin[0]+"."],
     inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
   };
@@ -207,7 +210,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
-    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
+    notes:`Случайный персонаж 1 уровня, создан по адаптированному генератору Экдрасиля на основе D&D 2024 / SRD 5.2.1. Свободная повседневная магия в Экдрасиле отсутствует; сверхъестественные явления редки, ограничены и требуют конкретного источника. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
   return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }

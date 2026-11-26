@@ -53,9 +53,47 @@ describe("SRD 5.2.1 origin backgrounds", () => {
       seen.set(result.summary.background, feature);
     }
     expect([...seen.keys()].sort()).toEqual(["Acolyte","Criminal","Sage","Soldier"]);
-    expect(seen.get("Acolyte")).toContain("Magic Initiate (Cleric)");
-    expect(seen.get("Sage")).toContain("Magic Initiate (Wizard)");
+    expect(seen.get("Acolyte")).toContain("Ритуальная подготовка");
+    expect(seen.get("Sage")).toContain("Исследовательская подготовка");
     expect(seen.get("Criminal")).toContain("Alert");
     expect(seen.get("Soldier")).toContain("Savage Attacker");
+  });
+});
+
+
+describe("Ekdrasil canon integration", () => {
+  it("uses only confirmed major cities from all three continents as generated birthplaces", () => {
+    const cities = new Set<string>();
+    const continents = new Set<string>();
+    for (let seed = 1; seed <= 500; seed++) {
+      let state = seed;
+      const random = (length: number) => {
+        state = (state * 48271) % 2147483647;
+        return Math.floor((state / 2147483647) * length);
+      };
+      const result = generateRandomCharacter(random);
+      const birthplace = result.character.biography?.birthplace ?? "";
+      cities.add(birthplace.split(", ")[0] ?? "");
+      continents.add(birthplace.split(", ")[2] ?? "");
+    }
+    expect(cities.size).toBe(16);
+    expect(continents).toEqual(new Set(["Вальтерра","Сахр-Зар","Нордвальд"]));
+  });
+
+  it("does not grant free spellcasting through adapted Acolyte or Sage backgrounds", () => {
+    for (let seed = 1; seed <= 500; seed++) {
+      let state = seed;
+      const random = (length: number) => {
+        state = (state * 48271) % 2147483647;
+        return Math.floor((state / 2147483647) * length);
+      };
+      const result = generateRandomCharacter(random);
+      const feature = result.character.classFeaturesByLevel?.[0]?.features ?? "";
+      if (result.summary.background === "Acolyte" || result.summary.background === "Sage") {
+        expect(feature).not.toContain("Magic Initiate");
+        expect(feature).not.toContain("заговор");
+        expect(feature).not.toContain("заклинание");
+      }
+    }
   });
 });
