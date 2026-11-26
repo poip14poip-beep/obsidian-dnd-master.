@@ -1147,10 +1147,13 @@ export function ObsidianStoreProvider({
     const governingReady = collections.sources.some((source) => isVerifiedContextSource(source, "GOVERNING_DOC"));
     const canonReady = collections.sources.some((source) => isVerifiedContextSource(source, "WORLD_CANON"));
     const dossierReady = collections.sources.some((source) => isVerifiedContextSource(source, "PLAYER_DOSSIER"));
-    if (!governingReady || !canonReady || !dossierReady) {
+    const dossierRequired = pc.sourceDossierId !== "GENERATED_RANDOM";
+    if (!governingReady || !canonReady || (dossierRequired && !dossierReady)) {
       return {
         ok: false,
-        error: "Для запуска нужны три отдельные проверенные и включённые в контекст ИИ версии: ОБСИДИАН 4.1, Хроника Экдрасиля и досье персонажа. Каждый файл должен быть обработан, вручную подтверждён и явно включён в контекст.",
+        error: dossierRequired
+          ? "Для запуска нужны проверенные и включённые в контекст версии ОБСИДИАН 4.1, Хроники Экдрасиля и досье загруженного персонажа."
+          : "Для запуска случайного персонажа нужны проверенные и включённые в контекст версии ОБСИДИАН 4.1 и Хроники Экдрасиля. Отдельное досье для случайного персонажа не требуется.",
         report: lastIntegrityReport,
       };
     }
