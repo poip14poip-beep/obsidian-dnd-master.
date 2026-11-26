@@ -7,18 +7,22 @@ function cleanText(value: string | null | undefined, fallback: string): string {
 
 function normalizeSensoryFeed(value: string | null | undefined): string {
   const source = cleanText(value, "");
-  if (!source) return [
-    "Зрение: окружающая сцена видна естественно и достаточно чётко.",
-    "Слух: слышен обычный фон окружающего места.",
-    "Осязание: одежда касается кожи, опора под ногами ощущается.",
-    "Обоняние: ощущается естественный фон окружающей среды.",
-    "Вкус: нейтральный вкус во рту.",
-    "Терморецепция: ощущается температура окружающего воздуха.",
-    "Вестибулярный аппарат: равновесие устойчивое.",
-    "Проприоцепция: положение тела и конечностей ощущается естественно.",
-    "Интероцепция: дыхание и внутреннее состояние без заметных отклонений.",
-  ].join("\n");
-  return source;
+  const defaults: Record<string, string> = {
+    "Зрение": "окружающая сцена видна естественно и достаточно чётко",
+    "Слух": "слышен обычный фон окружающего места",
+    "Осязание": "одежда касается кожи, опора под ногами ощущается",
+    "Обоняние": "ощущается естественный фон окружающей среды",
+    "Вкус": "нейтральный вкус во рту",
+    "Терморецепция": "ощущается температура окружающего воздуха",
+    "Вестибулярный аппарат": "равновесие устойчивое",
+    "Проприоцепция": "положение тела и конечностей ощущается естественно",
+    "Интероцепция": "дыхание и внутреннее состояние без заметных отклонений",
+  };
+  const lines = source.split("\n").map((line) => line.trim()).filter(Boolean);
+  return Object.entries(defaults).map(([label, fallback]) => {
+    const existing = lines.find((line) => line.toLocaleLowerCase().startsWith(label.toLocaleLowerCase() + ":"));
+    return existing ?? `${label}: ${fallback}`;
+  }).join("\n");
 }
 
 export function formatGameMasterAnswer(turn: GameMasterTurn, _world?: unknown, _character?: unknown, _locations?: unknown, turnNumber = 1): string {
