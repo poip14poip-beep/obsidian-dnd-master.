@@ -28,6 +28,8 @@ export interface SourceDocument {
   id: string;
   /** False hides GM-only source material from player-facing source lists while retaining it in GM context. */
   playerVisible?: boolean;
+  /** Server-managed master material is never stored in browser campaign state. */
+  serverManaged?: boolean;
   title: string;
   type: SourceType;
   targetPartition: "CAMPAIGN_STATE" | "PLAYER_CHARACTER_STATE" | "SYSTEM_RULES";
