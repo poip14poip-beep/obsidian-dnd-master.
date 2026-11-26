@@ -184,29 +184,34 @@ function PlayPage() {
     const { data: sessionData, error: sessionError } = await client.auth.getSession();
     const sessionToken = sessionData.session?.access_token;
     if (sessionError || !sessionToken) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
-    let response: Response;
-    try {
-      response = await fetch(`${env.config.url.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${sessionToken.trim()}`,
-          apikey: env.config.publishableKey,
-        },
-        body: JSON.stringify({
-          operation: "VALIDATE_CHARACTER_COMPATIBILITY",
-          model: "obsidian-free",
-          instructions: "Выполни серверный аудит листа персонажа по ОБСИДИАН 4.1, SRD 5.2.1, хронике Экдрасиля и руководству генерации. Верни только структурированный отчёт проверки.",
-          input: JSON.stringify({ action: "Полный аудит совместимости импортируемого персонажа с D&D 2024 и каноном Экдрасиля", ...((characterData && typeof characterData === "object") ? characterData as Record<string, unknown> : { character: characterData }) }),
+    const { data: payload, error: invokeError } = await client.functions.invoke<{
+      output_text?: string;
+      error?: { code?: string; message?: string };
+    }>("obsidian-gm", {
+      body: {
+        operation: "VALIDATE_CHARACTER_COMPATIBILITY",
+        model: "obsidian-free",
+        instructions: "Выполни серверный аудит листа персонажа по ОБСИДИАН 4.1, SRD 5.2.1, хронике Экдрасиля и руководству генерации. Верни только структурированный отчёт проверки.",
+        input: JSON.stringify({
+          action: "Полный аудит совместимости импортируемого персонажа с D&D 2024 и каноном Экдрасиля",
+          ...((characterData && typeof characterData === "object") ? characterData as Record<string, unknown> : { character: characterData }),
         }),
-      });
-    } catch {
-      throw new Error("Не удалось подключиться к серверу мастера. Проверь интернет-соединение и повтори попытку.");
-    }
-    const payload = await response.json().catch(() => null) as { output_text?: string; error?: { code?: string; message?: string } } | null;
-    if (!response.ok) {
-      const detail = payload?.error?.message ?? `Сервер мастера вернул HTTP ${response.status}.`;
-      throw new Error([payload?.error?.code, detail].filter(Boolean).join(": "));
+      },
+    });
+    if (invokeError) {
+      let detail = invokeError.message || "Supabase не смог выполнить запрос к мастеру.";
+      const context = (invokeError as { context?: unknown }).context;
+      if (context instanceof Response) {
+        const responseBody = await context.clone().json().catch(() => null) as {
+          error?: { code?: string; message?: string };
+        } | null;
+        if (responseBody?.error?.message) {
+          detail = [responseBody.error.code, responseBody.error.message].filter(Boolean).join(": ");
+        } else {
+          detail = `HTTP ${context.status}: ${detail}`;
+        }
+      }
+      throw new Error(detail);
     }
     if (!payload?.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
     let report: { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
