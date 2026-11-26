@@ -239,7 +239,7 @@ function PlayPage() {
       setBiographyBusy(false);
     }
   }
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || dossierUploadBusy) return;
