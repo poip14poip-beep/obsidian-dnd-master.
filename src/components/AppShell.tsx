@@ -70,6 +70,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { worldState, sessionLog, lastIntegrityReport } = useObsidianStore();
 
   const currentNav = NAV_ITEMS.find((item) => item.to === pathname) ?? NAV_ITEMS[0];
+  const campaignActive = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
 
   async function handleLogout() {
     setDrawerOpen(false);
@@ -93,7 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <p className="mono-code mt-1 text-[11px] text-muted-foreground">
             {guestMode ? "ЛОКАЛЬНЫЙ РЕЖИМ · ДАННЫЕ ЭТОГО БРАУЗЕРА" : null}
-            {worldState.setup.confirmed
+            {campaignActive
               ? `АКТИВНА · ХОД #${sessionLog.lastTurnNumber}`
               : "ПОДГОТОВКА · БЛОК"}
           </p>
@@ -118,7 +119,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Icon className="h-4 w-4 shrink-0" />
                   <span>{item.label}</span>
                 </span>
-                {item.to === "/turns" && !worldState.setup.confirmed && (
+                {item.to === "/turns" && !campaignActive && (
                   <Lock className="h-3.5 w-3.5 text-status-approx" />
                 )}
               </Link>
@@ -234,7 +235,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </p>
             <p className="mono-code truncate text-[10px] text-muted-foreground">
               Obsidian Control ·{" "}
-              {worldState.setup.confirmed ? `Ход #${sessionLog.lastTurnNumber}` : "Блок старта"}
+              {campaignActive ? `Ход #${sessionLog.lastTurnNumber}` : "Блок старта"}
             </p>
           </div>
         </div>
