@@ -1,134 +1,90 @@
-# Obsidian Control — implementation status and next roadmap
+# Obsidian D&D Master — implementation status
 
-Updated: 2026-11-25 12:16 UTC
+Updated: 2026-11-26
 
-## Source of truth and project continuity
-- Product requirements: `OBSIDIAN_PLAYABLE_PROTOTYPE_MASTER_REQUIREMENTS.md`, version 1.0 (Library reference; 250 lines).
-- Governing system source: `OBSIDIAN_4.1_DND_2024_MASTER_SYSTEM(1) (1).md`.
-- World source: `Ekdrasil_Full_Chronicle_v2.md`, edition 2.0.
-- Player source: `Лия_Вейн_полное_досье_Экдрасиль.docx`; keep it in the separate player-character partition.
-- Local reference SHA-256:
-  - ОБСИДИАН 4.1: `390335e80f3b82c23ac6892fe2cb108af271073a047b2acbd4dcfc630aa6b33e`
-  - Экдрасиль 2.0: `a983e3697db72964225716c6452f58d5c6c5ee7cc262de5f514d94f7fcf35976`
-  - Лия dossier DOCX: `ed55f68735a7a32e1c0a03ca6b474de41bfae2d0f380330d3d51f92623f45ba2`
-- GitHub repository: `poip14poip-beep/obsidian-dnd-master.` (the trailing period is part of its name).
-- Continue only on `cloud-api-client`; do not force-push, rewrite history, merge into `main`, or publish without explicit approval.
-- Latest verified HEAD: `a51c23f33c49ad24ecffcbc25a0a5ee88a173968`.
+## Source of truth and working rules
 
-## Implemented in the existing application
-- Existing React/TypeScript mobile-first app, routes, local state, source ingestion, canon index, DOCX extraction, dossier parser, GM structured output, turn drafts, validation, local append-only journal, and Markdown/JSON exports remain the base. This work does not replace them.
-- `src/domain/cloud-mappers.ts`: typed mapping primitives for source metadata, campaign settings, separate world state, player-character state, NPCs, and NPC knowledge. Deterministic UUIDv8 IDs are scoped by campaign + collection + local ID. Missing source/location relationships fail explicitly.
-- `src/components/CloudCampaignPanel.tsx`: Settings integration for explicit cloud campaign creation and read-only bootstrap by UUID. It does not import into or overwrite local state.
-- `obsidian-api` Edge Function is ACTIVE v3 with `verify_jwt=true`; its deployed source is now versioned at `supabase/functions/obsidian-api/index.ts`. The actor is derived from verified JWT identity. The temporary `list_campaigns` action was removed because the private `obsidian` schema is intentionally not exposed through the Data API. Do not query that schema directly from the browser.
-- Source trust lifecycle added:
-  - attached content is `UNREVIEWED` and excluded from AI context by default;
-  - processing and SHA-256 are separate from human verification;
-  - a user must explicitly verify the content;
-  - a user must separately opt the source into AI context;
-  - changing/replacing attached content resets verification and context opt-in;
-  - the GM requires verified, processed, context-enabled ОБСИДИАН 4.1 and player dossier;
-  - only verified, context-enabled world-canon sources can supply excerpts;
-  - integrity audit detects any unverified source enabled for AI context;
-  - cloud metadata mapping preserves the review/context flags.
-- Existing local persistence still performs write -> read-back -> checksum/integrity verification and rollback on failure.
-- The source UI shows the saved source text and explicit review/context controls. Hashing is not represented as human verification.
+- GitHub repository: `poip14poip-beep/obsidian-dnd-master.` (the final period belongs to the repository name).
+- Active development branch: `cloud-api-client`.
+- GitHub is the code, review, CI and publication source of truth. Lovable is not used.
+- No force-push, history rewrite, or merge into the default branch is part of this work.
+- The app must support any valid imported player character. No named example character is a built-in protagonist or required fixture.
+- Keep the three epistemic layers separate: D&D 2024/SRD rules, Ekdrasil world canon, and campaign-local state. A player dossier is a separate character source, never global world canon.
 
-## Verified backend contract
-- Supabase project: `dbchfgkdrqpjspptoezh`.
-- Private schema `obsidian`: 13 tables, RLS enabled; current row count was 0 at last inspection.
-- `anon` and `authenticated` have no schema USAGE/table SELECT on `obsidian`; do not weaken this isolation to simplify UI.
-- Five migrations are registered, including direct-client lock-down, server-only RPC wrappers, and a private source-document bucket.
-- `commit_turn` requires an active campaign, date/location, a verified player character, verified required sources, and a matching sequential turn counter.
-- `session_log` and `audit_log` remain append-only. `TECHNICAL_NOTE` is not a game turn.
-- No campaign, character, or game-turn records were created by this implementation work.
+## Current architecture
 
-## CI verification
-- Latest verified HEAD: `a51c23f33c49ad24ecffcbc25a0a5ee88a173968`.
-- GitHub Actions run `45612294850`: SUCCESS.
-- `bun run test`, `bunx tsc --noEmit`, and `bun run build` all passed.
-- Earlier intermediate commits in this source-review change set had failing CI while the store context and types were being wired. The latest HEAD above passed all three required checks.
+- Mobile-first React/TypeScript app, local browser persistence, source ingestion and review lifecycle, campaign setup gate, character sheet, GM structured turn output, explicit turn preview/confirmation, append-only local journal, integrity audit and JSON backup/restore.
+- Rules source: D&D 2024 / SRD 5.2.1.
+- Procedure source: ОБСИДИАН 4.1.
+- World source: the Ekdrasil Chronicle stored in the private GM base.
+- The GM distinguishes objective world facts, player-character knowledge, NPC-specific knowledge and out-of-character information.
+- Unknown facts remain UNKNOWN; uncertain facts are not silently upgraded to canon.
+- The AI proposes a structured turn. The local store validates the proposed deltas and requires explicit confirmation before committing the turn.
 
-## Source review observations
-- The uploaded player dossier explicitly records Lия as Fighter 20 / Champion plus one epic campaign level, not a standard D&D 2024 level 21 progression. It explicitly states 184 HP, PB +6, four attacks, AC 20, and that current coin balance is variable/unknown. Do not infer current HP or coin amounts from the dossier.
-- The dossier distinguishes canon of Ekdrasil 2.0, author-added biography, and D&D mechanics/homebrew. The importer must preserve that distinction and must not promote all biography statements to objective world canon.
-- The dossier's seven-day return curse restores the body at the death location, not equipment; the character remains physically vulnerable. Keep these as separately attributed dossier facts, not global canon unless independently supported by the chronicle.
-- The Chronicle is 1,295 lines and 93,753 extracted characters; it has 20 volumes and sections through the 2000-year timeline and later supplements. Section 47 states the consolidated edition and subsequent appendices take priority where earlier summaries are brief.
-- The governing document has 795 lines and 32,862 extracted characters; v4.1 adds required turn header, sensory, spatial, time, inventory/weight, travel, response structure, and audit rules. The product must pass the full governing text, not a summary.
+## Recent GM improvements
 
-## Not yet implemented / not yet verified
-- Source review lifecycle is implemented locally, but there is not yet a full authenticated browser-to-Supabase end-to-end test.
-- No complete Android-device E2E run has been performed.
-- The cloud mappers are not yet wired to an import/write workflow; no local-to-cloud bulk sync occurs.
-- No server-side upsert/read-back transaction covers all 11 local collections / 13 DB tables yet.
-- No complete source verification UI workflow has been run with the actual three original files on a real Android browser.
-- Canon extraction candidates, contradictions, and human approval queue need a dedicated full workflow; date mentions remain candidates, not facts.
-- D&D 2024 full mechanics/combat, authoritative dice execution, full spatial accounting, and autonomous time/faction simulation are not yet complete.
-- No production/public deployment. Do not call this an accepted playable prototype.
-- Lovable remains unpublished and was last reported `needs_attention / out_of_credits`; Floot access previously returned a usage-limit lockout; Replit project creation required an active subscription. Continue with existing GitHub/Supabase base; do not create a replacement project.
+- The server prompt now defines an explicit source hierarchy: rules, governing procedure, world chronicle, campaign state, character sheet and player intent.
+- The server receives a compact chronicle index for the last 300 committed turns plus detailed recent and query-relevant journal entries.
+- The GM is instructed to consult that chronicle before every action and preserve earlier consequences, promises, debts, relationships, injuries and discoveries.
+- Canon retrieval now also uses campaign date, current/start location, start narrative, player species/class and known NPC/faction/location names when selecting relevant Chronicle passages.
+- The GM model router uses DeepSeek V4.1 Flash for routine actions, Claude Sonnet 5.5 first for high-impact actions and biographies, and Gemini 4 Argon as a later fallback. Only one model is called on a successful attempt; subsequent models are fallbacks, not parallel calls.
+- High-impact routing includes combat, attacks, damage, injuries, death, saving throws, spells, resources, inventory, currency, factions, NPCs, negotiations, stealth, quests and consequential world changes.
+- The deployed `obsidian-gm` Edge Function is ACTIVE version 14, JWT verification enabled. The deployed source was checked after publication: it contains the new model routes, source hierarchy, chronicle instructions and character appearance schema. The old Lovable origin has been removed from its allowlist.
+- RouterAI model IDs used by the router were checked against the provider's current catalogue: `anthropic/claude-sonnet-5.5`, `google/gemini-4-argon`, and `deepseek/deepseek-v4.1-flash`.
 
-## Proposed implementation sequence (follow the master requirements)
-1. **Source and character import acceptance.** Add integration tests against the actual extracted DOCX/Markdown content; verify exact text counts, section boundaries, table extraction, parser evidence, and UNKNOWN preservation. Add review screen showing each extracted field with its evidence; user confirms player sheet separately.
-2. **Canon review workflow.** Store source-attributed claims with stable IDs, exact line ranges, excerpts, certainty, temporal validity, and review status. Add contradiction queue; never auto-select a winning version or promote candidate dates.
-3. **Campaign setup gate.** Make required source, character, calendar/date/location, rule options, and no-auto-import acknowledgements explicit. Keep campaign NOT_STARTED until the full setup is confirmed.
-4. **Authoritative mechanics and dice.** Implement deterministic D&D 2024 rule modules and a trusted dice engine. The AI may request a roll but cannot supply a fabricated result. Add combat/action economy, conditions, concentration, rests, HP, inventory/weight, currency, and movement validations.
-5. **Turn transaction.** Preview all world and character deltas; block unresolved rolls/clarifications and invalid state changes; require explicit player confirmation. Keep world state and player character separate; journal/audit append-only.
-6. **Cloud persistence.** Approve exact mappings for all collections, add server-side transactional upsert + idempotency + read-back/checksum, then authenticated recovery tests. Keep private schema inaccessible to direct browser queries.
-7. **Android acceptance.** Test narrow viewport, touch targets, keyboard, long text, offline/error states, relaunch and restore. Run the full action -> response -> roll -> delta review -> confirm -> save -> read-back -> restart -> restore scenario.
+## Character portability
 
-## Safety and canon invariants
-- Never place Supabase service-role/secret keys in browser code, repository, or `VITE_*` variables.
-- Never grant `anon` or `authenticated` direct access to `obsidian` tables.
-- Never trust client-supplied owner IDs.
-- Never auto-import local state or overwrite it with cloud data.
-- Preserve append-only `session_log` and `audit_log`.
-- Keep `player_character_state` separate from `world_state`.
-- Do not treat dossier biography as objective chronicle canon.
-- Do not auto-start a campaign or invent starting date, time, location, turn number, HP, money, or missing values.
-- Do not call the app playable until the complete Definition of Done in the master requirements is verified.
+- Removed hardcoded named-character assumptions from campaign setup copy and the player/NPC knowledge instructions.
+- The character biography schema has a structured appearance section: height, build, skin, hair, eyes, face, clothing, footwear, accessories, distinctive features and first impression.
+- The preview renders these fields separately.
+- The import flow accepts a supplied character sheet; it is not tied to a sample character.
+- The random level-one generator remains limited to three supported classes (Fighter, Rogue, Barbarian). This is a limitation of the random generator, not of importing a ready-made character.
 
-## Progress update — 2026-11-25, local entry work
+## Cloud snapshot persistence — implemented stage
 
-- The last fully verified CI commit before this update is `65e2dbe9d7b66efdcda4730f7bda06a08572cd86`; workflow run `45612412913` passed tests, TypeScript, and build.
-- Added the existing local-only guest-entry flow from the newer `main` work into `cloud-api-client`, without merging branches or changing `main`:
-  - `src/auth/auth-context.tsx`: explicit guest-mode state persisted as a browser-local opt-in.
-  - `src/routes/auth.tsx`: “Продолжить без аккаунта · локальный режим” entry with an explicit warning that storage is limited to this browser.
-  - `src/components/AppShell.tsx`: visible guest-mode labeling and local-storage warning.
-  - `src/auth/auth-guard.ts`: an unconfigured visitor is routed to `/auth`; protected routes are not silently unlocked before the player opts into guest mode.
-  - `src/auth/auth-guard.test.ts`: tests for explicit guest entry and protected-route behavior.
-- The guest-entry change set passed GitHub Actions run `45613859962` on code commit `549ceee9bb07023d1c57851cbbd5783e7253b786`: `bun run test`, `bunx tsc --noEmit`, and `bun run build` all succeeded. The later documentation-only status commit does not change application code.
-- Branches `main` and `cloud-api-client` are diverged (20 commits on main not in this branch; 86 commits on this branch not in main at comparison time). No merge or force-push was performed.
-- The existing Lovable project is still `needs_attention / out_of_credits`; no replacement project was created.
-- Supabase currently lists only the active `obsidian-api` Edge Function. The newer static-site branch references `/functions/v1/obsidian-app`, but that function is not deployed. Its current `index.html` is an SSR configuration-error shell (“Supabase Auth не настроен”), not a verified playable deployment. Do not give that branch to the player as a live game.
-- The current GM still requires a user-supplied OpenAI API key in the browser. No server-side OpenAI proxy/secret has been configured; this is a runtime prerequisite and potential cost to the user.
-- The app remains NOT READY for play until the full source import, character review, setup gate, actual AI action/roll/commit cycle, durable save/restore, Android acceptance, and a working access URL have all been verified.
-- First CI attempt exposed one stale regression expectation in `src/test/auth-guard.test.tsx`; it was corrected to require explicit guest consent. The corrective code commit `549ceee9bb07023d1c57851cbbd5783e7253b786` passed run `45613859962` with tests, typecheck, and build green.
+Supabase project contains a private `obsidian` schema with 16 tables and 12 registered migrations. RLS is enabled. Direct `anon` and `authenticated` access to the private schema remains locked down.
 
-## Progress update — source gate hardening
+Added:
 
-- Campaign setup now requires all three distinct source partitions to be attached, processed, manually verified, and explicitly enabled for AI context: ОБСИДИАН 4.1, WORLD_CANON (Хроника Экдрасиля), and PLAYER_DOSSIER (Лия). This matches the GM runtime gate; setup can no longer be marked ready with a merely uploaded or unreviewed file.
-- Added a positive setup test for the fully verified three-source path and a negative test proving an unreviewed player dossier blocks campaign start.
-- Verified code commit `e2092385f43b330a92ac209a60f86a6941bf048a` passed GitHub Actions run `45614238643`: 18 test files / 73 tests passed, TypeScript passed, production build passed.
-- The prior CI failure on commit `0cc3933acba187bf5d266246aafb36a93c7b2679` was caused by the old store test fixture not satisfying the newly tightened source gate; the fixture was updated to model reviewed/processed/enabled sources. The corrected test suite is green.
-- The current reference only establishes the campaign year as 2000 (from Liya's dossier); the exact day/time and Liya's starting location are not established. The Chronicle does not name Liya or place her at a specific location. These must remain APPROXIMATE/UNKNOWN until the player selects a start point; do not silently invent one.
+- `obsidian.campaign_snapshots`: append-only cloud snapshot table, RLS enabled, no direct client policies or grants.
+- `public.obsidian_api_save_campaign_snapshot`: service-role-only RPC. Validates the complete backup envelope, collection separation, turn number and all 11 collection checksums; uses a per-campaign advisory lock and optimistic revision checks; stores a SHA-256 digest; verifies the saved row by reading it back; appends an audit record.
+- `public.obsidian_api_get_latest_campaign_snapshot`: service-role-only RPC. Checks campaign ownership and verifies the stored SHA-256 before returning the latest snapshot.
+- The authenticated `obsidian-api` Edge Function exposes `save_snapshot` and `latest_snapshot`. It is ACTIVE version 6 with JWT verification enabled.
+- Settings now supports creating a cloud campaign, loading the latest snapshot, and explicitly restoring it. Restore downloads a backup of the current local state first and requires player acknowledgement before replacing all 11 local collections.
+- After every locally confirmed game turn, the store attempts to append a full cloud snapshot. The game and journal screens show saving/success/failure status and allow retry.
+- A local cloud-campaign pointer stores only campaign UUID and last known revision. Revision conflicts block overwriting a newer snapshot from another device.
+- Resetting the active local trial campaign clears the cloud link but does not delete older cloud snapshots.
+- The internal RLS event-trigger function no longer grants direct EXECUTE to anon/authenticated. A transaction probe confirmed the event trigger still automatically enables RLS on newly created tables.
 
-## Progress update — public entry endpoint
+Important boundary: cloud snapshots are full backup archives of all 11 local collections. They are not yet a relational projection/upsert of every collection into the existing normalized campaign tables, and the app's normal gameplay path still commits locally rather than using the server-side `commit_turn` transaction as the authoritative turn commit. This is the next cloud-persistence stage.
 
-- Deployed the existing project's `obsidian-app` Supabase Edge Function, version 1, ACTIVE, with JWT verification disabled only for serving public static HTML/CSS/JS. It proxies a fixed public repository branch; it is not an open proxy and does not expose the private `obsidian` schema.
-- Versioned the exact function source at `supabase/functions/obsidian-app/index.ts`.
-- Added `.github/workflows/build-static-site.yml`: builds the `cloud-api-client` branch in SPA mode, publishes generated files to `static-site`, then performs an external smoke test against the Supabase endpoint for HTML, CSS, JS, and the `/auth` SPA route.
-- Static build + public endpoint smoke test passed in run `45615224113`; CI passed tests, TypeScript, and build in run `45615224278` on commit `011360d7d5af5c6cc7551a4861d53d4d818ad6cb`.
-- Entry URL: `https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app/`.
-- This makes the application accessible, but does not by itself make the Ekdrasil campaign ready to start. The player still needs to upload and manually verify the three supplied source files in the app, import/review Liya's dossier, enter her actual current HP (the dossier only gives HP maximum 184), select a starting location (UNKNOWN in the dossier), and provide an OpenAI API key inside the app. The exact date is only 2000 (APPROXIMATE); exact day/time remain UNKNOWN.
-- Cloud authentication and complete transactional cloud persistence, automatic Library-file continuity, and physical Android acceptance are still incomplete. Guest mode stores campaign data in that browser only; export a backup before clearing browser data or changing devices.
+## Backend inventory
 
-## Progress update — random free-roam Ekdrasil start
+- Private schema: 16 tables, RLS enabled.
+- Registered migrations: 12.
+- `obsidian-gm`: ACTIVE v14, JWT required.
+- `obsidian-api`: ACTIVE v6, JWT required.
+- `obsidian-app`: ACTIVE v8, serves the public app shell; JWT disabled only for this static public endpoint.
+- Supabase service-role credentials and RouterAI key remain server-side; no service-role secret is placed in browser code or `VITE_*` variables.
+- Security advisor currently reports three RLS-enabled private tables with no policies (`campaign_snapshots`, `gm_base_documents`, `gm_source_documents`). This is intentional: the schema is not directly exposed to browser roles and access is mediated by server functions.
+- Leaked-password protection in Supabase Auth is still disabled and should be enabled as a separate account-security hardening task.
 
-- Replaced the previous player-selected location / manually invented HP setup with a one-click **random starting situation generator** in the existing Setup Wizard.
-- Location is selected uniformly from the 16 main cities in the Chronicle (city/region/continent/population are drawn from the canon table); scene type is selected among four neutral everyday situations. Uses browser Web Crypto with rejection sampling; the exact selection indices and timestamp are persisted as generation metadata. No claim of randomness is made if Web Crypto is unavailable.
-- Start date stays `2000 год (APPROXIMATE; точные день и время UNKNOWN)`; the generator does not invent a day, time, prior route, or reason for arrival beyond the dossier's supported 1901–2000 travel pattern.
-- Initial HP is generated from a bounded non-lethal profile (184 / 165–183 / 135–164 / 100–134). This is explicitly a new campaign starting-state choice, not a fact from Liya's dossier or an in-game D&D roll. Narrative-only injuries do not add D&D conditions.
-- Initializes the separate PLAYER_CHARACTER_STATE from the dossier: Fighter 20 / Champion + 1 separate epic campaign level, 184 max HP, AC 20, PB +6, abilities and saving throws, katana and dagger attack entries. Current HP is the generated start value.
-- Inventory uses dossier-listed worn and road-carried kit. Wallet balance remains UNKNOWN; no coin count is fabricated. Old letters and the keepsake are marked STORED, not carried. Cached property / valuables are not silently added to carried inventory.
-- Generated situation is persisted atomically with the location and player-character partition; it creates no NPC, quest, deadline, or game turn. Setup still requires the player to review and confirm the generated start and the verified source set. The GM prompt now explicitly enforces free-roam play and forbids unsolicited quests / railroad hooks.
-- Added deterministic unit tests for the generator and store integration, including no-quest / no-date / unknown-money safeguards, correct location and HP persistence, and blocking rerolls after campaign confirmation.
-- Latest code commit `5f4893a138db95999b9472885887e810fbc15426` passed test suite, TypeScript, and production build in CI run `45620996010`; static publication and endpoint smoke test passed in run `45620995153`.
+## Verification status
+
+- GitHub Actions CI runs: `bun run test`, `bunx tsc --noEmit`, and `bun run build`.
+- Cloud snapshot client validation and local-only mode have unit coverage.
+- Database migration application, private table/RLS state, RPC existence and service-role-only execution grants were checked.
+- `obsidian-gm` v14 was deployed and its deployed source was read back to verify the expected changes.
+- No authenticated end-to-end cloud save/restore test has yet been completed using a real player session.
+- No full Android-device acceptance run has yet been completed.
+- No claim of complete production-ready autonomous gameplay is made at this stage.
+
+## Remaining implementation sequence
+
+1. **Relational cloud state and authoritative turn commit.** Map all 11 local collections into the existing normalized tables; create an atomic server transaction for the complete turn delta; preserve append-only session/audit history; add idempotency, optimistic locking and read-back; migrate the gameplay commit path to the server only after authenticated integration tests pass.
+2. **Deterministic D&D 2024 mechanics.** Separate trusted dice generation and mechanical calculations from model narration. Validate action economy, attacks, damage, conditions, concentration, rests, HP, inventory, encumbrance, currency, movement and spell resources in code.
+3. **Canon ingestion and review.** Preserve exact source references and section boundaries; add candidate facts, temporal validity, contradiction review and explicit approval. Never auto-select a winning version or promote candidate dates.
+4. **NPC/world simulation.** Persist individual NPC goals, resources, knowledge boundaries, relationships, schedules and delayed consequences; ensure no NPC receives knowledge without an in-world channel.
+5. **Android acceptance.** Test touch targets, keyboard, long text, offline/error states, reload, cloud recovery and the complete action → model proposal → roll → delta preview → player confirmation → save → read-back → restart → restore scenario.
+
+Do not call the prototype accepted/playable until the complete end-to-end Definition of Done has been verified.
