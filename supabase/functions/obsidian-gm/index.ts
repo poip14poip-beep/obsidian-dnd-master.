@@ -348,7 +348,8 @@ Deno.serve(async (req: Request) => {
     ? privateSources.SRD_5_2_1.content : "";
   // Story/appearance/origin generation does not need the 1.4 MB SRD document.
   // Skip its split/scoring work to stay below the Edge CPU limit.
-  const needsRulesContext = !isStoryRequest && !isAppearanceRequest && !isIdentityRequest && !isOriginsRequest;
+  // Compatibility audits are strictly about Ekdrasil lore; do not load or rank SRD rules.
+  const needsRulesContext = !isStoryRequest && !isAppearanceRequest && !isIdentityRequest && !isOriginsRequest && !isCompatibilityRequest;
   const ruleParagraphs = needsRulesContext
     ? rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80)
     : [];
@@ -456,8 +457,7 @@ Deno.serve(async (req: Request) => {
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
   const orderedModelAttempts = isCompatibilityRequest
-    // Lore audits use two independent providers in order. A Gemini-only route
-    // made every audit fail whenever that single provider timed out.
+    // Keep the audit inside the mobile request window; DeepSeek first, Claude fallback.
     ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
     : isIdentityRequest || isBiographyRequest
       ? [MODEL_ATTEMPTS[0]!]
@@ -470,18 +470,14 @@ Deno.serve(async (req: Request) => {
       : "РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ НЕ ЗАГРУЖЕН. Не выдумывай его содержание; используй только основной промт, подтверждённый канон и SRD.")
     : "";
   const serverInstructions = isCompatibilityRequest ? [
-    "Ты — аудитор ОБСИДИАН 4.1. Проверь импортируемый лист D&D 2024 для допуска в кампанию Экдрасиля. Это только аудит: не начинай игру, не меняй, не исправляй и не импортируй персонажа.",
-    "КРИТИЧЕСКИ ВАЖНО: во входе могут быть parsedDossier, sourceText и sourceTextTail. Сверяй каждый вывод с полным исходным текстом досье, а не только с машинно извлечёнными полями. sourceText/sourceTextTail — первичные доказательства; parsedDossier — вспомогательный парсинг, который может ошибаться. Не объявляй конфликт, если поле подтверждено в исходном досье. Не подменяй авторские названия предметов стандартными предметами D&D.",
-    "Явно описанные и согласованные в досье домашние правила кампании не являются нарушением SRD сами по себе. Уровень 21 = Fighter 20 + один эпический уровень «Память веков» — явно одобренное домашнее расширение: классифицируй как CAMPAIGN_HOMEBREW/заметку, не как INCOMPATIBLE; не добавляй пятую атаку, PB или классовые особенности. Возраст 1879 лет при рождении в 121 году и текущем 2000 году, внешний возраст около 21 — авторская биография и остановка старения, не арифметическая ошибка и не автоматический конфликт с каноном. Возвращение через 168 часов после смерти — явно описанное личное проклятие: не объявляй его воскрешением заклинанием или стандартной расовой способностью; учитывай точные ограничения и неизвестные из досье.",
-    "Предметы проверяй по точным названиям и разделам источника: «Кожа Последнего Часа» — авторский проклятый лёгкий доспех с описанным происхождением и свойствами; Cloak of Protection и Boots of Elvenkind указаны в досье как предметы с официальными источниками; не переименовывай доспех в Studded Leather +3. Наличие авторского предмета с подробным происхождением не равно отсутствию источника. Если точная деталь есть в исходном досье, отнеси её к supportedFacts, а не conflicts.",
-    "Приоритет: механика — SRD 5.2.1 и согласованные правила Экдрасиля; факты мира — только переданная хроника; лист персонажа — объект проверки. Не выдумывай канон.",
-    "Проверь доступные поля: народ и особенности; класс/подкласс/уровень/предыстория/Origin Feat; характеристики и модификаторы; proficiency bonus; навыки/спасброски/владения; классовые ресурсы и уровни получения; оружие, атаки, урон, Weapon Mastery; броню, щит, КБ; предметы, магию, боеприпасы, языки; происхождение, биографию, места, организации, NPC и события.",
-    "Пересчитывай только выводимое из листа. Не угадывай неизвестное. UNKNOWN не конфликт. Неизвестные вес, деньги, остатки ресурсов и хранение не блокируют проверку: приложение нормализует старт отдельно. При старте сохраняются одежда, оружие и броня; прочий инвентарь генерируется отдельно по предыстории.",
-    "В Экдрасиле нет свободной повседневной магии. Не переноси автоматически магические черты SRD. Магические эффекты, мутации и проклятия требуют явного подтверждения правилами и хроникой.",
-    "Статусы: COMPATIBLE — существенных проблем нет; COMPATIBLE_WITH_NOTES — конфликтов нет, но есть UNKNOWN/заметки; INCOMPATIBLE — доказанное нарушение правила или канона; INSUFFICIENT_DATA — нельзя идентифицировать/проверить лист.",
-    "Краткий русский JSON строго по схеме. summary — до 2 коротких предложений. Не более 2 пунктов в каждом массиве, каждый до 14 слов. Не дублируй. supportedFacts — подтверждённое; conflicts — доказанные ошибки с полем и причиной; unknowns — неизвестное; requiredChanges — обязательные исправления. Пустой список — [].",
-    "=== ФРАГМЕНТЫ SRD 5.2.1 ===",
-    rulesContext,
+    "Ты — аудитор канона мира Экдрасиль. Проверь только соответствие загруженного персонажа установленному лору Экдрасиля. Это аудит биографии и мировых фактов, не проверка механики D&D: не пересчитывай характеристики, навыки, атаки, классовые уровни и ресурсы.",
+    "Источник доказательств — исходный текст досье sourceText и sourceTextTail. parsedDossier — вспомогательное извлечение, которое может ошибаться. Не объявляй конфликт, если факт подтверждён в исходном тексте. Не подменяй авторские названия предметов стандартными предметами.",
+    "Проверь народ/вид и его описанные особенности, предысторию, место рождения и географию, даты и исторические события, организации, имена, NPC, происхождение и свойства необычных предметов, проклятия и магические явления — только там, где досье содержит соответствующие сведения.",
+    "Неизвестное не является противоречием. Не требуй отсутствующие сведения и не выдумывай канон. Личные события, семья, возраст и авторские детали биографии не являются нарушением сами по себе. Явно описанные домашние правила кампании не объявляй конфликтом с каноном.",
+    "Особые оговорки досье: уровень 21 = Fighter 20 + эпический уровень «Память веков» — согласованное расширение кампании, не конфликт; возраст 1879 лет при рождении в 121 году и текущем 2000 году, внешний возраст около 21 — остановка старения в авторской биографии, не арифметическая ошибка; возвращение через 168 часов после смерти — личное проклятие, не стандартное воскрешение.",
+    "Предметы проверяй по точным названиям: «Кожа Последнего Часа» — авторский проклятый лёгкий доспех с описанным происхождением; Cloak of Protection и Boots of Elvenkind указаны в досье с официальными источниками. Не переименовывай авторский доспех в Studded Leather +3. Подробно описанный предмет не считай неподтверждённым только из-за авторского названия.",
+    "Статусы: COMPATIBLE — существенных противоречий нет; COMPATIBLE_WITH_NOTES — противоречий нет, но есть неизвестное; INCOMPATIBLE — доказанное противоречие канону; INSUFFICIENT_DATA — невозможно идентифицировать или проверить досье.",
+    "Верни краткий русский JSON строго по схеме. summary — одно-два коротких предложения. Не более двух пунктов в каждом массиве, каждый до 14 слов. supportedFacts — подтверждённые каноном факты; conflicts — только доказанные противоречия с причиной; unknowns — неизвестные сведения; requiredChanges — необходимые изменения только при реальном конфликте. Пустой список — [].",
     "=== ФРАГМЕНТЫ ХРОНИКИ ЭКДРАСИЛЯ ===",
     canonContext,
   ] : isIdentityRequest ? [
@@ -544,9 +540,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isCompatibilityRequest ? 3200 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 1400 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 25_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
