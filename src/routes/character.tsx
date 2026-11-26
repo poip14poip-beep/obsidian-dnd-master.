@@ -80,6 +80,58 @@ function CharacterPage() {
           </div>
         )}
         <Value label="Текущее местоположение персонажа" value={character.currentLocationLabel} />
+        {character.hitDice && <Value label="Кости хитов" value={character.hitDice} />}
+        {character.baseSavingThrowBonuses && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Спасброски (без неподтверждённых бонусов предметов)</h3>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {([
+                ["СИЛ", character.baseSavingThrowBonuses.strength], ["ЛОВ", character.baseSavingThrowBonuses.dexterity],
+                ["ТЕЛ", character.baseSavingThrowBonuses.constitution], ["ИНТ", character.baseSavingThrowBonuses.intelligence],
+                ["МДР", character.baseSavingThrowBonuses.wisdom], ["ХАР", character.baseSavingThrowBonuses.charisma],
+              ] as const).map(([label, value]) => <Value key={label} label={label} value={value >= 0 ? `+${value}` : value} />)}
+            </div>
+          </div>
+        )}
+        {character.skillBonuses && character.skillBonuses.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Навыки</h3>
+            <ul className="divide-y divide-border">
+              {character.skillBonuses.map((skill) => (
+                <li key={skill.name} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span>{skill.name}</span><span className="mono-code font-semibold">{skill.bonus >= 0 ? `+${skill.bonus}` : skill.bonus}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {character.weaponAttacks && character.weaponAttacks.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Атаки оружием</h3>
+            <div className="space-y-2">
+              {character.weaponAttacks.map((attack) => (
+                <div key={attack.weapon} className="rounded-md border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{attack.weapon}</strong><span className="mono-code">Атака {attack.attackBonus >= 0 ? `+${attack.attackBonus}` : attack.attackBonus}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Урон: {attack.damage} · Mastery: {attack.mastery}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        {character.classFeaturesByLevel && character.classFeaturesByLevel.length > 0 && (
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Классовые особенности по уровням ({character.classFeaturesByLevel.length})</summary>
+            <ul className="mt-2 space-y-2">
+              {character.classFeaturesByLevel.map((feature) => (
+                <li key={feature.level} className="text-sm">
+                  <strong className="mono-code mr-2">{feature.level} ур.</strong>{feature.features}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </section>
 
       <section className="panel-surface space-y-3 p-4">
