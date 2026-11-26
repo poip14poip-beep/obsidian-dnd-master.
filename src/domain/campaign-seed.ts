@@ -75,73 +75,6 @@ function dossierParserText(text: string): string {
     .replace(/<!-- Страница \d+ оригинального DOCX -->/g, "");
 }
 
-function importCharacterFromDossier(
-  current: PlayerCharacterState,
-  dossierText: string,
-  now: string,
-): PlayerCharacterState {
-  // Never overwrite a character already configured by the player.
-  if (current.name !== "UNKNOWN" || current.hpMax !== null || current.level !== null ||
-      current.inventory.length > 0 || current.resources.length > 0) return current;
-
-  const basics = extractDossierBasics(dossierParserText(dossierText));
-  const importedInventory = basics.inventory.map((item, index) => ({
-    id: `lia-dossier-item-${index + 1}`,
-    name: item.name,
-    quantity: item.quantity,
-    notes: item.notes,
-    certainty: item.certainty,
-    location: item.location === "WORN" ? "WORN" as const : "OTHER" as const,
-    startPolicy: item.startPolicy,
-  }));
-  const importedResources = basics.resources.map((resource, index) => ({
-    id: `lia-dossier-resource-${index + 1}`,
-    name: resource.name,
-    current: resource.current,
-    max: resource.max,
-    recovery: resource.recovery,
-    certainty: resource.certainty,
-  }));
-  const explicitName = basics.name ? "Лия Вейн" : "UNKNOWN";
-  const explicitClass = basics.speciesAndClass ??
-    (dossierText.includes("Fighter 20 / Champion") ? "Человек; Fighter 20 / Champion; один эпический уровень кампании (домашнее правило)" : "UNKNOWN");
-
-  return {
-    ...current,
-    stateVersion: current.stateVersion + 1,
-    name: explicitName,
-    nameCertainty: basics.name ? "KNOWN" : "UNKNOWN",
-    speciesAndClass: explicitClass,
-    level: basics.level,
-    classLevel: basics.classLevel,
-    epicCampaignLevels: basics.epicCampaignLevels,
-    hpCurrent: null, // Current HP is not specified by the dossier.
-    hpMax: basics.hitPointMaximum,
-    hpTemp: null,
-    armorClass: basics.armorClass,
-    ...(basics.abilityScores ? { abilityScores: basics.abilityScores } : {}),
-    proficiencyBonus: basics.proficiencyBonus,
-    speedFeet: basics.speedFeet,
-    ...(basics.hitDice ? { hitDice: basics.hitDice } : {}),
-    ...(basics.savingThrowBonuses ? { savingThrowBonuses: basics.savingThrowBonuses } : {}),
-    ...(basics.baseSavingThrowBonuses ? { baseSavingThrowBonuses: basics.baseSavingThrowBonuses } : {}),
-    skillBonuses: basics.skillBonuses,
-    classFeaturesByLevel: basics.classFeaturesByLevel,
-    weaponAttacks: basics.weaponAttacks,
-    statsCertainty: basics.abilityScores && basics.hitPointMaximum !== null && basics.armorClass !== null ? "KNOWN" : "APPROXIMATE",
-    currentLocationLabel: "UNKNOWN",
-    conditions: [],
-    resources: importedResources,
-    inventory: importedInventory,
-    notes: [
-      "Автоматически загружено из встроенного досье Лии Вейн, редакция Экдрасиля 2000 года.",
-      "Текущие HP, деньги, текущее местоположение и активные состояния в исходном досье не заданы: UNKNOWN.",
-      "21-й уровень включает один эпический уровень кампании; это домашнее правило, а не стандартная прогрессия D&D 2024.",
-      ...basics.evidence,
-    ].join("\n"),
-    updatedAt: now,
-  };
-}
 
 export async function applyEkdrasilSeed(
   collections: ObsidianCollections,
@@ -204,13 +137,10 @@ export async function applyEkdrasilSeed(
     );
   });
 
-  const playerCharacterState = importCharacterFromDossier(
-    collections.player_character_state,
-    bundle.dossier,
-    now,
-  );
-  const characterChanged = playerCharacterState !== collections.player_character_state;
-  const worldChanged = sourcesChanged || characterChanged;
+  // Loading source files never mutates the active character sheet.
+  // Dossier parsing and import happen only in the explicit /play review flow.
+  const playerCharacterState = collections.player_character_state;
+  const worldChanged = sourcesChanged;
   const worldState = worldChanged
     ? {
         ...collections.world_state,
