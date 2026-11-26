@@ -45,7 +45,7 @@ describe("generateRandomStart", () => {
   it("preserves confirmed gear, adds only random consumables and generates starting money", () => {
     const result = generateRandomStart(40, () => 0, {
       background: "Солдат",
-      generateBackgroundKit: true,
+      generateStartingSupplies: true,
       retainedInventory: [
         { id: "katana", name: "Катана в ножнах", quantity: 1, notes: "Подтверждённое оружие", certainty: "KNOWN", location: "CARRIED", unitWeightLb: null },
         { id: "armor", name: "Кожа Последнего Часа", quantity: 1, notes: "Авторский лёгкий доспех", certainty: "KNOWN", location: "WORN", unitWeightLb: null },
@@ -68,7 +68,7 @@ describe("generateRandomStart", () => {
   it("resolves carried-item weights and currency so the standard starting load is calculable", () => {
     const generated = generateRandomStart(40, () => 0, {
       background: "Солдат",
-      generateBackgroundKit: true,
+      generateStartingSupplies: true,
       retainedInventory: [
         { id: "sword", name: "Длинный меч", quantity: 1, notes: "", certainty: "KNOWN", location: "CARRIED", unitWeightLb: null },
         { id: "armor", name: "Кожаный доспех", quantity: 1, notes: "", certainty: "KNOWN", location: "WORN", unitWeightLb: null },
