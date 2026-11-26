@@ -1074,19 +1074,11 @@ export function ObsidianStoreProvider({
   const resetForTrialCampaign: ObsidianStoreValue["resetForTrialCampaign"] = useCallback(() => {
     const now = new Date().toISOString();
     const blank = createInitialCollections();
-    const preservedSources = collections.sources
-      .filter((source) =>
-        source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
-        source.id === DEFAULT_SOURCE_IDS.CANON ||
-        source.id === DEFAULT_SOURCE_IDS.SRD ||
-        (source.type === "SUPPLEMENTAL" &&
-          /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) &&
-          source.reviewStatus === "VERIFIED" && source.contextEnabled),
-      )
-      .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
-        (source.reviewStatus !== "VERIFIED" || source.processing?.status !== "PROCESSED")
-        ? { ...source, contextEnabled: false }
-        : source);
+    const preservedCanon = collections.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.CANON);
+    const serverManagedSources = blank.sources.filter((source) =>
+      source.id === DEFAULT_SOURCE_IDS.GOVERNING || source.id === DEFAULT_SOURCE_IDS.SRD
+    );
+    const preservedSources = [...serverManagedSources, ...preservedCanon, ...blank.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)];
     const nextCharacter = {
       ...blank.player_character_state,
       stateVersion: collections.player_character_state.stateVersion + 1,
@@ -1095,7 +1087,7 @@ export function ObsidianStoreProvider({
     const next: ObsidianCollections = {
       ...blank,
       // Preserve only world/rules sources. Discard the old player dossier and all character data.
-      sources: [...preservedSources, ...blank.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)],
+      sources: preservedSources,
       player_character_state: nextCharacter,
       audit_log: {
         ...blank.audit_log,
@@ -1104,7 +1096,7 @@ export function ObsidianStoreProvider({
           timestamp: now,
           action: "CAMPAIGN_RESET_FOR_TRIAL",
           status: "OK",
-          details: "Текущее состояние кампании очищено в приложении. Сохранены только источники правил и хроники; прежнее досье персонажа, персонаж, NPC, фракции, локации, факты, события, вступление, черновики и игровые ходы удалены из активного состояния.",
+          details: "Текущее состояние кампании очищено в приложении. Сохранены серверные маркеры ОБСИДИАН/SRD и канон Экдрасиля; прежнее досье персонажа, персонаж, NPC, фракции, локации, факты, события, вступление, черновики и игровые ходы удалены из активного состояния.",
           campaignVersion: blank.world_state.stateVersion,
           characterVersion: nextCharacter.stateVersion,
           turnNumber: null,
