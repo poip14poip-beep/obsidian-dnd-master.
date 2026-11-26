@@ -22,6 +22,7 @@ import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as TimeMapRouteImport } from './routes/time-map'
 import { Route as TurnsRouteImport } from './routes/turns'
 import { Route as WorldRouteImport } from './routes/world'
+import { Route as PlayRouteImport } from './routes/play'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -88,6 +89,11 @@ const WorldRoute = WorldRouteImport.update({
   path: '/world',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -103,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/time-map': typeof TimeMapRoute
   '/turns': typeof TurnsRoute
   '/world': typeof WorldRoute
+  '/play': typeof PlayRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/time-map': typeof TimeMapRoute
   '/turns': typeof TurnsRoute
   '/world': typeof WorldRoute
+  '/play': typeof PlayRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -151,6 +159,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -197,6 +207,7 @@ export interface RootRouteChildren {
   TimeMapRoute: typeof TimeMapRoute
   TurnsRoute: typeof TurnsRoute
   WorldRoute: typeof WorldRoute
+  PlayRoute: typeof PlayRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -292,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorldRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -309,6 +327,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimeMapRoute: TimeMapRoute,
   TurnsRoute: TurnsRoute,
   WorldRoute: WorldRoute,
+  PlayRoute: PlayRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
