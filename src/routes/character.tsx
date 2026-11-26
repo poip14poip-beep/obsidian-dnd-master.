@@ -170,7 +170,10 @@ function CharacterPage() {
                         return;
                       }
                       const result = updateCharacterResource(resource.id, value);
-                      if (result.ok) toast.success(`Остаток ресурса «${resource.name}» обновлён без продвижения игрового времени.`);
+                      if (result.ok) {
+                        setResourceDrafts((current) => { const { [resource.id]: _saved, ...rest } = current; return rest; });
+                        toast.success(`Остаток ресурса «${resource.name}» обновлён без продвижения игрового времени.`);
+                      }
                       else toast.error(result.error);
                     }}
                   >Зафиксировать</button>
