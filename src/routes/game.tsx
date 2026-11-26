@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Lock, Send, ShieldCheck, Sparkles, Swords } from "lucide-react";
+import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Lock, Send, ShieldCheck, Sparkles, Swords, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
@@ -318,33 +318,29 @@ function GamePage() {
             <Swords className="h-5 w-5 text-primary" />
             <h1 className="text-xl font-bold text-foreground">Игровой чат</h1>
           </div>
-          <span className="mono-code rounded border border-primary/30 px-2 py-1 text-xs text-primary">ХОД #{String(nextTurnNumber).padStart(4, "0")}</span>
+          <details className="relative">
+            <summary aria-label="Состояние персонажа" title="Состояние персонажа" className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-card text-foreground">
+              <UserRound className="h-4 w-4" />
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-border bg-card p-3 text-left shadow-xl">
+              <p className="text-sm font-semibold">{character.name}</p>
+              <p className="mt-2 text-sm">HP: <strong>{character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"}</strong>{character.hpTemp ? ` · Временные ${character.hpTemp}` : ""}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Состояния: {character.conditions.length ? character.conditions.join(", ") : "нет подтверждённых состояний"}</p>
+              <p className="mt-1 text-xs text-muted-foreground">Уровень: {character.level ?? "UNKNOWN"} · {character.speciesAndClass}</p>
+            </div>
+          </details>
         </div>
         <p className="text-xs text-muted-foreground">Живой мастер · ОБСИДИАН 4.1 · D&D 5e (2024) · SRD 5.2.1</p>
       </header>
 
-      <section className="panel-surface space-y-3 p-3">
-        <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-          <div><p className="text-muted-foreground">Кампания</p><p className="mt-0.5 font-semibold text-foreground">{worldState.campaignName || "UNKNOWN"}</p></div>
-          <div><p className="text-muted-foreground">Игровая дата</p><p className="mt-0.5 font-semibold text-foreground">{worldState.currentInGameDate || "НЕ УСТАНОВЛЕНО"}</p></div>
-          <div><p className="text-muted-foreground">Место</p><p className="mt-0.5 font-semibold text-foreground">{currentLocation?.name ?? worldState.startLocationName ?? "UNKNOWN"}</p></div>
-          <div><p className="text-muted-foreground">Персонаж</p><p className="mt-0.5 font-semibold text-foreground">{character.name}</p></div>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-2 text-[11px] text-muted-foreground">
-          <span>Календарь: {worldState.calendarSystem || "НЕ УСТАНОВЛЕН"}</span>
-          <span>Сохранено ходов: {sessionLog.lastTurnNumber}</span>
-          <span>Следующий ход: #{String(nextTurnNumber).padStart(4, "0")}</span>
-          <span>HP: {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"}</span>
-          <span>Температура: {worldState.environment?.temperatureC == null ? "НЕ УСТАНОВЛЕНО" : worldState.environment.temperatureC + " °C"}</span>
-          <span>Погода: {worldState.environment?.weather || "НЕ УСТАНОВЛЕНО"}</span>
-          <span>Освещение: {worldState.environment?.lighting || "НЕ УСТАНОВЛЕНО"}</span>
-          <span>Видимость: {worldState.environment?.visibility || "НЕ УСТАНОВЛЕНО"}</span>
-        </div>
+      <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-xs">
+        <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p></div>
+        <span className="shrink-0 text-muted-foreground">Ход #{String(nextTurnNumber).padStart(4, "0")}</span>
       </section>
 
-      <nav aria-label="Игровые вкладки" className="grid grid-cols-4 gap-1 rounded-xl border border-border bg-card p-1">
+      <nav aria-label="Игровые вкладки" className="fixed inset-x-0 bottom-0 z-30 mx-auto grid max-w-3xl grid-cols-4 gap-1 border-t border-border bg-background/95 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
         {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
-          <Button key={key} type="button" size="sm" variant={activePanel === key ? "default" : "ghost"} className="min-w-0 px-1 text-[11px] sm:text-xs" onClick={() => setActivePanel(key)}><Icon className="mr-1 h-3.5 w-3.5 shrink-0" />{label}</Button>
+          <Button key={key} type="button" size="icon" aria-label={label} title={label} variant={activePanel === key ? "default" : "ghost"} className="mx-auto h-11 w-12" onClick={() => setActivePanel(key)}><Icon className="h-5 w-5" /></Button>
         ))}
       </nav>
 
