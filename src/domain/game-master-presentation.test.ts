@@ -63,7 +63,7 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     const state = createInitialCollections();
     state.world_state.currentInGameDate = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
     const opening = formatCampaignOpening(turn, state.world_state, state.player_character_state, []);
-    expect(opening).toContain("ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001");
+    expect(opening).toContain("ХОД #0001 · НАЧАЛО КАМПАНИИ");
     expect(opening).toContain("ИГРОВОЙ ГОД: 2000 (APPROXIMATE)");
     expect(opening).toContain("МЕСЯЦ: НЕ УСТАНОВЛЕНО");
     expect(opening).toContain("НЕ ИГРОВОЙ ХОД");
