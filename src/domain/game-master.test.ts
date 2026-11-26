@@ -16,6 +16,12 @@ const validTurn = { narration: "Перед тобой дверь.", campaignMemo
 const testOptions = (fetcher: typeof fetch) => ({ fetcher, supabaseUrl: "https://test.supabase.co", publishableKey: "sb_publishable_test" });
 
 describe("game master resolver", () => {
+  it("requires a real authenticated session before sending a request", async () => {
+    const fetcher = vi.fn();
+    await expect(resolvePlayerAction("", context, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it("requires the governing source before a model request", async () => {
     await expect(resolvePlayerAction("test-user-jwt", { ...context, sources: [] }, testOptions(vi.fn() as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_NOT_READY" });
