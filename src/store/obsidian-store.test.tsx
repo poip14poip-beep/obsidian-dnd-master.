@@ -172,6 +172,7 @@ describe("random free-roam start", () => {
     expect(result.current.character.abilityScores?.strength).toBe(20);
     expect(result.current.character.proficiencyBonus).toBe(6);
     expect(result.current.sessionLog.lastTurnNumber).toBe(0);
+    expect(result.current.auditLog.entries.at(-1)?.action).toBe("PLAYER_CHARACTER_UPDATED");
     expect(result.current.sessionLog.entries).toHaveLength(0);
     expect(result.current.worldState.setup.confirmed).toBe(false);
   });
