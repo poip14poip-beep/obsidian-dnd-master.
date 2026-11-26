@@ -12,8 +12,8 @@ function parseTechnicalCalendar(date: string, calendar: string) {
   const year = Number(match[1]);
   const month = Number(match[2]);
   const day = Number(match[3]);
-  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 30) return null;
-  const dayOfYear = (month - 1) * 30 + day;
+  if (!Number.isInteger(year) || month < 1 || month > 13 || day < 1 || (month <= 12 ? day > 30 : day > 5)) return null;
+  const dayOfYear = month <= 12 ? (month - 1) * 30 + day : 360 + day;
   return { year, month, day, dayOfYear, week: Math.floor((dayOfYear - 1) / 7) + 1, weekday: ((dayOfYear - 1) % 7) + 1 };
 }
 
@@ -57,7 +57,7 @@ export function formatGameMasterAnswer(
   const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
   const fallbackYear = date.match(/(?:год|year)\s*[:№]?\s*(\d{1,4})|(?:^|\s|[,(])(\d{1,4})\s*(?:год|г\.?|year)(?:\s|[,(]|$)/i);
   const year = numericDate ? String(numericDate.year) : fallbackYear ? (fallbackYear[1] ?? fallbackYear[2]) + (/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : "") : "НЕ УСТАНОВЛЕНО";
-  const month = numericDate ? String(numericDate.month).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
+  const month = numericDate ? (numericDate.month === 13 ? "ДОПОЛНИТЕЛЬНЫЕ ДНИ" : String(numericDate.month).padStart(2, "0")) : "НЕ УСТАНОВЛЕНО";
   const day = numericDate ? String(numericDate.day).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
   const week = numericDate ? String(numericDate.week) : "НЕ УСТАНОВЛЕНО";
   const weekday = numericDate ? String(numericDate.weekday) : "НЕ УСТАНОВЛЕНО";
