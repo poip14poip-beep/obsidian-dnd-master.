@@ -1,3 +1,4 @@
+import type { BackupEnvelope } from "@/domain/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAuthClient } from "@/lib/supabase-auth";
@@ -294,4 +295,54 @@ export function setCloudCampaignLink(link: CloudCampaignLink | null): void {
   } catch {
     // The campaign still works locally; the UI reports cloud-link persistence failures separately.
   }
+}
+
+
+export type LinkedCloudSnapshotResult =
+  | { ok: true; skipped: true }
+  | { ok: true; skipped: false; revision: number; turnNumber: number; payloadSha256: string }
+  | { ok: false; error: ObsidianApiError };
+
+/**
+ * Append a complete backup after a locally committed game turn.
+ * Optimistic revision checks prevent one device from silently overwriting a
+ * newer save made by another device. No linked campaign means local-only mode.
+ */
+export async function saveLinkedCloudSnapshot(
+  payload: BackupEnvelope,
+): Promise<LinkedCloudSnapshotResult> {
+  const link = getCloudCampaignLink();
+  if (!link) return { ok: true, skipped: true };
+
+  const latest = await loadLatestCloudCampaignSnapshot(link.campaignId);
+  if (!latest.ok) return { ok: false, error: latest.error };
+  const remote = latest.data.snapshot;
+  const remoteRevision = remote.found ? remote.revision : 0;
+  if (remoteRevision !== link.revision) {
+    return {
+      ok: false,
+      error: {
+        code: "CLOUD_REVISION_CONFLICT",
+        message: "В облаке уже есть другая версия кампании. Синхронизация остановлена, чтобы не затереть сохранение с другого устройства. Открой настройки, загрузи последнее сохранение и восстанови его перед продолжением.",
+      },
+    };
+  }
+
+  const turnNumber = payload.collections.session_log.lastTurnNumber;
+  const saved = await saveCloudCampaignSnapshot(
+    link.campaignId,
+    link.revision,
+    turnNumber,
+    payload as unknown as Record<string, unknown>,
+  );
+  if (!saved.ok) return { ok: false, error: saved.error };
+  const metadata = saved.data.result;
+  setCloudCampaignLink({ campaignId: link.campaignId, revision: metadata.revision });
+  return {
+    ok: true,
+    skipped: false,
+    revision: metadata.revision,
+    turnNumber: metadata.turn_number,
+    payloadSha256: metadata.payload_sha256 ?? "",
+  };
 }
