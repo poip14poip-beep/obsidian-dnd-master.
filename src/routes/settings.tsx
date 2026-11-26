@@ -78,7 +78,7 @@ function SettingsPage() {
 
   function handleGenerateRandomStart() {
     try {
-      const generated = generateRandomStart();
+      const generated = generateRandomStart(character.hpMax ?? 0);
       const result = applyGeneratedStart({
         city: generated.city,
         date: generated.date,
@@ -97,7 +97,7 @@ function SettingsPage() {
       setStartInGameDate(generated.date);
       setStartLocationName(generated.city.name);
       setStartNarrative(generated.narrative);
-      toast.success(`Случайный старт создан: ${generated.city.name} · ${generated.hpCurrent}/184 HP. Задания не назначены.`);
+      toast.success(`Случайный старт создан: ${generated.city.name} · ${generated.hpCurrent}/${character.hpMax ?? "UNKNOWN"} HP. Задания не назначены.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось создать случайный старт.");
     }
