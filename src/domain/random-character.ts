@@ -18,10 +18,10 @@ const CLASS_DATA = {
   Fighter: {
     die:10, saves:["strength","constitution"] as Ability[],
     skills:["Acrobatics","Animal Handling","Athletics","History","Insight","Intimidation","Perception","Survival"],
-    gear:[["Кольчуга",1,"КД 16; тяжёлый доспех"],["Двуручный меч",1,"1d12 рубящий; двуручное; mastery Graze"],["Цеп",1,"1d8 дробящий; mastery Sap"],["Метательные копья",8,"1d6 колющий; mastery Slow"],["Набор исследователя подземелий",1,"Стартовый набор"],["Золотые монеты",4,"4 GP"]],
+    gear:[["Кольчуга",1,"КД 16; тяжёлый доспех"],["Двуручный меч",1,"2d6 рубящий; двуручное; mastery Graze"],["Цеп",1,"1d8 дробящий; mastery Sap"],["Метательные копья",8,"1d6 колющий; mastery Slow"],["Набор исследователя подземелий",1,"Стартовый набор"],["Золотые монеты",4,"4 GP"]],
     feature:"Fighting Style: Defense (+1 КД в доспехе); Second Wind (2 использования, бонусное действие, восстановление 1d10+1 HP); Weapon Mastery (3 вида оружия).",
     resource:{name:"Second Wind",max:2,recovery:"1 использование после короткого отдыха; все после продолжительного отдыха."},
-    armor:16, weapon:"Двуручный меч",damage:"1d12",mastery:"Graze", attackAbility:"strength" as Ability,
+    armor:17, weapon:"Двуручный меч",damage:"2d6",mastery:"Graze", attackAbility:"strength" as Ability,
   },
   Rogue: {
     die:8, saves:["dexterity","intelligence"] as Ability[],
@@ -96,16 +96,19 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const skills=[...new Set([...chosenClassSkills,...backgroundData.skills])];
   if(species==="Elf"&&!skills.includes("Perception")) skills.push("Perception");
   const proficiency=2;
-  const skillBonuses=skills.map((name)=>({name,bonus:mod(abilityScores[SKILL_ABILITY[name]??"wisdom"])+proficiency,basis:`${(SKILL_ABILITY[name]??"wisdom").toUpperCase()} + владение`}));
+  const expertiseSkills=className==="Rogue"?[...skills].sort(()=>random(2)-random(2)).slice(0,2):[];
+  const skillBonuses=skills.map((name)=>({name,bonus:mod(abilityScores[SKILL_ABILITY[name]??"wisdom"])+proficiency+(expertiseSkills.includes(name)?proficiency:0),basis:`${(SKILL_ABILITY[name]??"wisdom").toUpperCase()} + ${expertiseSkills.includes(name)?"экспертность":"владение"}`}));
   const saves=Object.fromEntries(ABILITIES.map((a)=>[a,mod(abilityScores[a])+(classData.saves.includes(a)?proficiency:0)])) as Record<Ability,number>;
   const conMod=mod(abilityScores.constitution);
   const hpMax=Math.max(1,classData.die+conMod+speciesData.hp);
   const dexMod=mod(abilityScores.dexterity);
   const armorClass=className==="Fighter"?16:className==="Rogue"?11+dexMod:10+dexMod+conMod;
   const attackMod=mod(abilityScores[classData.attackAbility])+proficiency;
-  const inventory=[...classData.gear,...backgroundData.gear].map(([name,qty,notes])=>item(name,qty,notes));
+  const allGear=[...classData.gear,...backgroundData.gear];
+  const gold=allGear.filter(([name])=>name==="Золотые монеты").reduce((sum,[,qty])=>sum+Number(qty),0);
+  const inventory=allGear.filter(([name])=>name!=="Золотые монеты").map(([name,qty,notes])=>item(String(name),Number(qty),String(notes)));
   const resource=classData.resource?[{id:"generated-class-resource",name:classData.resource.name,current:classData.resource.max,max:classData.resource.max,certainty:"KNOWN" as const,recovery:classData.resource.recovery}]:[];
-  const featureText=[classData.feature,`Предыстория ${background}: Origin Feat — ${backgroundData.feat}; навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
+  const featureText=[classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}; навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
     speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
@@ -115,7 +118,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     skillBonuses,classFeaturesByLevel:[{level:1,features:featureText.join(" ")}],
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
-    currency:{cp:0,sp:0,ep:0,gp:0,pp:0},
+    currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
     notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Дополнительные опции и детали, не входящие в этот генератор, не подразумеваются.`,
   };
   return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
