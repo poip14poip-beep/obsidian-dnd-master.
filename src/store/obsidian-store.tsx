@@ -24,6 +24,7 @@ import {
   type PersistVerifyResult,
   type StorageLike,
 } from "@/domain/storage";
+import { saveLinkedCloudSnapshot } from "@/lib/obsidian-api";
 import type {
   AuditEntry,
   AuditLogState,
@@ -89,6 +90,9 @@ export interface ObsidianStoreValue {
   auditLog: AuditLogState;
   lastIntegrityReport: IntegrityReport | null;
   lastStorageError: string | null;
+  cloudSyncStatus: "IDLE" | "SAVING" | "SAVED" | "ERROR";
+  cloudSyncMessage: string | null;
+  retryCloudSnapshot: () => Promise<void>;
 
   // Sources
   attachSourceContent: (
@@ -217,6 +221,8 @@ export function ObsidianStoreProvider({
   );
   const [lastIntegrityReport, setLastIntegrityReport] = useState<IntegrityReport | null>(null);
   const [lastStorageError, setLastStorageError] = useState<string | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"IDLE" | "SAVING" | "SAVED" | "ERROR">("IDLE");
+  const [cloudSyncMessage, setCloudSyncMessage] = useState<string | null>(null);
 
   const resolveStorage = useCallback(
     () => storageOverride ?? getBrowserStorage(),
@@ -251,6 +257,33 @@ export function ObsidianStoreProvider({
     },
     [resolveStorage],
   );
+
+  const syncCommittedSnapshot = useCallback(async (snapshotCollections: ObsidianCollections) => {
+    setCloudSyncStatus("SAVING");
+    setCloudSyncMessage("Локальный ход сохранён. Создаётся облачная резервная копия…");
+    try {
+      const result = await saveLinkedCloudSnapshot(buildBackupEnvelope(snapshotCollections));
+      if (!result.ok) {
+        setCloudSyncStatus("ERROR");
+        setCloudSyncMessage(result.error.message);
+        return;
+      }
+      if (result.skipped) {
+        setCloudSyncStatus("IDLE");
+        setCloudSyncMessage(null);
+        return;
+      }
+      setCloudSyncStatus("SAVED");
+      setCloudSyncMessage(`Облачная копия подтверждена: ревизия №${result.revision}, ход №${result.turnNumber}.`);
+    } catch (error) {
+      setCloudSyncStatus("ERROR");
+      setCloudSyncMessage(error instanceof Error ? error.message : "Не удалось сохранить облачную копию.");
+    }
+  }, []);
+
+  const retryCloudSnapshot = useCallback(async () => {
+    await syncCommittedSnapshot(collections);
+  }, [collections, syncCommittedSnapshot]);
 
   const appendAudit = useCallback(
     (
@@ -1533,21 +1566,21 @@ export function ObsidianStoreProvider({
         nextTurnNumber,
       );
 
-      return commitCollections(
-        {
-          ...collections,
-          canon_facts: nextFacts,
-          world_state: nextWorld,
-          player_character_state: nextCharacter,
-          npcs: nextNpcs,
-          turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
-          session_log: nextSessionLog,
-          audit_log: nextAudit,
-        },
-        nextTurnNumber,
-      );
+      const nextCollections: ObsidianCollections = {
+        ...collections,
+        canon_facts: nextFacts,
+        world_state: nextWorld,
+        player_character_state: nextCharacter,
+        npcs: nextNpcs,
+        turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
+        session_log: nextSessionLog,
+        audit_log: nextAudit,
+      };
+      const committed = commitCollections(nextCollections, nextTurnNumber);
+      if (committed.ok) void syncCommittedSnapshot(nextCollections);
+      return committed;
     },
-    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport],
+    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport, syncCommittedSnapshot],
   );
 
   const addTechnicalMessage: ObsidianStoreValue["addTechnicalMessage"] = useCallback(
@@ -1655,6 +1688,9 @@ export function ObsidianStoreProvider({
       auditLog: collections.audit_log,
       lastIntegrityReport,
       lastStorageError,
+      cloudSyncStatus,
+      cloudSyncMessage,
+      retryCloudSnapshot,
       attachSourceContent,
       addSupplementalSource,
       verifySource,
@@ -1698,6 +1734,9 @@ export function ObsidianStoreProvider({
       activeDraft,
       lastIntegrityReport,
       lastStorageError,
+      cloudSyncStatus,
+      cloudSyncMessage,
+      retryCloudSnapshot,
       attachSourceContent,
       addSupplementalSource,
       verifySource,
