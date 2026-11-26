@@ -94,7 +94,7 @@ describe("player dossier summary extraction", () => {
       "## 11.2. Оружие и обслуживание",
       "1                                      Катана в ножнах                     Основное оружие",
       "Second Wind: четыре использования. Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
-    ].join("\\n"));
+    ].join("\n"));
 
     expect(result.name).toBe("ЛИЯ ВЕЙН");
     expect(result.level).toBe(21);
