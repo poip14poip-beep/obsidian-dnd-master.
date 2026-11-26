@@ -37,6 +37,8 @@ function NpcsPage() {
   const { sources, npcs, locations, factions, worldState, addNpc, amendNpc, addNpcKnowledge } =
     useObsidianStore();
   const [showCreate, setShowCreate] = useState(false);
+  const playerVisibleNpcs = npcs.filter((npc) => npc.playerVisible !== false);
+  const hiddenNpcCount = npcs.length - playerVisibleNpcs.length;
 
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
@@ -267,13 +269,18 @@ function NpcsPage() {
         </form>
       )}
 
-      {npcs.length === 0 ? (
+      {hiddenNpcCount > 0 && (
+        <p className="text-[11px] text-muted-foreground">
+          Скрытые записи мастера: {hiddenNpcCount}. Их внутренние цели и знания не показываются игроку.
+        </p>
+      )}
+      {playerVisibleNpcs.length === 0 ? (
         <div className="panel-surface p-6 text-center text-sm text-muted-foreground">
-          Реестр NPC пуст. Добавьте персонажей вручную по мере появления в каноне или игре.
+          Открытый реестр NPC пока пуст. Скрытые записи мастера не отображаются; новые сведения появятся здесь только после их раскрытия в игре.
         </div>
       ) : (
         <div className="space-y-3">
-          {npcs.map((npc) => (
+          {playerVisibleNpcs.map((npc) => (
             <article key={npc.id} className="panel-surface space-y-3 p-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
