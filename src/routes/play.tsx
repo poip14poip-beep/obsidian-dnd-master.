@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ function rollAbility(): number {
 }
 function PlayPage() {
   const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
+  const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
@@ -124,10 +125,11 @@ function PlayPage() {
     });
     setStartPending(false);
     if (!result.ok) setStartError(result.error);
+    else void navigate({ to: "/game" });
   }, [
     startPending, worldState.startGeneration, worldState.startInGameDate,
     worldState.startLocationName, worldState.startNarrative, worldState.campaignName,
-    worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup,
+    worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
   ]);
   const randomize = () => {
     const stats = { strength: rollAbility(), dexterity: rollAbility(), constitution: rollAbility(), intelligence: rollAbility(), wisdom: rollAbility(), charisma: rollAbility() };
