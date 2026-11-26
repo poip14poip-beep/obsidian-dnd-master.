@@ -67,6 +67,25 @@ describe("game master resolver", () => {
     expect(compacted.characterChanges).toEqual(journalEntry.characterChanges);
   });
 
+  it("sends a bounded rolling chronicle index without deleting stored history", async () => {
+    const journal = Array.from({ length: 180 }, (_, index) => ({
+      id: `turn-${index + 1}`, entryType: "GAME_TURN" as const, turnNumber: index + 1,
+      committedAt: "2026-01-01T00:00:00Z", inGameDateBefore: "before", inGameDateAfter: "after",
+      timeDeltaMinutes: 1, summary: "Краткое событие ".repeat(20), playerIntent: "Действие ".repeat(20),
+      worldOutcome: "Последствие ".repeat(20), locationIdAfter: null, hpDelta: 0, rolls: [],
+      affectedCampaignVersion: index + 1, affectedCharacterVersion: index + 1, entryChecksum: `checksum-${index}`,
+    }));
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction("test-user-jwt", { ...context, journal }, testOptions(fetcher as unknown as typeof fetch));
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const sent = JSON.parse(request.input);
+    expect(sent.fullCampaignChronicle).toHaveLength(150);
+    expect(sent.fullCampaignChronicle[0].turnNumber).toBe(31);
+    expect(sent.fullCampaignChronicle[149].turnNumber).toBe(180);
+    expect(sent.fullCampaignChronicle[0].summary).toHaveLength(60);
+    expect(journal).toHaveLength(180);
+  });
+
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
