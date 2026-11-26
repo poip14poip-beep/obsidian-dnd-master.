@@ -162,7 +162,6 @@ function GamePage() {
     }
     if (worldState.openingScene?.trim()) {
       setOpening(worldState.openingScene);
-      if (sessionLog.lastTurnNumber === 0) stageOpeningTurn(worldState.openingScene);
       return;
     }
     if (!session?.access_token) {
@@ -193,7 +192,6 @@ function GamePage() {
       if (!saved.ok) throw new Error(saved.error ?? "Не удалось сохранить вступительную сцену.");
       setOpening(openingText);
       setGmTurn(null);
-      stageOpeningTurn(openingText, openingTurn);
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось подготовить вступительную сцену.");
     } finally {
@@ -433,9 +431,9 @@ function GamePage() {
 
       {opening && (
         <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер · вступление</p>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-primary">Предыстория · появление персонажа</p>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{opening}</div>
-          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Вступительная сцена записана в журнал как ход #0001. Игровое время не продвинуто. Следующее действие персонажа будет ходом #0002.</p>
+          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Вступление сохранено отдельно. Игровые действия ещё не совершались; следующий ответ мастера будет ходом #0001.</p>
         </article>
       )}
 
