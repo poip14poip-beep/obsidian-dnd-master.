@@ -479,10 +479,11 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       .map((entry) => ({
         turnNumber: entry.turnNumber,
         inGameDate: entry.inGameDateAfter,
-        summary: entry.summary.slice(0, 180),
-        playerIntent: entry.playerIntent.slice(0, 160),
-        worldOutcome: entry.worldOutcome.slice(0, 220),
-        campaignMemory: entry.campaignMemory?.slice(0, 320) ?? "",
+        // Keep the complete chronological index compact. Recent and query-matched
+        // entries still carry their full text through recentJournal below.
+        summary: entry.summary.slice(0, 120),
+        playerIntent: entry.playerIntent.slice(0, 100),
+        worldOutcome: entry.worldOutcome.slice(0, 140),
       })),
     recentJournal: selectRelevantJournal(context.journal, context.action),
     requirements: [
