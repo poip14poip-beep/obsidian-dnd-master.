@@ -42,6 +42,7 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function validateSchema(value: unknown, schema: JsonRecord): boolean {
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
   const type = schema.type;
   if (type === "object") {
     if (!isRecord(value)) return false;
