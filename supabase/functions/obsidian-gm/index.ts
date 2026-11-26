@@ -46,7 +46,7 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
   if (typeof value === "string") {
-    const limit = key === "sourceText" ? 16_000 : key === "sourceTextTail" ? 10_000 : 1200;
+    const limit = key === "sourceText" ? 16_000 : key === "sourceTextTail" ? 10_000 : key === "sourceDossier" ? 5_000 : 1200;
     return value.length > limit ? value.slice(0, limit) + "…[сокращено]" : value;
   }
   if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
@@ -314,11 +314,12 @@ Deno.serve(async (req: Request) => {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
   let inputText = requestBody.input as string;
-  if (isCompatibilityRequest) {
+  if (isCompatibilityRequest || isStoryRequest) {
     try {
       const parsedInput = JSON.parse(inputText);
       inputText = JSON.stringify(compactAuditValue(parsedInput));
-      if (inputText.length > 34_000) inputText = inputText.slice(0, 34_000);
+      const maxInputLength = isCompatibilityRequest ? 34_000 : 12_000;
+      if (inputText.length > maxInputLength) inputText = inputText.slice(0, maxInputLength);
     } catch { /* keep the original input so malformed dossiers are reported accurately */ }
   }
   const instructionText = requestBody.instructions as string;
@@ -444,8 +445,8 @@ Deno.serve(async (req: Request) => {
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 6 : 18)
-    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 900) : item.paragraph);
+    .slice(0, isCompatibilityRequest ? 6 : isStoryRequest ? 5 : 18)
+    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 900) : isStoryRequest ? item.paragraph.slice(0, 700) : item.paragraph);
   const canonContext = selectedCanon.length
     ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
     : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
@@ -460,9 +461,8 @@ Deno.serve(async (req: Request) => {
     // Keep the audit inside the mobile request window; DeepSeek first, Claude fallback.
     ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
     : isStoryRequest
-      // Recent-history prose is short; use the stronger narrative provider first
-      // and an independent provider as a bounded fallback.
-      ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[2]!]
+      // Compact request and canon context; use fast DeepSeek first with Claude fallback.
+      ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
       : isIdentityRequest || isBiographyRequest
         ? [MODEL_ATTEMPTS[0]!]
         : highImpactTurn
@@ -546,7 +546,7 @@ Deno.serve(async (req: Request) => {
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           max_tokens: isCompatibilityRequest ? 1400 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1400 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 25_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
