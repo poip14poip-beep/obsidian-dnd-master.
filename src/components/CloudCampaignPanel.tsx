@@ -39,6 +39,7 @@ export function CloudCampaignPanel({
 }: CloudCampaignPanelProps) {
   const [campaignId, setCampaignId] = useState("");
   const [revision, setRevision] = useState(0);
+  const [canSave, setCanSave] = useState(false);
   const [latest, setLatest] = useState<ObsidianCloudSnapshot | null>(null);
   const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
   const [busy, setBusy] = useState<"create" | "load" | "save" | "restore" | null>(null);
@@ -50,12 +51,14 @@ export function CloudCampaignPanel({
     if (link) {
       setCampaignId(link.campaignId);
       setRevision(link.revision);
+      setCanSave(true);
     }
   }, []);
 
   function updateCampaignId(value: string) {
     setCampaignId(value);
     setRevision(0);
+    setCanSave(false);
     setLatest(null);
     setRestoreAcknowledged(false);
     setNotice(null);
@@ -84,6 +87,7 @@ export function CloudCampaignPanel({
     const id = result.data.campaign.id;
     setCampaignId(id);
     setRevision(0);
+    setCanSave(true);
     setCloudCampaignLink({ campaignId: id, revision: 0 });
     setNotice("Облачная кампания создана. Теперь можно сохранить в неё полный снимок текущего состояния.");
     setBusy(null);
@@ -108,6 +112,7 @@ export function CloudCampaignPanel({
     const snapshot = result.data.snapshot;
     setLatest(snapshot);
     setRevision(snapshot.revision);
+    setCanSave(!snapshot.found);
     setCloudCampaignLink({ campaignId: id, revision: snapshot.revision });
     if (!snapshot.found || !snapshot.payload) {
       setNotice("В облачной кампании пока нет резервных снимков. Текущую локальную кампанию можно сохранить как первый снимок.");
@@ -121,6 +126,10 @@ export function CloudCampaignPanel({
     const id = campaignId.trim();
     if (!id) {
       setError("Сначала создай облачную кампанию или укажи её UUID.");
+      return;
+    }
+    if (!canSave) {
+      setError("Сначала восстанови последнее облачное сохранение на этом устройстве. Это защищает от перезаписи состояния другой версии кампании.");
       return;
     }
     setBusy("save");
@@ -152,6 +161,7 @@ export function CloudCampaignPanel({
       const metadata = saved.data.result;
       setRevision(metadata.revision);
       setCloudCampaignLink({ campaignId: id, revision: metadata.revision });
+      setCanSave(true);
       setNotice(`Снимок №${metadata.revision} сохранён и проверен обратным чтением. Игровой ход: ${metadata.turn_number}. SHA-256: ${metadata.payload_sha256 ?? "—"}.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось сохранить облачный снимок.");
@@ -171,6 +181,7 @@ export function CloudCampaignPanel({
       const result = importBackupJson(JSON.stringify(latest.payload));
       if (!result.ok) throw new Error(result.error);
       setCloudCampaignLink({ campaignId, revision: latest.revision });
+      setCanSave(true);
       setNotice(`Снимок №${latest.revision} восстановлен. Локальные коллекции прошли проверку и обратное чтение. Перед восстановлением скачана резервная копия прежнего состояния.`);
       setRestoreAcknowledged(false);
     } catch (err) {
@@ -228,7 +239,7 @@ export function CloudCampaignPanel({
         <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleLoadLatest()} disabled={!campaignId.trim() || busy !== null}>
           <RefreshCw className="mr-1.5 h-4 w-4" /> Загрузить последнее сохранение
         </Button>
-        <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleSaveSnapshot()} disabled={!campaignId.trim() || busy !== null}>
+        <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleSaveSnapshot()} disabled={!campaignId.trim() || !canSave || busy !== null}>
           <Save className="mr-1.5 h-4 w-4" /> Сохранить текущую кампанию
         </Button>
       </div>
