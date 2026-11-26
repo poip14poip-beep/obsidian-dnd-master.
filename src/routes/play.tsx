@@ -258,7 +258,7 @@ function PlayPage() {
         motivation: identity.motivation,
         preCampaignDesire: identity.preCampaignDesire,
         appearance: String(appearancePart["appearance"] ?? ""),
-        appearanceDetails: appearancePart["appearance"]Details,
+        appearanceDetails: appearancePart["appearanceDetails"],
         biography: String(storyPart["biography"] ?? ""),
         birthplaceSource: String(storyPart["birthplaceSource"] ?? ""),
         canonBasis: storyPart["canonBasis"],
