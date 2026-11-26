@@ -41,14 +41,14 @@ const turnSchema = {
     }, required: ["label", "formula", "result"] } },
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
-      role: { type: "string" }, goals: { type: "string" }, attitudeToPlayer: { type: "string" },
+      role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
       locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
       certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["factSummary", "acquisitionPath", "certainty"] } },
-    }, required: ["action", "name", "role", "goals", "attitudeToPlayer", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions"] } },
+    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions"] } },
     characterChanges: { type: "object", additionalProperties: false, properties: {
       inventory: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         action: { type: "string", enum: ["ADD", "REMOVE", "SET"] }, name: { type: "string" },
@@ -125,6 +125,20 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
     ).join("\n\n") : "Релевантные фрагменты хроники не извлечены. Не заполняй пробелы выдуманным каноном.",
     selectedFacts ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${selectedFacts}` : "",
   ].filter(Boolean).join("\n\n");
+}
+function selectNpcSimulationContext(sources: SourceDocument[]): string {
+  const source = sources.find((item) =>
+    item.type === "SUPPLEMENTAL" &&
+    item.fileName === "NPC_SIMULATION_RULES_NDP_0_3.md" &&
+    item.playerVisible === false &&
+    item.contentStatus === "ATTACHED" &&
+    item.processing?.status === "PROCESSED" &&
+    item.reviewStatus === "VERIFIED" &&
+    item.contextEnabled === true
+  );
+  return source
+    ? `[GM-ONLY NPC SIMULATION REFERENCE: ${source.title}; sourceId=${source.id}]\\n${source.content}`
+    : "NPC_SIMULATION_REFERENCE: UNKNOWN. Use only validated NPC records and ОБСИДИАН 4.1; do not invent an NPC decision protocol.";
 }
 function selectRelevantJournal(
   entries: Array<GameTurnEntry | TechnicalMessageEntry>,
@@ -252,7 +266,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
   for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc["action"])) || typeof npc["name"] !== "string" || !npc["name"].trim() ||
-        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" ||
+        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["resources"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" ||
         (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
         (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
@@ -403,6 +417,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
     verifiedRulesReference: verifiedRulesContext,
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
+    npcSimulationReference: selectNpcSimulationContext(context.sources),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
     recentJournal: selectRelevantJournal(context.journal, context.action),
     requirements: [
@@ -427,6 +442,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
+      "npcSimulationReference — GM-only протокол принятия решений и ведения NPC, а не источник фактов мира. Следуй ему для устойчивых целей, временного состояния, планов, задач, знаний и ресурсов. Не копируй шаблонные примеры как факты текущего NPC; текущие записи knownNpcs имеют приоритет как состояние.",
       "Поля goals, attitudeToPlayer, knowledge, resources и внутренние планы в knownNpcs могут содержать GM-only сведения. Используй их только для симуляции поведения NPC. Не раскрывай их Лии, пока она не получила соответствующую информацию через установленный внутриигровой канал. Знание NPC не является знанием персонажа игрока.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов и не выводи текущие остатки ресурсов из их максимума.",
       "Учитывай scheduledAndDelayedEvents: событие срабатывает только при пересечении его подтверждённого срока/условия. Не запускай его раньше и не игнорируй при пересечении. Если точный формат даты неизвестен, не угадывай — оставь событие ожидающим уточнения.",
