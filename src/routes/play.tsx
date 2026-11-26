@@ -26,7 +26,7 @@ function PlayPage() {
     const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
     const speciesList = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
     const draw = (list: string[]) => list[Math.floor(Math.random() * list.length)]!;
-    setCandidate({ ...stats, level: 1, classChoice: draw(classes), speciesChoice: draw(speciesList) });
+    setCandidate({ ...stats, classChoice: draw(classes), speciesChoice: draw(speciesList) });
     setMode("RANDOM");
     setConfirmed(false);
   };
