@@ -56,6 +56,7 @@ function TurnsPage() {
     sessionLog,
     turnDraft,
     lastStorageError,
+    cloudSyncStatus, cloudSyncMessage, retryCloudSnapshot,
     updateTurnDraft,
     saveTurnDraftExplicit,
     checkTurnDraft,
@@ -239,6 +240,20 @@ function TurnsPage() {
       </header>
 
       <SetupGateBanner confirmed={worldState.setup.confirmed} />
+      {cloudSyncStatus !== "IDLE" && (
+        <section role="status" className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-xs ${cloudSyncStatus === "ERROR" ? "border-status-danger/50 bg-status-danger-bg/30" : "border-border bg-background/50"}`}>
+          <div>
+            <p className="font-semibold text-foreground">{cloudSyncStatus === "SAVING" ? "Сохранение облачной копии" : cloudSyncStatus === "SAVED" ? "Облачная копия подтверждена" : "Облачное сохранение не выполнено"}</p>
+            <p className="text-muted-foreground">{cloudSyncMessage}</p>
+            {cloudSyncStatus === "ERROR" && <p className="mt-1 text-muted-foreground">Ход уже сохранён локально. Облачная копия не подтверждена.</p>}
+          </div>
+          {cloudSyncStatus === "ERROR" && (
+            <Button type="button" variant="secondary" className="touch-target" onClick={() => void retryCloudSnapshot()}>
+              Повторить сохранение
+            </Button>
+          )}
+        </section>
+      )}
 
       <section className="panel-surface flex flex-wrap items-center justify-between gap-3 border-primary/30 p-3">
         <div><p className="text-sm font-semibold text-foreground">Основное окно кампании — игровой чат</p><p className="text-xs text-muted-foreground">Здесь остаются журнал, ручная проверка и резервные инструменты.</p></div>
