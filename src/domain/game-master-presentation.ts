@@ -55,7 +55,8 @@ export function formatGameMasterAnswer(
   const location = locations.find((item) => item.id === (turn.newLocationId ?? world.currentLocationId));
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const region = known(location?.region);
-  const date = known(turn.newInGameDate || world.currentInGameDate);
+  const proposedDate = known(turn.newInGameDate);
+  const date = proposedDate === "НЕ УСТАНОВЛЕНО" ? known(world.currentInGameDate) : proposedDate;
   const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
   const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
