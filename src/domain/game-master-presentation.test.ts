@@ -48,6 +48,17 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     expect(answer).toContain("ВРЕМЯ: 06:25");
   });
 
+  it("renders the five additional days in Technical Calendar 1.0 without inventing a thirteenth month", () => {
+    const state = createInitialCollections();
+    state.world_state.calendarSystem = "Technical Calendar 1.0";
+    state.world_state.currentInGameDate = "2000, месяц 13, день 05; 23:59";
+    const answer = formatGameMasterAnswer(turn, state.world_state, state.player_character_state, [], 2);
+    expect(answer).toContain("МЕСЯЦ: ДОПОЛНИТЕЛЬНЫЕ ДНИ");
+    expect(answer).toContain("ДЕНЬ: 05");
+    expect(answer).toContain("НЕДЕЛЯ ГОДА: 53");
+    expect(answer).toContain("ДЕНЬ НЕДЕЛИ: 1");
+  });
+
   it("shows a confirmed approximate year and labels the opening as outside turn numbering", () => {
     const state = createInitialCollections();
     state.world_state.currentInGameDate = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
