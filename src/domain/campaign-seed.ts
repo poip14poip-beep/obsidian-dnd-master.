@@ -27,7 +27,13 @@ export async function loadEkdrasilSeed(fetcher: typeof fetch = fetch): Promise<E
       return [key, await response.text()] as const;
     }),
   );
-  const bundle = Object.fromEntries(entries) as EkdrasilSeedBundle;
+  const bundle: Partial<EkdrasilSeedBundle> = {};
+  for (const [key, value] of entries) {
+    bundle[key as keyof EkdrasilSeedBundle] = value;
+  }
+  if (!bundle.governing || !bundle.chronicle || !bundle.dossier) {
+    throw new Error("Не удалось собрать все три документа встроенного комплекта.");
+  }
   if (!bundle.governing.includes("ОБСИДИАН 4.1") ||
       !bundle.chronicle.includes("ЭКДРАСИЛЬ") ||
       !bundle.dossier.includes("ЛИЯ ВЕЙН")) {
@@ -112,12 +118,12 @@ function importCharacterFromDossier(
     hpMax: basics.hitPointMaximum,
     hpTemp: null,
     armorClass: basics.armorClass,
-    abilityScores: basics.abilityScores ?? undefined,
+    ...(basics.abilityScores ? { abilityScores: basics.abilityScores } : {}),
     proficiencyBonus: basics.proficiencyBonus,
     speedFeet: basics.speedFeet,
-    hitDice: basics.hitDice ?? undefined,
-    savingThrowBonuses: basics.savingThrowBonuses ?? undefined,
-    baseSavingThrowBonuses: basics.baseSavingThrowBonuses ?? undefined,
+    ...(basics.hitDice ? { hitDice: basics.hitDice } : {}),
+    ...(basics.savingThrowBonuses ? { savingThrowBonuses: basics.savingThrowBonuses } : {}),
+    ...(basics.baseSavingThrowBonuses ? { baseSavingThrowBonuses: basics.baseSavingThrowBonuses } : {}),
     skillBonuses: basics.skillBonuses,
     classFeaturesByLevel: basics.classFeaturesByLevel,
     weaponAttacks: basics.weaponAttacks,
@@ -174,7 +180,10 @@ export async function applyEkdrasilSeed(
       now,
     );
   }));
-  const seedById = new Map(definitions.map((definition, index) => [definition.id, { definition, processed: processed[index]! }]));
+  const seedById = new Map<string, { definition: (typeof definitions)[number]; processed: (typeof processed)[number] }>();
+  definitions.forEach((definition, index) => {
+    seedById.set(definition.id, { definition, processed: processed[index]! });
+  });
 
   let sourcesChanged = false;
   const sources = collections.sources.map((source) => {
