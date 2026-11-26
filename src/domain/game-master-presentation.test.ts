@@ -66,7 +66,7 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     expect(opening).toContain("ХОД #0001 · НАЧАЛО КАМПАНИИ");
     expect(opening).toContain("ИГРОВОЙ ГОД: 2000 (APPROXIMATE)");
     expect(opening).toContain("МЕСЯЦ: НЕ УСТАНОВЛЕНО");
-    expect(opening).toContain("НЕ ИГРОВОЙ ХОД");
+    expect(opening).toContain("НАЧАЛЬНАЯ СЦЕНА · ИГРОВОЕ ВРЕМЯ НЕ ПРОДВИНУТО");
     expect(opening).not.toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
   });
 });
