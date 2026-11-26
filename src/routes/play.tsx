@@ -237,7 +237,7 @@ function PlayPage() {
       body: {
         operation: "VALIDATE_CHARACTER_COMPATIBILITY",
         model: "obsidian-free",
-        instructions: "Выполни серверный аудит листа персонажа по ОБСИДИАН 4.1, SRD 5.2.1, хронике Экдрасиля и руководству генерации. Верни только структурированный отчёт проверки.",
+        instructions: "Проверь только соответствие загруженного персонажа лору и канону мира Экдрасиль по Хронике Экдрасиля и руководству мира. Не пересоздавай и не оценивай механические характеристики D&D 2024: характеристики, навыки, атаки, классовые особенности и инвентарь берутся из листа персонажа. Проверь происхождение, расу/вид, предысторию, географию, исторические даты, организации, имена, предметы и другие утверждения на противоречия канону. Отделяй подтверждённые факты от неизвестного и явно отмечай реальные противоречия. Верни только структурированный отчёт проверки.",
         input: JSON.stringify({
           action: "Полный аудит совместимости импортируемого персонажа с D&D 2024 и каноном Экдрасиля",
           ...((characterData && typeof characterData === "object") ? characterData as Record<string, unknown> : { character: characterData }),
@@ -488,24 +488,16 @@ function PlayPage() {
     setBiographyBusy(true);
     setImportError(null);
     setCompatibilityReport(null);
-    let auditWarning: string | null = null;
     try {
-      // Send the parsed dossier only. The original file can contain a large amount
-      // of repeated prose and is not needed for a rules/canon compatibility check.
+      // The lore audit is a required gate: never import a dossier without a completed report.
+      // The original file is included as evidence so the master can check Ekdrasil lore context.
       const report = await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, sourceText: dossier.content, sourceTextTail: dossier.content.slice(-10_000) });
       setCompatibilityReport(report as CharacterCompatibilityReport);
     } catch (error) {
       setCompatibilityReport(null);
-      const detail = error instanceof Error ? error.message : "Проверка совместимости не пройдена.";
-      // A provider outage must not make a user-approved, locally parsed dossier
-      // impossible to import. Actual incompatibility and all other errors still block.
-      if (detail.startsWith("ROUTERAI_MODEL_UNAVAILABLE:")) {
-        auditWarning = "AI-аудит временно недоступен (RouterAI). Персонаж будет импортирован по распознанным данным без заключения AI-аудита.";
-      } else {
-        setImportError(detail);
-        setBiographyBusy(false);
-        return;
-      }
+      setImportError(error instanceof Error ? error.message : "Проверка соответствия лору Экдрасиля не пройдена.");
+      setBiographyBusy(false);
+      return;
     }
     setBiographyBusy(false);
     if (dossier.reviewStatus !== "VERIFIED" || dossier.contextEnabled !== true) {
