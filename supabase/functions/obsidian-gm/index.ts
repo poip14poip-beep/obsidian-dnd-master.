@@ -206,9 +206,23 @@ Deno.serve(async (req: Request) => {
   let actionText = body.input.toLowerCase();
   try {
     const parsedInput = JSON.parse(body.input);
-    if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText += " " + parsedInput.action.toLowerCase();
-  } catch { /* input remains available for matching */ }
-  const ruleTerms = [...new Set(actionText.split(/[^a-z0-9а-яё]+/i).filter((term) => term.length > 3))];
+    if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText = parsedInput.action.toLowerCase();
+  } catch { /* use raw input for matching */ }
+  const mappedTerms: string[] = [];
+  if (/атак|удар|оруж|бой|инициатив/.test(actionText)) mappedTerms.push("attack", "combat", "weapon", "initiative", "attack roll");
+  if (/урон|поврежден/.test(actionText)) mappedTerms.push("damage", "damage roll", "resistance", "vulnerability");
+  if (/спасброс|сопротив/.test(actionText)) mappedTerms.push("saving throw", "saving throws");
+  if (/провер|навык|характеристик/.test(actionText)) mappedTerms.push("ability check", "d20 test", "skill");
+  if (/скрыт|незамет|прят|крад/.test(actionText)) mappedTerms.push("stealth", "hide", "invisible");
+  if (/восприят|замет|осмотр|вниман/.test(actionText)) mappedTerms.push("perception", "search", "study");
+  if (/заклин|маг|колдов|концентрац/.test(actionText)) mappedTerms.push("spellcasting", "spell", "concentration");
+  if (/движ|перемещ|скорост|прыж|лаз|плав/.test(actionText)) mappedTerms.push("movement", "speed", "difficult terrain", "jump", "climb");
+  if (/состояни|слеп|испуг|отрав|яд/.test(actionText)) mappedTerms.push("condition", "conditions", "poisoned", "frightened", "blinded");
+  if (/отдых|восстанов/.test(actionText)) mappedTerms.push("long rest", "short rest", "resting");
+  if (/перегруз|вес|грузоподъем/.test(actionText)) mappedTerms.push("carrying capacity", "encumbrance", "push", "drag", "lift");
+  if (/смерт|умира|без созн/.test(actionText)) mappedTerms.push("death saving throw", "dying", "stabilize");
+  if (/класс|боец|воин|особенност/.test(actionText)) mappedTerms.push("fighter", "character classes", "class features");
+  const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
   const selectedRules = ruleParagraphs
     .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
     .filter((item) => item.score > 0)
