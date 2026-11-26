@@ -1,8 +1,43 @@
 import type { GameMasterTurn } from "./game-master";
-import type { LocationRecord, PlayerCharacterState, WorldState } from "./types";
+import type { LocationRecord, PlayerCharacterState, WorldState, WorldEnvironment } from "./types";
 
 function known(value: string | null | undefined): string {
   return value && value.trim() && value.trim().toUpperCase() !== "UNKNOWN" ? value.trim() : "НЕ УСТАНОВЛЕНО";
+}
+
+function parseTechnicalCalendar(date: string, calendar: string) {
+  if (!/technical calendar 1\\.0/i.test(calendar)) return null;
+  const match = date.match(/(?:^|\\D)(\\d{1,4})\\s*(?:год)?\\s*,?\\s*месяц\\s*(\\d{1,2})\\s*,?\\s*день\\s*(\\d{1,2})/i);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (!Number.isInteger(year) || month < 1 || month > 12 || day < 1 || day > 30) return null;
+  const dayOfYear = (month - 1) * 30 + day;
+  return { year, month, day, dayOfYear, week: Math.floor((dayOfYear - 1) / 7) + 1, weekday: ((dayOfYear - 1) % 7) + 1 };
+}
+
+function formatEnvironment(environment: WorldEnvironment | undefined): string[] {
+  const env = environment;
+  if (!env) return [
+    "ТЕМПЕРАТУРА: НЕ УСТАНОВЛЕНО",
+    "ПОГОДА: НЕ УСТАНОВЛЕНО",
+    "ОСВЕЩЕНИЕ: НЕ УСТАНОВЛЕНО",
+    "ВИДИМОСТЬ: НЕ УСТАНОВЛЕНО",
+    "ВЕТЕР: НЕ УСТАНОВЛЕНО",
+    "ОСАДКИ: НЕ УСТАНОВЛЕНО",
+  ];
+  const temp = env.temperatureC === null || env.temperatureC === undefined
+    ? "НЕ УСТАНОВЛЕНО"
+    : `${env.temperatureC} °C (${env.temperatureCertainty})`;
+  return [
+    `ТЕМПЕРАТУРА: ${temp}`,
+    `ПОГОДА: ${known(env.weather)}`,
+    `ОСВЕЩЕНИЕ: ${known(env.lighting)}`,
+    `ВИДИМОСТЬ: ${known(env.visibility)}`,
+    `ВЕТЕР: ${known(env.wind)}`,
+    `ОСАДКИ: ${known(env.precipitation)}`,
+  ];
 }
 
 /** Formats the AI result using the mandatory OBSIDIAN 4.1 turn structure without inventing missing data. */
@@ -17,18 +52,17 @@ export function formatGameMasterAnswer(
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const region = known(location?.region);
   const date = known(world.currentInGameDate);
-  const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
+  const timeMatch = date.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
-  const yearMatch = date.match(/(?:год|year)\s*[:№]?\s*(\d{1,4})|(?:^|\s|[,(])(\d{1,4})\s*(?:год|г\.?|year)(?:\s|[,(]|$)/i);
-  const yearValue = yearMatch ? (yearMatch[1] ?? yearMatch[2]) : null;
-  const year = yearValue ? `${yearValue}${/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : ""}` : "НЕ УСТАНОВЛЕНО";
-  const monthMatch = date.match(/(январ(?:ь|я)|феврал(?:ь|я)|март(?:а)?|апрел(?:ь|я)|ма(?:й|я)|июн(?:ь|я)|июл(?:ь|я)|август(?:а)?|сентябр(?:ь|я)|октябр(?:ь|я)|ноябр(?:ь|я)|декабр(?:ь|я))/i);
-  const month = monthMatch?.[1] ?? "НЕ УСТАНОВЛЕНО";
-  const day = monthMatch?.index !== undefined
-    ? (date.slice(0, monthMatch.index).match(/(?:^|\D)(\d{1,2})\s*$/)?.[1] ?? "НЕ УСТАНОВЛЕНО")
-    : "НЕ УСТАНОВЛЕНО";
+  const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
+  const year = numericDate ? String(numericDate.year) : "НЕ УСТАНОВЛЕНО";
+  const month = numericDate ? String(numericDate.month).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
+  const day = numericDate ? String(numericDate.day).padStart(2, "0") : "НЕ УСТАНОВЛЕНО";
+  const week = numericDate ? String(numericDate.week) : "НЕ УСТАНОВЛЕНО";
+  const weekday = numericDate ? String(numericDate.weekday) : "НЕ УСТАНОВЛЕНО";
   const hour = timeMatch ? Number(timeMatch[1]) : null;
   const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
+  const envLines = formatEnvironment(turn.environment ?? world.environment);
   const lines = [
     "════════════════════════════════════",
     `ХОД #${String(turnNumber).padStart(4, "0")} · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА`,
@@ -37,19 +71,17 @@ export function formatGameMasterAnswer(
     "",
     "КАМПАНИЯ:",
     known(world.campaignName),
-    "ИГРОВАЯ ДАТА:",
-    date,
     `ИГРОВОЙ ГОД: ${year}`,
     `МЕСЯЦ: ${month}`,
     `ДЕНЬ: ${day}`,
-    "ДЕНЬ НЕДЕЛИ: НЕ УСТАНОВЛЕНО",
+    `НЕДЕЛЯ ГОДА: ${week}`,
+    `ДЕНЬ НЕДЕЛИ: ${weekday}`,
     `ВРЕМЯ: ${time}`,
     `ВРЕМЯ СУТОК: ${timeOfDay}`,
     `МЕСТО: ${place}`,
     `РЕГИОН / ГОРОД / РАЙОН: ${region}`,
     `ТОЧНАЯ ЛОКАЦИЯ: ${place}`,
-    "ПОГОДА: НЕ УСТАНОВЛЕНО",
-    "ОСВЕЩЕНИЕ: НЕ УСТАНОВЛЕНО",
+    ...envLines,
     "",
     "────────────────────────────────────",
     "ПАМЯТЬ КАМПАНИИ",
@@ -84,6 +116,7 @@ export function formatGameMasterAnswer(
     `Изменение времени: ${turn.timeDeltaMinutes} мин.`,
     `Новая внутриигровая дата: ${known(turn.newInGameDate)}`,
     `Изменение позиции: ${turn.newLocationId ? (locations.find((item) => item.id === turn.newLocationId)?.name ?? "UNKNOWN — локация не найдена в реестре") : "не заявлено"}`,
+    turn.environmentReason ? `Изменение среды: ${turn.environmentReason}` : "",
     "",
     "────────────────────────────────────",
     "УЧЁТ РЕСУРСОВ",
@@ -95,9 +128,8 @@ export function formatGameMasterAnswer(
     "────────────────────────────────────",
     turn.nextAction || "Что делает персонаж?",
   ];
-  return lines.join("\n");
+  return lines.filter((line) => line !== "").join("\\n");
 }
-
 
 /** Formats the non-turn opening scene; it never consumes turn #0001. */
 export function formatCampaignOpening(
