@@ -22,7 +22,7 @@ describe("D&D 2024 baseline rules", () => {
   });
   it("calculates coin weight and exhaustion-adjusted D20 Tests", () => {
     expect(currencyWeightLb({ cp: 10, sp: 10, ep: 10, gp: 10, pp: 10 })).toBe(1);
-    expect(d20TestTotal(15, 14, 3, true, 1)).toBe(17);
+    expect(d20TestTotal(15, 14, 3, true, 1)).toBe(18);
   });
   it("does not falsely claim every rule domain is already implemented", () => {
     expect(DND_2024_RULE_COVERAGE.some(rule => rule.coverage === "REFERENCE_REQUIRED")).toBe(true);
