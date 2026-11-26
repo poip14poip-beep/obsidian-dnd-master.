@@ -475,15 +475,15 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     // separately carries full detail for recent and query-matched historical turns.
     fullCampaignChronicle: context.journal
       .filter((entry): entry is GameTurnEntry => entry.entryType === "GAME_TURN")
-      .slice(-300)
+      .slice(-150)
       .map((entry) => ({
         turnNumber: entry.turnNumber,
         inGameDate: entry.inGameDateAfter,
-        // Keep the complete chronological index compact. Recent and query-matched
-        // entries still carry their full text through recentJournal below.
-        summary: entry.summary.slice(0, 120),
-        playerIntent: entry.playerIntent.slice(0, 100),
-        worldOutcome: entry.worldOutcome.slice(0, 140),
+        // A short rolling index keeps chronology available without duplicating
+        // long prose; older matching turns remain retrievable via recentJournal.
+        summary: entry.summary.slice(0, 60),
+        playerIntent: entry.playerIntent.slice(0, 50),
+        worldOutcome: entry.worldOutcome.slice(0, 80),
       })),
     recentJournal: selectRelevantJournal(context.journal, context.action).map((entry) => {
       if (entry.entryType === "TECHNICAL_NOTE") {
