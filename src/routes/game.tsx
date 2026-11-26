@@ -390,7 +390,7 @@ function GamePage() {
         <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер · вступление</p>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{opening}</div>
-          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Это вступительная сцена, а не ход. Игровое время не продвинуто. Первое действие Лии будет записано как ход #0001.</p>
+          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Это вступительная сцена, а не ход. Игровое время не продвинуто. Первое действие персонажа будет записано как ход #0001.</p>
         </article>
       )}
 
@@ -415,7 +415,7 @@ function GamePage() {
               <div className="space-y-2 rounded-lg border border-status-approx/40 p-3">
                 <p className="text-xs font-semibold text-status-approx">Нужно уточнение · время не продвигается</p>
                 <p className="text-sm">{gmTurn.clarificationQuestion}</p>
-                <Textarea rows={2} value={clarificationAnswer} onChange={(event) => setClarificationAnswer(event.target.value)} placeholder="Уточни действие Лии…" />
+                <Textarea rows={2} value={clarificationAnswer} onChange={(event) => setClarificationAnswer(event.target.value)} placeholder="Уточни действие персонажа…" />
                 <Button type="button" variant="outline" disabled={!clarificationAnswer.trim()} onClick={handleApplyClarification}>Передать уточнение</Button>
               </div>
             )}
@@ -503,8 +503,8 @@ function GamePage() {
       {activePanel === "quests" && (
         <section className="panel-surface space-y-3 p-3">
           <div className="flex items-center justify-between gap-2"><h2 className="flex items-center gap-2 text-sm font-semibold"><ClipboardList className="h-4 w-4"/>Журнал заданий</h2><span className="mono-code text-xs">{(worldState.quests ?? []).length}</span></div>
-          <p className="text-xs text-muted-foreground">Здесь появляются только поручения, слухи и цели, о которых Лия действительно узнала. Скрытые задачи мира и NPC не отображаются.</p>
-          {(worldState.quests ?? []).length === 0 ? <div className="rounded-lg border border-dashed border-border p-5 text-center"><p className="text-sm font-medium">Пока нет известных заданий</p><p className="mt-1 text-xs text-muted-foreground">Когда Лия узнает о задании, слухе или обязательстве через реальный внутриигровой источник, мастер добавит его сюда.</p></div> : (worldState.quests ?? []).map((quest) => {
+          <p className="text-xs text-muted-foreground">Здесь появляются только поручения, слухи и цели, о которых персонаж действительно узнала. Скрытые задачи мира и NPC не отображаются.</p>
+          {(worldState.quests ?? []).length === 0 ? <div className="rounded-lg border border-dashed border-border p-5 text-center"><p className="text-sm font-medium">Пока нет известных заданий</p><p className="mt-1 text-xs text-muted-foreground">Когда персонаж узнает о задании, слухе или обязательстве через реальный внутриигровой источник, мастер добавит его сюда.</p></div> : (worldState.quests ?? []).map((quest) => {
             const statusLabel = quest.status === "RUMOR" ? "Слух / зацепка" : quest.status === "ACTIVE" ? "Активно" : quest.status === "ON_HOLD" ? "Отложено" : quest.status === "COMPLETED" ? "Выполнено" : "Провалено";
             return <article key={quest.id} className="space-y-2 rounded-lg border border-border bg-background/50 p-3">
               <div className="flex items-start justify-between gap-2"><h3 className="text-sm font-semibold">{quest.title}</h3><span className="rounded-md bg-secondary px-2 py-1 text-[10px]">{statusLabel}</span></div>
