@@ -6,15 +6,15 @@ import { cn } from "@/lib/utils";
 
 const CERTAINTY_META: Record<CertaintyStatus, { label: string; className: string }> = {
   KNOWN: {
-    label: "KNOWN",
+    label: "Подтверждено",
     className: "bg-status-known-bg text-status-known border-status-known/40",
   },
   APPROXIMATE: {
-    label: "APPROXIMATE",
+    label: "Приблизительно",
     className: "bg-status-approx-bg text-status-approx border-status-approx/40",
   },
   UNKNOWN: {
-    label: "UNKNOWN",
+    label: "Неизвестно",
     className: "bg-status-unknown-bg text-status-unknown border-status-unknown/40",
   },
 };
