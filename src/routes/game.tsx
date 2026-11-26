@@ -320,11 +320,11 @@ function GamePage() {
       </section>
 
       {opening && (
-        <section className="space-y-3 rounded-xl border border-primary/30 bg-card p-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">Вступительная сцена</p>
+        <article className="rounded-xl rounded-bl-sm bg-secondary/70 p-4">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер · вступление</p>
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{opening}</div>
-          <p className="border-t border-border pt-2 text-xs text-muted-foreground">Вступление не является действием Лии и не продвигает игровое время. Первое действие игрока будет записано как ход #0001.</p>
-        </section>
+          <p className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">Это вступительная сцена, а не ход. Игровое время не продвинуто. Первое действие Лии будет записано как ход #0001.</p>
+        </article>
       )}
 
       <section className="space-y-3" aria-live="polite">
