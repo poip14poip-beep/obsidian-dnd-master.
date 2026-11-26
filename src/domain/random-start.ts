@@ -172,6 +172,12 @@ export function generateRandomStart(
   const date = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
   const narrative = [
     "Стартовая сцена сгенерирована случайно для новой кампании. Метод: Web Crypto, равномерный выбор без смещения. Персонаж начинает с полными HP; случайные ранения без причины не назначаются.",
+    options.generateBackgroundKit
+      ? `Стартовый комплект сгенерирован по предыстории «${background}». Сохранены только подтверждённые одежда, броня и оружие; остальные вещи досье не переносятся.`
+      : "Подтверждённый инвентарь сохранён; новых предметов не добавлено.",
+    currency
+      ? `Случайный стартовый капитал: ${currency.gp} зм, ${currency.sp} см, ${currency.cp} мм.`
+      : "Денежный баланс сохранён без изменения.",
     `Место: ${city.name}, ${city.region}, ${city.continent}. В Хронике это один из шестнадцати главных городов; население — ${city.population.toLocaleString("ru-RU")}.`,
     `Дата: ${date}. Предыдущий маршрут персонажа и причина прибытия сюда UNKNOWN; они не додумываются.`,
     sceneText,
@@ -180,7 +186,11 @@ export function generateRandomStart(
   ].join("\n\n");
   const background = resolveBackground(options.background, index);
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
-  const backgroundKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
+  const generatedKit = options.generateBackgroundKit ? generateBackgroundKit(background, index) : [];
+  const alreadyHasClothing = retainedInventory.some((item) => /одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name));
+  const backgroundKit = alreadyHasClothing
+    ? generatedKit.filter((item) => !/одежд|роб|плащ|сапог|ботин|clothing|robe|cloak|boots/i.test(item.name))
+    : generatedKit;
   const inventory = [...retainedInventory, ...backgroundKit];
   const currency = options.generateBackgroundKit ? generateBackgroundCurrency(background, index) : undefined;
   const generatedAt = new Date().toISOString();
