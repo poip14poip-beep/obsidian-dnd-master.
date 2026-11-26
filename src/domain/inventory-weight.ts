@@ -33,8 +33,9 @@ export function calculatePlayerInventoryWeight(character: PlayerCharacterState, 
     else if (location === "DROPPED") droppedWeightLb += total;
   }
   const currency = character.currency;
-  const currencyValid = !!currency && Object.values(currency).every(amount => Number.isInteger(amount) && amount >= 0);
-  const currencyWeightLb = currencyValid ? Object.values(currency!).reduce((sum, amount) => sum + amount, 0) / 50 : null;
+  const currencyKeys = ["cp", "sp", "ep", "gp", "pp"] as const;
+  const currencyValid = !!currency && currencyKeys.every((key) => Number.isInteger(currency[key]) && currency[key] >= 0);
+  const currencyWeightLb = currencyValid ? currencyKeys.reduce((sum, key) => sum + currency![key], 0) / 50 : null;
   const totalKnownLoadLb = knownCarriedWeightLb + (currencyWeightLb ?? 0);
   const strength = character.abilityScores?.strength;
   const size = character.size;
