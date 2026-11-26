@@ -61,7 +61,7 @@ Important boundary: cloud snapshots are full backup archives of all 11 local col
 ## Backend inventory
 
 - Private schema: 16 tables, RLS enabled.
-- Registered migrations: 12.
+- Registered migrations: 12. The three new snapshot/security migration files are versioned in this branch; the nine older migration SQL files are not present in the current repository tree. The live database state has been inspected, but a clean Supabase project cannot yet be reconstructed from this branch's migration folder alone. Recover and version the original schema baseline before treating infrastructure as reproducible.
 - `obsidian-gm`: ACTIVE v14, JWT required.
 - `obsidian-api`: ACTIVE v6, JWT required.
 - `obsidian-app`: ACTIVE v8, serves the public app shell; JWT disabled only for this static public endpoint.
