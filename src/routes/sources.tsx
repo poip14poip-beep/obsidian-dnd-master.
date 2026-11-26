@@ -63,6 +63,9 @@ function SourcesPage() {
     if (!file) return;
     let text: string;
     try {
+      if (file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf") {
+        throw new Error("PDF не преобразуется в текст в текущей версии приложения. Загрузи .txt или .md с извлечённым текстом; встроенная проверенная справка SRD 5.2.1 уже доступна мастеру.");
+      }
       text = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось прочитать файл.");
