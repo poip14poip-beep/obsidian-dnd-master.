@@ -267,7 +267,7 @@ function TurnsPage() {
         <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !campaignActive} onClick={handleResolveAction}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
-        {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
+        {!campaignActive && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
         {gmError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger">{gmError}</div>}
         {gmTurn && (
           <div className="space-y-3 rounded-md border border-primary/30 bg-background/60 p-3">
@@ -363,7 +363,7 @@ function TurnsPage() {
           </span>
         </div>
 
-        {!worldState.setup.confirmed ? (
+        {!campaignActive ? (
           <div className="flex items-center gap-2 rounded border border-border bg-background/60 p-3 text-xs text-muted-foreground">
             <Lock className="h-4 w-4 shrink-0 text-status-approx" />
             Создание и commit игровых ходов заблокированы до завершения Мастера подготовки кампании.
