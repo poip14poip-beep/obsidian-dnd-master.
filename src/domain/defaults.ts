@@ -180,6 +180,7 @@ export function createEmptyTurnDraft(id = "draft-active"): TurnDraft {
     summary: "",
     playerIntent: "",
     worldOutcome: "",
+    campaignMemory: "",
     timeDeltaMinutes: 0,
     newInGameDate: "",
     newLocationId: "",
