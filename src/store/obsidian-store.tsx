@@ -1023,12 +1023,13 @@ export function ObsidianStoreProvider({
   const resetForTrialCampaign: ObsidianStoreValue["resetForTrialCampaign"] = useCallback(() => {
     const now = new Date().toISOString();
     const blank = createInitialCollections();
+    const { currency: _oldCurrency, ...characterWithoutCurrency } = collections.player_character_state;
     const next: ObsidianCollections = {
       ...blank,
       // Preserve verified source documents and the isolated player dossier import.
       sources: collections.sources,
       player_character_state: {
-        ...collections.player_character_state,
+        ...characterWithoutCurrency,
         stateVersion: collections.player_character_state.stateVersion + 1,
         hpCurrent: null,
         hpTemp: null,
@@ -1036,7 +1037,6 @@ export function ObsidianStoreProvider({
         conditions: [],
         resources: collections.player_character_state.resources.map((resource) => ({ ...resource, current: null })),
         inventory: [],
-        currency: undefined,
         updatedAt: now,
       },
       audit_log: {
