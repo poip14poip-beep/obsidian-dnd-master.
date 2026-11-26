@@ -74,9 +74,9 @@ function GamePage() {
   const currentLocation = locations.find((location) => location.id === worldState.currentLocationId);
   const dateParts = (worldState.currentInGameDate || "").split(" · ");
   const datePart = dateParts[0] ?? "";
-  const regularDateMatch = datePart.match(/^(\\d{1,2})\\s+(.+),\\s*(\\d+)\\s+год$/);
-  const intercalaryDateMatch = datePart.match(/^(.+),\\s*(\\d+)\\s+год$/);
-  const clockMatch = dateParts.slice(1).join(" ").match(/\\b([01]\\d|2[0-3]):([0-5]\\d)\\b/);
+  const regularDateMatch = datePart.match(/^(\d{1,2})\s+(.+),\s*(\d+)\s+год$/);
+  const intercalaryDateMatch = datePart.match(/^(.+),\s*(\d+)\s+год$/);
+  const clockMatch = dateParts.slice(1).join(" ").match(/\b([01]\d|2[0-3]):([0-5]\d)\b/);
   const displayYear = regularDateMatch?.[3] ?? intercalaryDateMatch?.[2] ?? "не установлен";
   const displayMonth = regularDateMatch?.[2] ?? (intercalaryDateMatch ? "межсезонный день" : "не установлен");
   const displayDay = regularDateMatch?.[1] ?? intercalaryDateMatch?.[1] ?? "не установлен";
