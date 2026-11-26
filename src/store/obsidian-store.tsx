@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
+import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
 import {
   buildBackupEnvelope,
   computeChecksum,
@@ -983,6 +984,7 @@ export function ObsidianStoreProvider({
         : previousWorld.calendarSystem,
       startInGameDate: input.date,
       currentInGameDate: input.date,
+      elapsedMinutes: 0,
       startLocationName: input.city.name,
       currentLocationId: locationId,
       startNarrative: input.narrative,
@@ -1363,7 +1365,12 @@ export function ObsidianStoreProvider({
       const nextTurnNumber = collections.session_log.lastTurnNumber + 1;
       const nextWorldVersion = ws.stateVersion + 1;
       const nextCharacterVersion = pc.stateVersion + 1;
-      const nextDate = activeDraft.newInGameDate.trim() || ws.currentInGameDate;
+      const nextElapsedMinutes = ws.elapsedMinutes + activeDraft.timeDeltaMinutes;
+      const isTechnicalCalendar = /технический календарь мастера экдрасиля 1\.0|technical calendar 1\.0/i.test(ws.calendarSystem);
+      const calculatedTechnicalDate = isTechnicalCalendar
+        ? advanceTechnicalDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
+        : null;
+      const nextDate = calculatedTechnicalDate ?? (activeDraft.newInGameDate.trim() || ws.currentInGameDate);
       const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;
       const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);
       const nextNpcs = [...collections.npcs];
@@ -1468,7 +1475,7 @@ export function ObsidianStoreProvider({
         stateVersion: nextWorldVersion,
         updatedAt: now,
         currentInGameDate: nextDate,
-        elapsedMinutes: ws.elapsedMinutes + activeDraft.timeDeltaMinutes,
+        elapsedMinutes: nextElapsedMinutes,
         currentLocationId: nextLocationId,
         consequences: nextConsequences,
       };
