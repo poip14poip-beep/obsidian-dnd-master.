@@ -83,9 +83,9 @@ describe("game master resolver", () => {
   it("strips attempted state mutations from opening output instead of rejecting the opening scene", async () => {
     const invalidOpening = {
       ...validTurn, timeDeltaMinutes: 1, hpDelta: -4,
-      newInGameDate: "invented date", newLocationId: "invented-location",
-      consequenceText: "A new consequence", questChanges: [{ action: "CREATE" }],
-      characterChanges: { inventory: [{ action: "ADD" }], resources: [], conditions: [], currencyDelta: { cp: 1, sp: 0, ep: 0, gp: 0, pp: 0 } },
+      newInGameDate: "invented date",
+      consequenceText: "A new consequence",
+      characterChanges: { inventory: [{ action: "ADD", name: "Лук", quantity: 1, notes: "Попытка выдать предмет", certainty: "KNOWN" }], resources: [], conditions: [], currencyDelta: { cp: 1, sp: 0, ep: 0, gp: 0, pp: 0 } },
     };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidOpening) }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch));
