@@ -217,7 +217,7 @@ export interface InventoryItem {
   quantity: number;
   notes: string;
   certainty: CertaintyStatus;
-  location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER";
+  location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER" | "UNKNOWN";
   unitWeightLb?: number | null;
   /** Whether this item is fixed character equipment or is recreated for each campaign start. */
   startPolicy?: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
@@ -243,6 +243,8 @@ export interface PlayerCharacterState {
   armorClass: number | null;
   abilityScores?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   proficiencyBonus?: number | null;
+  /** Size is required for carrying-capacity multipliers; UNKNOWN is never treated as Medium. */
+  size?: "TINY" | "SMALL" | "MEDIUM" | "LARGE" | "HUGE" | "GARGANTUAN" | "UNKNOWN";
   speedFeet?: number | null;
   hitDice?: string;
   savingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
