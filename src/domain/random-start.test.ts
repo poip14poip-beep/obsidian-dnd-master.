@@ -30,11 +30,11 @@ describe("generateRandomStart", () => {
     }
   });
 
-  it("uses the technical calendar for a generated date and time without inventing a quest", () => {
+  it("uses the technical calendar without inventing a clock time or quest", () => {
     const result = generateRandomStart(184, () => 0);
     expect(result.date).toContain("2000 год");
     expect(result.date).toContain("время не установлено");
-    expect(result.date).not.toMatch(/\\b[0-2]\\d:[0-5]\\d\\b/);
+    expect(result.date).not.toContain(":");
     expect(result.date).toContain("Технический календарь мастера 1.0");
     expect(result.narrative).toContain("не задание");
     expect(result.inventory).toEqual([]);
