@@ -203,15 +203,15 @@ function PlayPage() {
       const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
       setCandidate(generated);
       setBiographyBusy(false);
-      await generateBiographyWithMaster(generated);
+      await generateBiographyWithMaster(generated, true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     } finally {
       setBiographyBusy(false);
     }
   }
-  async function generateBiographyWithMaster(target: RandomCharacterResult | null = candidate) {
-    if (!target || biographyBusy || locked) return;
+  async function generateBiographyWithMaster(target: RandomCharacterResult | null = candidate, allowBusy = false) {
+    if (!target || (biographyBusy && !allowBusy) || locked) return;
     setBiographyBusy(true);
     setBiographyReady(false);
     setImportError(null);
