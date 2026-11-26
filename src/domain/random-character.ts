@@ -80,7 +80,7 @@ const item = (name:string,quantity:number,notes:string,slot:number):InventoryIte
 
 export interface RandomCharacterResult {
   character: Partial<PlayerCharacterState>;
-  summary: { name:string; className:string; background:string; species:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
+  summary: { name:string; className:string; classNameRu:string; background:string; backgroundRu:string; species:string; speciesRu:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
   rolls: string[];
 }
 
