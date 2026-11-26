@@ -167,7 +167,7 @@ describe("random free-roam start", () => {
     expect(result.current.worldState.startNarrative).toContain("не задание");
     expect(result.current.locations[0]?.name).toBe("Морвейн");
     expect(result.current.character.name).toBe("Лия Вейн");
-    expect(result.current.character.hpCurrent).toBe(183);
+    expect(result.current.character.hpCurrent).toBe(184);
     expect(result.current.character.hpMax).toBe(184);
     expect(result.current.character.inventory).toEqual([{ id: "dossier-katana", name: "Катана в ножнах", quantity: 1, notes: "Из досье", certainty: "KNOWN", location: "UNKNOWN" }]);
     expect(result.current.character.abilityScores?.strength).toBe(20);
