@@ -36,6 +36,8 @@ function PlayPage() {
   const [importError, setImportError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [serverReadiness, setServerReadiness] = useState<"CHECKING" | "READY" | "FAILED">("CHECKING");
+  const [serverReadinessError, setServerReadinessError] = useState<string | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
   const [biographyReady, setBiographyReady] = useState(false);
@@ -43,6 +45,39 @@ function PlayPage() {
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
+  useEffect(() => {
+    let cancelled = false;
+    async function checkServerReadiness() {
+      setServerReadiness("CHECKING");
+      setServerReadinessError(null);
+      try {
+        const env = readSupabaseEnv();
+        const { client, envResult } = getSupabaseAuthClient();
+        if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError || !sessionData.session?.access_token) throw new Error("Войдите в приложение, чтобы проверить серверные документы.");
+        const { data, error } = await client.functions.invoke("obsidian-gm", { body: { operation: "CHECK_SERVER_READINESS" } });
+        if (error) {
+          let detail = error.message || "Не удалось проверить серверные документы.";
+          if ("context" in error && error.context instanceof Response) {
+            const payload = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+            detail = payload?.error ?? detail;
+          }
+          throw new Error(detail);
+        }
+        if (!data?.ready) throw new Error("На сервере отсутствует один или несколько обязательных документов ОБСИДИАН / SRD / Экдрасиль.");
+        if (!cancelled) setServerReadiness("READY");
+      } catch (error) {
+        if (!cancelled) {
+          setServerReadiness("FAILED");
+          setServerReadinessError(error instanceof Error ? error.message : "Проверка серверных документов не выполнена.");
+        }
+      }
+    }
+    void checkServerReadiness();
+    return () => { cancelled = true; };
+  }, []);
+
   const characterReady = Boolean(
     character.name.trim() && character.name !== "UNKNOWN" &&
     character.hpMax !== null && character.armorClass !== null &&
@@ -52,7 +87,7 @@ function PlayPage() {
     character.weaponAttacks?.length && character.classFeaturesByLevel?.length
   );
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
-  const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
+  const verifiedCoreSourcesReady = serverReadiness === "READY" && requiredSourceTypes.every((type) =>
     sources.some((source) =>
       source.type === type && ((type === "GOVERNING_DOC" || type === "WORLD_CANON")
         ? source.serverManaged === true
@@ -80,7 +115,7 @@ function PlayPage() {
     setStartError(null);
     if (locked) return;
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском проверь серверную готовность ОБСИДИАН 4.1, Хронику Экдрасиля и, если персонаж загружен, его отдельный лист.");
+      setStartError(serverReadiness === "CHECKING" ? "Автоматическая проверка сервера ещё выполняется. Подожди несколько секунд." : serverReadinessError ?? "Автоматическая проверка серверных источников не пройдена. Обнови страницу или войди заново.");
       return;
     }
     if (!characterReady) {
@@ -508,8 +543,9 @@ function PlayPage() {
     {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
       <div><h2 className="text-lg font-semibold">Персонаж готов к кампании</h2><p className="text-sm text-muted-foreground">{character.name} · {character.speciesAndClass} · HP будут определены случайной стартовой ситуацией; неизвестные остатки ресурсов останутся UNKNOWN.</p></div>
       <p className="text-xs text-muted-foreground">Применится профиль ОБСИДИАН 4.1 / D&D 2024: SRD 5.2.1, броски через Web Crypto с показом результатов, XP, стандартный учёт нагрузки, базовые правила выживания, региональные встречи без универсальных таблиц, без PvP и без дополнительных правил смерти, кроме отдельно согласованных правил текущей кампании. Профиль можно изменить в настройках до первого игрового хода.</p>
+      <p className="text-xs text-muted-foreground">{serverReadiness === "CHECKING" ? "Автоматически проверяю ОБСИДИАН 4.1, SRD 5.2.1, Хронику Экдрасиля и руководство генерации…" : serverReadiness === "READY" ? "✓ Серверные документы автоматически проверены." : "Автоматическая проверка сервера не пройдена: " + (serverReadinessError ?? "неизвестная ошибка")}</p>
       {startError && <p role="alert" className="text-sm text-destructive">{startError}</p>}
-      <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
+      <Button className="w-full touch-target" disabled={startPending || serverReadiness !== "READY"} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
     </section>}
     {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайный персонаж ещё не подтверждён. Проверь его параметры и нажми «Подтвердить персонажа».</p>}
     {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/game">Перейти к игре</Link></div>}
