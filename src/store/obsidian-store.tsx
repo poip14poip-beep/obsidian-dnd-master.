@@ -606,6 +606,7 @@ export function ObsidianStoreProvider({
       const npc: NpcRecord = {
         ...input,
         id: makeId("npc"),
+        resources: input.resources ?? "UNKNOWN",
         knowledge: [],
         version: 1,
         history: [],
@@ -1356,19 +1357,19 @@ export function ObsidianStoreProvider({
         if (change.action === "CREATE") {
           nextNpcs.unshift({
             id: makeId("npc"), name: change.name, role: change.role, locationId, factionId,
-            goals: change.goals, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            goals: change.goals, resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [],
           });
         } else if (existingIndex >= 0) {
           const existing = nextNpcs[existingIndex]!;
           nextNpcs[existingIndex] = {
             ...existing, role: change.role, locationId: locationId ?? existing.locationId,
-            factionId: factionId ?? existing.factionId, goals: change.goals,
+            factionId: factionId ?? existing.factionId, goals: change.goals, resources: change.resources,
             attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             knowledge: [...existing.knowledge, ...knowledge], version: existing.version + 1,
             history: [...existing.history, {
               version: existing.version, changedAt: now, inGameDate: nextDate,
-              summary: `Цели: ${existing.goals}; отношение: ${existing.attitudeToPlayer}`,
+              summary: `Цели: ${existing.goals}; ресурсы: ${existing.resources ?? "UNKNOWN"}; отношение: ${existing.attitudeToPlayer}`,
               reason: change.reason,
             }],
           };
