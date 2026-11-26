@@ -80,7 +80,7 @@ const item = (name:string,quantity:number,notes:string,slot:number):InventoryIte
 
 export interface RandomCharacterResult {
   character: Partial<PlayerCharacterState>;
-  summary: { name:string; className:string; classNameRu:string; background:string; backgroundRu:string; species:string; speciesRu:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
+  summary: { name:string; className:string; background:string; species:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
   rolls: string[];
 }
 
@@ -224,5 +224,5 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
     notes:`Случайный персонаж 1 уровня, создан по адаптированному генератору Экдрасиля на основе D&D 2024 / SRD 5.2.1. Свободная повседневная магия в Экдрасиле отсутствует; сверхъестественные явления редки, ограничены и требуют конкретного источника. Класс: ${classLabel}; предыстория: ${backgroundLabel}; народ: ${speciesLabel}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
-  return {character,summary:{name:character.name!,className:classLabel,background:backgroundLabel,species:speciesLabel,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
+  return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }
