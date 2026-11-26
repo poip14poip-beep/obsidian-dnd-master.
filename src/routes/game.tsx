@@ -514,7 +514,7 @@ function GamePage() {
         <section className="space-y-3">
           <div className="panel-surface flex items-center justify-between gap-3 p-3">
             <div><p className="text-xs text-muted-foreground">Предметов и стеков</p><p className="text-xl font-semibold">{character.inventory.filter((item) => item.quantity > 0).length}</p></div>
-            <div className="text-right"><p className="text-xs text-muted-foreground">Известный вес</p><p className="text-xl font-semibold">{character.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined) ? character.inventory.reduce((sum, item) => sum + (item.unitWeightLb ?? 0) * item.quantity, 0).toFixed(1) + " lb" : "Частично известен"}</p></div>
+            <div className="text-right"><p className="text-xs text-muted-foreground">Известный вес</p><p className="text-xl font-semibold">{character.inventory.every((item) => item.unitWeightLb !== null && item.unitWeightLb !== undefined) ? (character.inventory.reduce((sum, item) => sum + (item.unitWeightLb ?? 0) * item.quantity, 0) + (character.currency ? Object.values(character.currency).reduce((sum, count) => sum + count, 0) / 50 : 0)).toFixed(1) + " lb" : "Частично известен"}</p></div>
           </div>
           <div className="panel-surface space-y-2 p-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold"><Backpack className="h-4 w-4"/>Снаряжение и предметы</h2>
