@@ -70,16 +70,16 @@ export function resolveTechnicalDate(dayOfYear: number, year: number, hour: numb
 export function advanceTechnicalDateByElapsedMinutes(startDate: string, elapsedMinutes: number): string | null {
   if (!Number.isInteger(elapsedMinutes) || elapsedMinutes < 0) return null;
   const parts = startDate.split(" · "); const datePart = parts[0]?.trim(); if (!datePart) return null;
-  const clockMatch = parts.slice(1).join(" · ").match(/(?:^|\\s)([01]\\d|2[0-3]):([0-5]\\d)(?:\\s|$)/);
+  const clockMatch = parts.slice(1).join(" · ").match(/(?:^|\s)([01]\d|2[0-3]):([0-5]\d)(?:\s|$)/);
   const initialHour = clockMatch ? Number(clockMatch[1]) : null; const initialMinute = clockMatch ? Number(clockMatch[2]) : null;
   let dayOfYear: number | null = null; let year: number | null = null;
-  const regular = datePart.match(/^(\\d{1,2})\\s+(.+),\\s*(\\d+)\\s+год$/);
+  const regular = datePart.match(/^(\d{1,2})\s+(.+),\s*(\d+)\s+год$/);
   if (regular) {
     const day = Number(regular[1]); year = Number(regular[3]);
     const monthIndex = TECHNICAL_SEASONS.flatMap((season) => season.months).findIndex((month) => month === regular[2]);
     if (monthIndex < 0 || day < 1 || day > 30) return null; dayOfYear = monthIndex * 30 + day;
   } else {
-    const intercalary = datePart.match(/^(.+),\\s*(\\d+)\\s+год$/); if (!intercalary) return null;
+    const intercalary = datePart.match(/^(.+),\s*(\d+)\s+год$/); if (!intercalary) return null;
     const index = INTERCALARY_DAYS.findIndex((name) => name === intercalary[1]); if (index < 0) return null;
     year = Number(intercalary[2]); dayOfYear = 360 + index + 1;
   }
