@@ -361,6 +361,7 @@ export interface AuditEntry {
   action:
     | "CAMPAIGN_RESET_FOR_TRIAL"
     | "SETUP_CONFIRMED"
+    | "PLAYER_CHARACTER_UPDATED"
     | "TURN_COMMITTED"
     | "TURN_COMMIT_FAILED"
     | "TECHNICAL_NOTE_ADDED"
