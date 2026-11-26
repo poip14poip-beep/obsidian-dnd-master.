@@ -1,5 +1,5 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange } from "./types";
-import { DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
+import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
 
 export interface GameMasterContext {
   action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -316,6 +316,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
     "=== РЕЕСТР ПРАВИЛ D&D 2024 / SRD 5.2.1 ===",
+    DND_2024_CORE_RULES_REFERENCE,
     `Ruleset: ${DND_2024_RULESET.id}; source: ${DND_2024_RULESET.source}; license: ${DND_2024_RULESET.license}.`,
     "Используй проверенные выдержки SRD из пользовательского контекста ниже, если они доступны; соблюдай точный текст и не расширяй его домыслами.",
     "Используй только редакцию 2024 / SRD 5.2.1 как базовую. Не смешивай с правилами 2014. Если конкретная способность, заклинание, предмет, класс, монстр или опциональное правило не переданы в доступных источниках, не выдумывай его текст и параметры: верни RULE UNCERTAINTY, назови недостающий источник и останови только затронутую часть разрешения.",
