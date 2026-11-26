@@ -93,9 +93,9 @@ export function extractDossierBasics(text: string): DossierBasics {
       certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
   }
   const personalInventoryRows = lines.flatMap((line, index) => {
-    const heading = line.replace(/^#{1,6}\\s*/, "");
-    if (!/^11\\.5\\./.test(heading)) return [];
-    const end = lines.findIndex((candidate, candidateIndex) => candidateIndex > index && /^11\\.6\\./.test(candidate.replace(/^#{1,6}\\s*/, "")));
+    const heading = line.replace(/^#{1,6}\s*/, "");
+    if (!/^11\.5\./.test(heading)) return [];
+    const end = lines.findIndex((candidate, candidateIndex) => candidateIndex > index && /^11\.6\./.test(candidate.replace(/^#{1,6}\s*/, "")));
     const rows = lines.slice(index + 1, end < 0 ? lines.length : end);
     return rows.flatMap((row) => {
       if (!row.includes("|")) return [];
