@@ -5,7 +5,7 @@ const SUPABASE_PUBLISHABLE_KEY =
   Deno.env.get("SUPABASE_ANON_KEY") ??
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   "";
-const OPENROUTER_API_KEY = Deno.env.get("OPENROUTER_API_KEY") ?? "";
+const ROUTERAI_API_KEY = Deno.env.get("ROUTERAI_API_KEY") ?? "";
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
@@ -17,11 +17,8 @@ const ALLOWED_ORIGINS = new Set([
 type JsonRecord = Record<string, unknown>;
 type ModelAttempt = { id: string; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
-  // Let OpenRouter select an available free model that supports JSON-schema output first.
-  { id: "openrouter/free", format: "schema" },
-  { id: "baidu/ernie-5.5-flash-preview:free", format: "schema" },
-  { id: "inclusionai/ling-3.2-flash:free", format: "schema" },
-  { id: "google/gemma-4-26b-a4b-it:free", format: "json" },
+  // DeepSeek V4.1 Flash: economical long-context reasoning model on RouterAI.
+  { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
 ];
 
 function corsHeaders(origin: string | null): HeadersInit {
@@ -120,10 +117,10 @@ Deno.serve(async (req: Request) => {
   if (authError || !authData.user) {
     return json({ error: { code: "INVALID_SESSION", message: "Your session is invalid or expired. Sign in again." } }, 401, cors);
   }
-  if (!OPENROUTER_API_KEY) {
+  if (!ROUTERAI_API_KEY) {
     return json({ error: {
-      code: "OPENROUTER_SECRET_MISSING",
-      message: "Не настроен бесплатный провайдер мастера. Добавь OPENROUTER_API_KEY в Supabase → Edge Functions → Secrets.",
+      code: "ROUTERAI_SECRET_MISSING",
+      message: "Не настроен RouterAI. Добавь ROUTERAI_API_KEY в Supabase → Edge Functions → Secrets.",
     } }, 503, cors);
   }
 
@@ -158,11 +155,11 @@ Deno.serve(async (req: Request) => {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: "obsidian_game_turn", strict: true, schema } }
         : { type: "json_object" };
-      const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+          "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
           "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
           "X-Title": "Obsidian D&D Master",
         },
@@ -170,7 +167,7 @@ Deno.serve(async (req: Request) => {
           model: attempt.id,
           messages,
           response_format: responseFormat,
-          provider: { data_collection: "deny", allow_fallbacks: true },
+          structured_outputs: true,
           temperature: 0.25,
           max_tokens: 8192,
         }),
@@ -188,18 +185,18 @@ Deno.serve(async (req: Request) => {
           const retryAfter = upstream.headers.get("retry-after");
           return json({
             error: {
-              code: "OPENROUTER_RATE_LIMITED",
-              message: "Бесплатный маршрут мастера временно ограничен по частоте запросов. Ничего не сохранено." +
+              code: "ROUTERAI_RATE_LIMITED",
+              message: "RouterAI временно ограничил частоту запросов. Ничего не сохранено." +
                 (retryAfter ? ` Повтори через ${retryAfter} сек.` : " Повтори немного позже."),
             },
           }, 429, cors);
         }
         if (upstream.status === 401 || upstream.status === 402 || upstream.status === 403) {
           return json({ error: {
-            code: upstream.status === 402 ? "OPENROUTER_PAYMENT_REQUIRED" : "OPENROUTER_AUTH_ERROR",
+            code: upstream.status === 402 ? "ROUTERAI_BALANCE_OR_PAYMENT_REQUIRED" : "ROUTERAI_AUTH_ERROR",
             message: upstream.status === 402
-              ? "OpenRouter вернул ошибку оплаты. Проверь, что выбран именно бесплатный вариант модели и на аккаунте нет платной маршрутизации."
-              : "OpenRouter не принял ключ или запрос. Проверь OPENROUTER_API_KEY и настройки аккаунта.",
+              ? "RouterAI сообщил о недостаточном балансе или платёжном ограничении. Проверь баланс."
+              : "RouterAI не принял ключ или запрос. Проверь ROUTERAI_API_KEY и настройки аккаунта.",
           } }, upstream.status, cors);
         }
         failures.push(`${attempt.id}: ${upstream.status} ${message}`);
@@ -235,8 +232,8 @@ Deno.serve(async (req: Request) => {
 
   return json({
     error: {
-      code: "FREE_MODEL_STACK_EXHAUSTED",
-      message: "Бесплатные модели сейчас недоступны или не вернули корректный ход. Ничего не сохранено. Повтори запрос позже. " + failures.join("; ").slice(0, 700),
+      code: "ROUTERAI_MODEL_UNAVAILABLE",
+      message: "Модель RouterAI недоступна или не вернула корректный ход. Ничего не сохранено. " + failures.join("; ").slice(0, 700),
     },
   }, 503, cors);
 });
