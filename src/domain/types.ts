@@ -219,6 +219,8 @@ export interface InventoryItem {
   certainty: CertaintyStatus;
   location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER";
   unitWeightLb?: number | null;
+  /** Whether this item is fixed character equipment or is recreated for each campaign start. */
+  startPolicy?: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
 
 /**
