@@ -314,11 +314,19 @@ function GamePage() {
         </div>
       );
     }
+    const dateText = entry.inGameDateAfter || "НЕ УСТАНОВЛЕНО";
+    const clockMatch = dateText.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
+    const hour = clockMatch ? Number(clockMatch[1]) : null;
+    const timeOfDay = hour === null ? "время суток не установлено" : hour < 5 ? "ночь" : hour < 12 ? "утро" : hour < 17 ? "день" : hour < 22 ? "вечер" : "ночь";
+    const place = locations.find((location) => location.id === entry.locationIdAfter)?.name ?? "место не установлено";
+    const temperature = entry.environment?.temperatureC === null || entry.environment?.temperatureC === undefined
+      ? "температура не установлена"
+      : `${entry.environment.temperatureC} °C${entry.environment.temperatureCertainty === "APPROXIMATE" ? " · приблизительно" : ""}`;
     return (
-      <article key={entry.id} className="space-y-2 rounded-xl border border-border bg-card p-3">
+      <article key={entry.id} className="space-y-3 rounded-xl border border-border bg-card p-3">
         <div className="flex items-center justify-between gap-2">
           <span className="mono-code text-xs font-semibold text-primary">ХОД #{String(entry.turnNumber).padStart(4, "0")}</span>
-          <span className="mono-code text-[10px] text-muted-foreground">{entry.inGameDateAfter}</span>
+          <span className="mono-code text-[10px] text-muted-foreground">{dateText}</span>
         </div>
         <div className="ml-auto max-w-[94%] rounded-xl rounded-br-sm bg-primary/10 p-3 text-sm">
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Ты</p>
@@ -328,13 +336,21 @@ function GamePage() {
           <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Мастер</p>
           <p className="whitespace-pre-wrap">{entry.gmNarration || entry.worldOutcome}</p>
         </div>
-        <p className="text-right text-[10px] text-muted-foreground">Время мира: +{entry.timeDeltaMinutes} мин · HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
+        <div className="grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg border border-border bg-background/60 p-2 text-[10px] text-muted-foreground sm:grid-cols-3">
+          <span>Дата: {dateText}</span>
+          <span>Время: {clockMatch ? `${clockMatch[1]}:${clockMatch[2]}` : "не установлено"}</span>
+          <span>Время суток: {timeOfDay}</span>
+          <span className="col-span-2 sm:col-span-1">Место: {place}</span>
+          <span>Температура: {temperature}</span>
+          <span>Время мира: +{entry.timeDeltaMinutes} мин</span>
+        </div>
+        <p className="text-right text-[10px] text-muted-foreground">HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
       </article>
     );
   }
 
   return (
-    <main className="mx-auto max-w-3xl space-y-4 p-4 pb-24">
+    <main className="mx-auto max-w-3xl space-y-4 p-4 pb-40">
       <header className="space-y-2">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -382,12 +398,6 @@ function GamePage() {
         <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p></div>
         <span className="shrink-0 text-muted-foreground">Ход #{String(nextTurnNumber).padStart(4, "0")}</span>
       </section>
-
-      <nav aria-label="Игровые вкладки" className="fixed inset-x-0 bottom-0 z-30 mx-auto grid max-w-3xl grid-cols-4 gap-1 border-t border-border bg-background/95 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur">
-        {([["chat", "Чат", Swords], ["inventory", "Инвентарь", Backpack], ["quests", "Задания", ClipboardList], ["knowledge", "Знания", BookOpen]] as const).map(([key, label, Icon]) => (
-          <Button key={key} type="button" size="icon" aria-label={label} title={label} variant={activePanel === key ? "default" : "ghost"} className="mx-auto h-11 w-12" onClick={() => setActivePanel(key)}><Icon className="h-5 w-5" /></Button>
-        ))}
-      </nav>
 
       {activePanel === "chat" && (
       <div className="space-y-4">
@@ -491,16 +501,6 @@ function GamePage() {
       {lastStorageError && <div role="alert" className="panel-surface text-sm text-status-danger">{lastStorageError}</div>}
       {gmBusy && <div className="flex items-center justify-center gap-2 py-2 text-xs text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />Мастер обрабатывает запрос…</div>}
 
-      {setupReady && (sessionLog.lastTurnNumber > 0 || opening) && !draftReady && !gmTurn && (
-        <section className="panel-surface space-y-2 p-3">
-          <Label htmlFor="player-action">Что делает {character.name}?</Label>
-          <Textarea id="player-action" rows={3} value={playerAction} onChange={(event) => setPlayerAction(event.target.value)} placeholder="Опиши действие своими словами. Можешь попытаться сделать что угодно — мастер проверит возможность, механику и последствия." />
-          <Button type="button" className="touch-target w-full" disabled={!playerAction.trim() || !session?.access_token || gmBusy} onClick={() => void handleResolveAction()}>
-            <Send className="mr-2 h-4 w-4" />{gmBusy ? "Мастер отвечает…" : "Отправить мастеру"}
-          </Button>
-        </section>
-      )}
-
       <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
         <Link to="/turns" className="underline underline-offset-2">Полный журнал ходов</Link>
         <Link to="/character" className="underline underline-offset-2">Лист персонажа</Link>
@@ -575,6 +575,41 @@ function GamePage() {
           {canonFacts.filter((fact) => fact.layer === "PLAYER_KNOWLEDGE").length > 0 && <div className="panel-surface space-y-2 p-3"><h3 className="text-sm font-semibold">Другие известные факты</h3>{canonFacts.filter((fact) => fact.layer === "PLAYER_KNOWLEDGE").map((fact) => <div key={fact.id} className="border-b border-border py-2 last:border-0"><p className="text-xs font-medium">{fact.title}</p><p className="text-xs">{fact.statement}</p><p className="mt-1 text-[10px] text-muted-foreground">{fact.certainty} · {fact.inGameDate} · {fact.acquisitionPath}</p></div>)}</div>}
         </section>
       )}
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.24)] backdrop-blur lg:left-64">
+        <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2 sm:px-4">
+          <div className="min-w-0 flex-1">
+            <Label htmlFor="player-action" className="sr-only">Действие персонажа</Label>
+            <Textarea
+              id="player-action"
+              rows={1}
+              value={playerAction}
+              onChange={(event) => setPlayerAction(event.target.value)}
+              onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (playerAction.trim() && setupReady && !draftReady && !gmTurn && !gmBusy && session?.access_token) { setActivePanel("chat"); void handleResolveAction(); } } }}
+              disabled={!setupReady || draftReady || Boolean(gmTurn) || gmBusy}
+              placeholder={!setupReady ? "Сначала подготовь кампанию…" : draftReady ? "Подтверди текущий ход выше…" : gmBusy ? "Мастер обрабатывает действие…" : "Что делает персонаж?…"}
+              className="min-h-11 max-h-24 resize-none text-sm"
+            />
+          </div>
+          <Button
+            type="button"
+            size="icon"
+            aria-label="Отправить действие мастеру"
+            title="Отправить действие мастеру"
+            className="h-11 w-11 shrink-0"
+            disabled={!playerAction.trim() || !session?.access_token || !setupReady || draftReady || Boolean(gmTurn) || gmBusy}
+            onClick={() => { setActivePanel("chat"); void handleResolveAction(); }}
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+          <div className="flex shrink-0 items-center gap-0.5 border-l border-border pl-1">
+            <Button type="button" size="icon" variant={activePanel === "inventory" ? "default" : "ghost"} aria-label="Инвентарь" title="Инвентарь" className="h-10 w-9" onClick={() => setActivePanel("inventory")}><Backpack className="h-4 w-4"/></Button>
+            <Button type="button" size="icon" variant={activePanel === "knowledge" ? "default" : "ghost"} aria-label="Журнал знаний" title="Журнал знаний" className="h-10 w-9" onClick={() => setActivePanel("knowledge")}><BookOpen className="h-4 w-4"/></Button>
+            <Button type="button" size="icon" variant={activePanel === "quests" ? "default" : "ghost"} aria-label="Журнал квестов" title="Журнал квестов" className="h-10 w-9" onClick={() => setActivePanel("quests")}><ClipboardList className="h-4 w-4"/></Button>
+          </div>
+        </div>
+        {draftReady && <p className="mx-auto max-w-3xl px-4 pb-1 text-[10px] text-status-approx">Ответ мастера — черновик. Проверь и подтверди его в чате, чтобы записать ход.</p>}
+      </div>
 
     </main>
   );
