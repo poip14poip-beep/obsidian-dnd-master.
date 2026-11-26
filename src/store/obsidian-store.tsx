@@ -1050,7 +1050,7 @@ export function ObsidianStoreProvider({
           (source.type === "SUPPLEMENTAL" && /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
         )
         .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
-          (source.reviewStatus !== "VERIFIED" || source.processing.status !== "PROCESSED")
+          (source.reviewStatus !== "VERIFIED" || source.processing?.status !== "PROCESSED")
           ? { ...source, contextEnabled: false }
           : source),
       player_character_state: {
