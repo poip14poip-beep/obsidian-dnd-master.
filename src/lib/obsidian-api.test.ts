@@ -6,6 +6,7 @@ import {
   loadCloudCampaign,
   loadLatestCloudCampaignSnapshot,
   saveCloudCampaignSnapshot,
+  saveLinkedCloudSnapshot,
   saveCloudTurnDraft,
 } from "@/lib/obsidian-api";
 
@@ -14,7 +15,24 @@ describe("obsidian-api client input guards", () => {
     const result = await createCloudCampaign("   ");
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe("INVALID_TITLE");
+  
+  it("keeps turns local when no cloud campaign is linked", async () => {
+    const result = await saveLinkedCloudSnapshot({
+      app: "Obsidian Control",
+      backupVersion: 2,
+      exportedAt: "2026-11-26T00:00:00.000Z",
+      storageDisclaimer: "test",
+      collections: {
+        sources: [], canon_facts: [], world_state: {} as never,
+        player_character_state: {} as never, npcs: [], factions: [], locations: [],
+        timeline_events: [], turn_drafts: [], session_log: { schemaVersion: 1, lastTurnNumber: 0, entries: [] },
+        audit_log: { schemaVersion: 1, entries: [] },
+      },
+      checksums: {} as never,
+    });
+    expect(result).toEqual({ ok: true, skipped: true });
   });
+});
 
   it("rejects empty or malformed campaign IDs before bootstrap", async () => {
     const empty = await loadCloudCampaign(" ");
