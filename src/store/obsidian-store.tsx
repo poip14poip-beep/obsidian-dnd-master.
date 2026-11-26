@@ -24,7 +24,7 @@ import {
   type PersistVerifyResult,
   type StorageLike,
 } from "@/domain/storage";
-import { saveLinkedCloudSnapshot } from "@/lib/obsidian-api";
+import { saveLinkedCloudSnapshot, setCloudCampaignLink } from "@/lib/obsidian-api";
 import type {
   AuditEntry,
   AuditLogState,
@@ -1099,7 +1099,13 @@ export function ObsidianStoreProvider({
         }],
       },
     };
-    return commitCollections(next);
+    const result = commitCollections(next);
+    if (result.ok) {
+      setCloudCampaignLink(null);
+      setCloudSyncStatus("IDLE");
+      setCloudSyncMessage(null);
+    }
+    return result;
   }, [collections, commitCollections]);
 
   const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback((patch = {}) => {
