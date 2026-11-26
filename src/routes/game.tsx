@@ -47,7 +47,8 @@ function GamePage() {
   const governingReady = sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
   const canonReady = sources.some((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
   const dossierReady = sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
-  const setupReady = worldState.setup.confirmed && governingReady && canonReady && character.name.trim() !== "" && character.name !== "UNKNOWN";
+  const dossierRequired = character.name === "Лия Вейн";
+  const setupReady = worldState.setup.confirmed && governingReady && canonReady && character.name.trim() !== "" && character.name !== "UNKNOWN" && (!dossierRequired || dossierReady);
   const currentLocation = locations.find((location) => location.id === worldState.currentLocationId);
   const journalEntries = sessionLog.entries;
 
@@ -245,7 +246,7 @@ function GamePage() {
           <ul className="space-y-1 text-xs">
             <li className={governingReady ? "text-status-verified" : "text-status-approx"}>{governingReady ? "✓" : "○"} ОБСИДИАН 4.1</li>
             <li className={canonReady ? "text-status-verified" : "text-status-approx"}>{canonReady ? "✓" : "○"} Хроника Экдрасиля</li>
-            <li className={dossierReady ? "text-status-verified" : "text-status-approx"}>{dossierReady ? "✓" : "○"} Досье персонажа {dossierReady ? "прикреплено" : "(необязательно, если лист заполнен вручную)"}</li>
+            <li className={dossierReady ? "text-status-verified" : "text-status-approx"}>{dossierReady ? "✓" : "○"} Досье персонажа {dossierReady ? "прикреплено" : dossierRequired ? "(обязательно для Лии Вейн)" : "(необязательно, если лист заполнен вручную)"}</li>
             <li className={worldState.setup.confirmed ? "text-status-verified" : "text-status-approx"}>{worldState.setup.confirmed ? "✓" : "○"} Мастер подготовки подтверждён</li>
           </ul>
           <div className="flex flex-wrap gap-2">
@@ -370,7 +371,7 @@ function GamePage() {
         <div role="alert" className="panel-surface text-sm text-status-danger">{lastStorageError}</div>
       )}
 
-      {setupReady && (sessionLog.lastTurnNumber > 0 || opening) && !draftReady && (
+      {setupReady && (sessionLog.lastTurnNumber > 0 || opening) && !draftReady && !gmTurn && (
         <section className="panel-surface space-y-2 p-3">
           <Label htmlFor="player-action">Что делает {character.name}?</Label>
           <Textarea id="player-action" rows={3} value={playerAction} onChange={(event) => setPlayerAction(event.target.value)} placeholder="Опиши действие своими словами. Можно попытаться сделать что угодно — мастер оценит возможность, риски и механику." />
