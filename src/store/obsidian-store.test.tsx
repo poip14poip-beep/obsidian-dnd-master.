@@ -56,6 +56,7 @@ function createReadySetupCollections() {
   initial.player_character_state.level = 21;
   initial.player_character_state.proficiencyBonus = 6;
   initial.player_character_state.abilityScores = { strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 };
+  initial.player_character_state.inventory = [{ id: "dossier-katana", name: "Катана в ножнах", quantity: 1, notes: "Из досье", certainty: "KNOWN", location: "UNKNOWN" }];
   return initial;
 }
 
@@ -153,8 +154,9 @@ describe("random free-roam start", () => {
     expect(result.current.character.name).toBe("Лия Вейн");
     expect(result.current.character.hpCurrent).toBe(183);
     expect(result.current.character.hpMax).toBe(184);
-    expect(result.current.character.inventory.some((item) => item.name === "Катана в ножнах")).toBe(true);
-    expect(result.current.character.inventory.find((item) => item.name === "Старые письма")?.location).toBe("STORED");
+    expect(result.current.character.inventory).toEqual([{ id: "dossier-katana", name: "Катана в ножнах", quantity: 1, notes: "Из досье", certainty: "KNOWN", location: "UNKNOWN" }]);
+    expect(result.current.character.abilityScores?.strength).toBe(20);
+    expect(result.current.character.proficiencyBonus).toBe(6);
     expect(result.current.sessionLog.lastTurnNumber).toBe(0);
     expect(result.current.sessionLog.entries).toHaveLength(0);
     expect(result.current.worldState.setup.confirmed).toBe(false);
