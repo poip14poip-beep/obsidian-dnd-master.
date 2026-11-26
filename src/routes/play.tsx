@@ -9,6 +9,8 @@ import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/ra
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { extractDocxText } from "@/domain/docx-text";
 import { processSourceContent } from "@/domain/source-processing";
+import type { CharacterBiography } from "@/domain/types";
+import { getSupabaseAuthClient, readSupabaseEnv } from "@/lib/supabase-auth";
 
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
@@ -36,6 +38,8 @@ function PlayPage() {
   const [startPending, setStartPending] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
+  const [biographyBusy, setBiographyBusy] = useState(false);
+  const [biographyConsent, setBiographyConsent] = useState(false);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -143,6 +147,49 @@ function PlayPage() {
       setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     }
   };
+  async function generateBiographyWithMaster() {
+    if (!candidate || biographyBusy || !biographyConsent || locked) return;
+    setBiographyBusy(true);
+    setImportError(null);
+    try {
+      const env = readSupabaseEnv();
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+      const { data, error } = await client.auth.getSession();
+      if (error || !data.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
+      const response = await fetch(env.config.url + "/functions/v1/obsidian-gm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + data.session.access_token, apikey: env.config.publishableKey },
+        body: JSON.stringify({
+          operation: "GENERATE_CHARACTER_BIOGRAPHY",
+          model: "obsidian-free",
+          instructions: "Создай полную индивидуальную биографию персонажа Экдрасиля по закрытым источникам. Верни только структурированный JSON по схеме сервера. Не меняй механику персонажа.",
+          input: JSON.stringify({
+            action: "Создание биографии случайного персонажа Экдрасиля",
+            character: candidate.character,
+            mechanicalSummary: candidate.summary,
+            randomRolls: candidate.rolls,
+          }),
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { output_text?: string; error?: { message?: string } } | null;
+      if (!response.ok || !payload?.output_text) throw new Error(payload?.error?.message ?? "Мастер не вернул биографию.");
+      const biography = JSON.parse(payload.output_text) as CharacterBiography;
+      if (!biography || typeof biography.biography !== "string" ||
+          biography.birthplace !== candidate.character.biography?.birthplace ||
+          biography.birthplaceSource !== candidate.character.biography?.birthplaceSource ||
+          JSON.stringify(biography.canonBasis) !== JSON.stringify(candidate.character.biography?.canonBasis) ||
+          !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
+          !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2) {
+        throw new Error("Биография не прошла проверку структуры или изменила подтверждённое происхождение. Механика не изменена.");
+      }
+      setCandidate({ ...candidate, character: { ...candidate.character, biography } });
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
+    } finally {
+      setBiographyBusy(false);
+    }
+  }
   const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -286,6 +333,13 @@ function PlayPage() {
       </div>
       <div className="grid grid-cols-3 gap-2">{Object.entries(candidate.summary.abilityScores).map(([key,value])=><div className="rounded bg-muted/40 p-2 text-center" key={key}><p className="text-xs text-muted-foreground">{key.toUpperCase()}</p><p className="text-xl font-bold">{value}</p></div>)}</div>
       <div className="space-y-1 text-sm"><p><strong>Навыки:</strong> {candidate.summary.skills.join(", ")}</p><p><strong>Снаряжение:</strong> {candidate.summary.equipment.join("; ")}</p><p><strong>Особенности:</strong> {candidate.summary.features.join(" ")}</p></div>
+      <div className="rounded border border-primary/30 p-3 space-y-2">
+        <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
+        <p className="text-xs text-muted-foreground">Сейчас показана временная заготовка. Мастер может сформировать индивидуальную историю по канону, не меняя броски, характеристики, класс, предысторию, снаряжение или место рождения.</p>
+        <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={biographyConsent} onChange={(event) => setBiographyConsent(event.target.checked)} className="mt-0.5"/>Я разрешаю отправить параметры этого персонажа в RouterAI. Запрос может расходовать баланс подключённого сервиса.</label>
+        <Button type="button" variant="outline" disabled={locked || biographyBusy || !biographyConsent} onClick={() => void generateBiographyWithMaster()}>{biographyBusy ? "Мастер пишет биографию…" : "Сформировать биографию мастером"}</Button>
+        {candidate.character.biography?.lifeEvents?.length > 1 && <p className="text-xs text-emerald-500">Индивидуальная биография получена и проверена. Механические параметры сохранены без изменений.</p>}
+      </div>
       <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
       <p className="text-xs text-muted-foreground">Генератор сейчас использует поддерживаемые варианты SRD 5.2.1: Боец, Плут, Варвар; Дварф или Эльф; Солдат, Преступник, Послушник или Мудрец. Послушник и Мудрец адаптированы под Экдрасиль: вместо свободного колдовства — ритуальная и исследовательская подготовка. Места рождения выбираются среди 16 подтверждённых главных городов трёх континентов. Полный список классов пока не включён.</p>
       {importError && <p role="alert" className="text-xs text-destructive">{importError}</p>}

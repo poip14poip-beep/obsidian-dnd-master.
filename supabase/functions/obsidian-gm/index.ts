@@ -197,7 +197,8 @@ Deno.serve(async (req: Request) => {
   if (!commonRequestValid || (!isBiographyRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
-  const schema: JsonRecord = isBiographyRequest ? biographySchema : (body as JsonRecord).text as JsonRecord && (((body as JsonRecord).text as JsonRecord).format as JsonRecord).schema as JsonRecord;
+  const requestBody = body as JsonRecord;
+  const schema: JsonRecord = isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
   const schemaName = isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
@@ -238,9 +239,9 @@ Deno.serve(async (req: Request) => {
       message: "В постоянную базу мастера ещё не добавлен SRD 5.2.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
-  let actionText = body.input.toLowerCase();
+  let actionText = requestBody.input.toLowerCase();
   try {
-    const parsedInput = JSON.parse(body.input);
+    const parsedInput = JSON.parse(requestBody.input);
     if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText = parsedInput.action.toLowerCase();
   } catch { /* use raw input for matching */ }
   const mappedTerms: string[] = [];
@@ -288,7 +289,7 @@ Deno.serve(async (req: Request) => {
     masterPrompt,
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
-    body.instructions,
+    requestBody.instructions,
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
@@ -303,7 +304,7 @@ Deno.serve(async (req: Request) => {
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
     { role: "system", content: serverInstructions },
-    { role: "user", content: body.input },
+    { role: "user", content: requestBody.input },
   ];
   const failures: string[] = [];
   for (const attempt of MODEL_ATTEMPTS) {
