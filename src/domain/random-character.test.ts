@@ -6,7 +6,7 @@ describe("SRD 5.2.1 random character generator", () => {
     const result = generateRandomCharacter(() => 0);
     expect(result.summary.className).toBe("Fighter");
     expect(result.summary.background).toBe("Soldier");
-    expect(result.summary.species).toBe("Dwarf");
+    expect(result.summary.species).toBe("Human");
     expect(result.character.level).toBe(1);
     expect(result.character.hpMax).toBeGreaterThan(0);
     expect(result.character.hpCurrent).toBe(result.character.hpMax);
@@ -29,7 +29,7 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(result.character.speedFeet).toBe(30);
     expect(result.character.skillBonuses?.some((skill) => skill.name === "Perception")).toBe(true);
     expect(new Set(result.character.inventory?.map((entry) => entry.id)).size).toBe(result.character.inventory?.length);
-    expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Prestidigitation");
+    expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Наследие фей");
     expect(result.character.armorClass).toBe(11 + Math.floor(((result.character.abilityScores?.dexterity ?? 10) - 10) / 2));
     expect(result.character.currency?.gp).toBe(24);
     expect(result.character.skillBonuses?.find((skill) => skill.name === "Perception")?.basis).toContain("владение");

@@ -46,7 +46,7 @@ const BACKGROUND_DATA = {
   Criminal: { abilities:["dexterity","constitution","intelligence"] as Ability[], feat:"Alert", skills:["Sleight of Hand","Stealth"], tool:"Воровские инструменты", gear:[["Кинжал",2,"1d4 колющий; Finesse, Light"],["Воровские инструменты",1,"Инструмент"],["Ломик",1,"Инструмент"],["Мешочек",2,"Контейнер"],["Дорожная одежда",1,"Одежда"],["Золотые монеты",16,"16 GP"]] },
 } as const;
 
-const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string}> = {
+const SPECIES_DATA: Record<SpeciesKey,{size:"MEDIUM";speed:number;hp:number;traits:string;skill?:string;skillOptions?:string[];skillCount?:number}> = {
   Human:{size:"MEDIUM",speed:30,hp:0,traits:"Народная гибкость (домашнее правило Экдрасиля): владение одним навыком на выбор." ,skill:""},
   Elf:{size:"MEDIUM",speed:30,hp:0,traits:"Наследие фей: преимущество на спасброски для избегания или окончания состояния Очарован; транс: 4 часа медитации вместо сна; острые чувства — владение Восприятием.",skill:"Perception"},
   "Dark Elf":{size:"MEDIUM",speed:30,hp:0,traits:"Сумеречное зрение (домашнее правило Экдрасиля): тёмное зрение 60 футов; выдержка: владение одним навыком из Проницательности или Выживания.",skill:""},
@@ -84,7 +84,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const speciesData=SPECIES_DATA[species];
   const elfLineage: ElfLineage | null = null;
   // SRD 5.2.1: Keen Senses grants proficiency in Perception; it is not a choice among skills.
-  const elfKeenSkill = speciesData.skill && speciesData.skill.length > 0 ? speciesData.skill : null;
+  const speciesSkills:string[] = speciesData.skill ? [speciesData.skill] : [];\n  const speciesSkillPool=[...(speciesData.skillOptions ?? [])];\n  while(speciesSkills.length < (speciesData.skillCount ?? 0)){const picked=choose(speciesSkillPool,random);speciesSkillPool.splice(speciesSkillPool.indexOf(picked),1);speciesSkills.push(picked);}\n  const elfKeenSkill = speciesSkills[0] ?? null;
   const rolls=ABILITIES.map((ability)=>({ability,total:rollStat(random)}));
   // Assign rolled scores to abilities in random order, then apply the background's legal ability increases.
   const shuffled=[...ABILITIES];
