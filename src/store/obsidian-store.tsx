@@ -1074,34 +1074,29 @@ export function ObsidianStoreProvider({
   const resetForTrialCampaign: ObsidianStoreValue["resetForTrialCampaign"] = useCallback(() => {
     const now = new Date().toISOString();
     const blank = createInitialCollections();
-    const { currency: _oldCurrency, ...characterWithoutCurrency } = collections.player_character_state;
+    const preservedSources = collections.sources
+      .filter((source) =>
+        source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
+        source.id === DEFAULT_SOURCE_IDS.CANON ||
+        source.id === DEFAULT_SOURCE_IDS.SRD ||
+        (source.type === "SUPPLEMENTAL" &&
+          /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) &&
+          source.reviewStatus === "VERIFIED" && source.contextEnabled),
+      )
+      .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
+        (source.reviewStatus !== "VERIFIED" || source.processing?.status !== "PROCESSED")
+        ? { ...source, contextEnabled: false }
+        : source);
+    const nextCharacter = {
+      ...blank.player_character_state,
+      stateVersion: collections.player_character_state.stateVersion + 1,
+      updatedAt: now,
+    };
     const next: ObsidianCollections = {
       ...blank,
-      // Preserve verified source documents and the isolated player dossier import.
-      sources: collections.sources
-        .filter((source) =>
-          source.id === DEFAULT_SOURCE_IDS.GOVERNING ||
-          source.id === DEFAULT_SOURCE_IDS.CANON ||
-          source.id === DEFAULT_SOURCE_IDS.DOSSIER ||
-          source.id === DEFAULT_SOURCE_IDS.SRD ||
-          (source.type === "SUPPLEMENTAL" && /SRD\s*5\.2\.1|D&D\s*2024|DND\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`) && source.reviewStatus === "VERIFIED" && source.contextEnabled),
-        )
-        .map((source) => source.id === DEFAULT_SOURCE_IDS.SRD &&
-          (source.reviewStatus !== "VERIFIED" || source.processing?.status !== "PROCESSED")
-          ? { ...source, contextEnabled: false }
-          : source),
-      player_character_state: {
-        ...characterWithoutCurrency,
-        stateVersion: collections.player_character_state.stateVersion + 1,
-        hpCurrent: null,
-        hpTemp: null,
-        currentLocationLabel: "UNKNOWN",
-        conditions: [],
-        resources: collections.player_character_state.resources.map((resource) => ({ ...resource, current: null })),
-        inventory: [],
-        notes: "",
-        updatedAt: now,
-      },
+      // Preserve only world/rules sources. Discard the old player dossier and all character data.
+      sources: [...preservedSources, ...blank.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)],
+      player_character_state: nextCharacter,
       audit_log: {
         ...blank.audit_log,
         entries: [{
@@ -1109,14 +1104,14 @@ export function ObsidianStoreProvider({
           timestamp: now,
           action: "CAMPAIGN_RESET_FOR_TRIAL",
           status: "OK",
-          details: "Создано чистое состояние пробной кампании. Источники и PLAYER_CHARACTER_STATE сохранены; старые NPC, фракции, локации, факты, события, ходы и журнал не перенесены. Перед сбросом пользователь подтвердил создание резервной копии.",
+          details: "Текущее состояние кампании очищено в приложении. Сохранены только источники правил и хроники; прежнее досье персонажа, персонаж, NPC, фракции, локации, факты, события, вступление, черновики и игровые ходы удалены из активного состояния.",
           campaignVersion: blank.world_state.stateVersion,
-          characterVersion: collections.player_character_state.stateVersion + 1,
+          characterVersion: nextCharacter.stateVersion,
           turnNumber: null,
           checksumSnapshot: computeChecksum({
             resetAt: now,
-            preservedSourceIds: collections.sources.map((source) => source.id),
-            characterVersion: collections.player_character_state.stateVersion + 1,
+            preservedSourceIds: preservedSources.map((source) => source.id),
+            characterVersion: nextCharacter.stateVersion,
           }),
         }],
       },
