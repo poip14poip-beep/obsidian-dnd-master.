@@ -286,7 +286,9 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   if (!environment || !Number.isFinite(environment["temperatureC"] === null ? 0 : environment["temperatureC"]) ||
       !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(environment["temperatureCertainty"])) ||
       ["weather", "lighting", "visibility", "wind", "precipitation", "ambientSounds", "ambientSmells", "notes"].some((key) => typeof environment[key] !== "string") ||
-      typeof turn["environmentReason"] !== "string") {
+      typeof turn["environmentReason"] !== "string" || !(turn["environmentReason"] as string).trim() ||
+      (environment["temperatureC"] === null && environment["temperatureCertainty"] === "KNOWN") ||
+      (environment["temperatureC"] !== null && environment["temperatureCertainty"] === "UNKNOWN")) {
     throw new GameMasterError("Мастер не вернул полный блок текущего окружения.", "INVALID_ENVIRONMENT");
   }
   if (!Array.isArray(turn["questChanges"])) throw new GameMasterError("Мастер не вернул список изменений журнала заданий.", "INVALID_QUEST_CHANGES");
@@ -547,7 +549,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     if (turn.needsClarification || turn.rolls.length > 0 || turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 ||
       turn.newInGameDate !== context.world.currentInGameDate || turn.newLocationId !== null ||
       turn.consequenceText.trim().length > 0 || turn.npcChanges.length > 0 || turn.questChanges.length > 0 ||
-      (context.world.environment !== undefined && JSON.stringify(turn.environment) !== JSON.stringify(context.world.environment)) ||
+      (context.world.environment !== undefined && Object.entries(context.world.environment).some(([key, value]) => turn.environment[key as keyof WorldEnvironment] !== value)) ||
       c.inventory.length > 0 || c.resources.length > 0 || c.conditions.length > 0 || currencyChanged) {
       throw new GameMasterError("Вступление попыталось изменить состояние кампании. Изменения отклонены.", "OPENING_MUTATION_REJECTED");
     }
