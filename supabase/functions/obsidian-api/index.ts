@@ -157,8 +157,8 @@ Deno.serve(async (req: Request) => {
       case "save_snapshot": {
         if (!hasOnlyKeys(body, ["action", "campaign_id", "parent_revision", "turn_number", "payload"]) ||
             typeof body.campaign_id !== "string" ||
-            !Number.isSafeInteger(body.parent_revision) || Number(body.parent_revision) < 0 ||
-            !Number.isSafeInteger(body.turn_number) || Number(body.turn_number) < 0 ||
+            typeof body.parent_revision !== "number" || !Number.isSafeInteger(body.parent_revision) || body.parent_revision < 0 ||
+            typeof body.turn_number !== "number" || !Number.isSafeInteger(body.turn_number) || body.turn_number < 0 ||
             !isObject(body.payload)) {
           return json({ error: "INVALID_SAVE_SNAPSHOT_PAYLOAD" }, 400, cors);
         }
