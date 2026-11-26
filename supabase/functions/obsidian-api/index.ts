@@ -26,7 +26,7 @@ function getServerSecret(): string {
 const SERVER_SECRET = getServerSecret();
 
 const ALLOWED_ORIGINS = new Set([
-  "https://id-preview--f1a28b3c-1045-4cea-a6be-745d1ef02a64.lovable.app",
+  "https://poip14poip-beep.github.io",
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
