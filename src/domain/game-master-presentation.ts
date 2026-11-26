@@ -48,7 +48,7 @@ function sceneMetadata(turn: GameMasterTurn, world: WorldState, character: Playe
   const location = locations.find((item) => item.id === (turn.newLocationId ?? world.currentLocationId));
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const date = known(turn.newInGameDate) === "НЕ УСТАНОВЛЕНО" ? known(world.currentInGameDate) : known(turn.newInGameDate);
-  const timeMatch = date.match(/([01]\\d|2[0-3]):([0-5]\\d)/);
+  const timeMatch = date.match(/([01]\d|2[0-3]):([0-5]\d)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
   const hour = timeMatch ? Number(timeMatch[1]) : null;
   const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
