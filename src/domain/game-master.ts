@@ -273,7 +273,7 @@ function extractOutputText(payload: unknown): string {
   }
   throw new GameMasterError("В ответе модели нет текстового результата.", "MISSING_OUTPUT_TEXT");
 }
-function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[], knownQuests: CampaignQuest[] = []): GameMasterTurn {
+function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpcs: NpcRecord[], knownFactions: FactionRecord[], knownQuests: CampaignQuest[] = [], contextWorldEnvironment?: WorldEnvironment): GameMasterTurn {
   if (!value || typeof value !== "object") throw new GameMasterError("Модель вернула некорректную структуру хода.", "INVALID_TURN");
   const turn = value as Record<string, unknown>;
   const strings = ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "newInGameDate", "consequenceText", "clarificationQuestion"];
@@ -387,8 +387,13 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   const hasCharacterDelta = (changes["inventory"] as unknown[]).length > 0 ||
     (changes["resources"] as unknown[]).length > 0 || (changes["conditions"] as unknown[]).length > 0 ||
     Object.values(currency).some((amount) => amount !== 0);
-  const hasWorldDelta = (turn["npcChanges"] as unknown[]).length > 0 || turn["newLocationId"] !== null ||
-    (turn["consequenceText"] as string).trim().length > 0;
+  const baseEnvironment = contextWorldEnvironment ?? null;
+  const returnedEnvironment = environment as Record<string, unknown>;
+  const hasEnvironmentDelta = baseEnvironment
+    ? Object.entries(baseEnvironment).some(([key, value]) => returnedEnvironment[key] !== value)
+    : Object.entries(returnedEnvironment).some(([key, value]) => key === "temperatureC" ? value !== null : key === "temperatureCertainty" ? value !== "UNKNOWN" : key === "notes" ? value !== "" : value !== "UNKNOWN");
+  const hasWorldDelta = (turn["npcChanges"] as unknown[]).length > 0 || (turn["questChanges"] as unknown[]).length > 0 ||
+    turn["newLocationId"] !== null || (turn["consequenceText"] as string).trim().length > 0 || hasEnvironmentDelta;
   if ((turn["needsClarification"] || hasPendingRoll) && (
     (turn["timeDeltaMinutes"] as number) !== 0 || (turn["hpDelta"] as number) !== 0 ||
     hasCharacterDelta || hasWorldDelta
@@ -528,7 +533,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
-  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? []);
+  const turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
   if (/technical calendar 1\.0/i.test(context.world.calendarSystem)) {
     const before = parseTechnicalDateTime(context.world.currentInGameDate);
     const after = parseTechnicalDateTime(turn.newInGameDate);
