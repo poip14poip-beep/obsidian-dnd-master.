@@ -3,6 +3,7 @@ import {
   INTERCALARY_DAYS,
   TECHNICAL_CALENDAR_DAYS_PER_YEAR,
   TECHNICAL_SEASONS,
+  advanceTechnicalDateByElapsedMinutes,
   resolveTechnicalDate,
 } from "./technical-calendar";
 
@@ -42,4 +43,29 @@ describe("technical Ekdrasil calendar", () => {
     expect(() => resolveTechnicalDate(1, -1)).toThrow();
     expect(() => resolveTechnicalDate(1, 2000.5)).toThrow();
   });
+
+  it("advances the date only after full 24-hour periods since campaign start", () => {
+    const start = resolveTechnicalDate(91, 2000).formatted;
+    expect(advanceTechnicalDateByElapsedMinutes(start, 1439)).toContain("1 Солар, 2000 год");
+    expect(advanceTechnicalDateByElapsedMinutes(start, 1440)).toContain("2 Солар, 2000 год");
+    expect(advanceTechnicalDateByElapsedMinutes(start, 2880)).toContain("3 Солар, 2000 год");
+  });
+
+  it("crosses month, intercalary-day, and year boundaries", () => {
+    const beforeMonth = resolveTechnicalDate(30, 2000).formatted;
+    expect(advanceTechnicalDateByElapsedMinutes(beforeMonth, 1440)).toContain("1 Эльвар, 2000 год");
+
+    const beforeIntercalary = resolveTechnicalDate(360, 2000).formatted;
+    expect(advanceTechnicalDateByElapsedMinutes(beforeIntercalary, 1440)).toContain("День Пробуждения, 2000 год");
+
+    const lastDay = resolveTechnicalDate(365, 2000).formatted;
+    expect(advanceTechnicalDateByElapsedMinutes(lastDay, 1440)).toContain("1 Лиорен, 2001 год");
+  });
+
+  it("returns null for unsupported dates or invalid elapsed time", () => {
+    expect(advanceTechnicalDateByElapsedMinutes("UNKNOWN", 1440)).toBeNull();
+    expect(advanceTechnicalDateByElapsedMinutes(resolveTechnicalDate(1, 2000).formatted, -1)).toBeNull();
+    expect(advanceTechnicalDateByElapsedMinutes(resolveTechnicalDate(1, 2000).formatted, 1.5)).toBeNull();
+  });
+
 });
