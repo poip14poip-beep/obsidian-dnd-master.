@@ -144,13 +144,13 @@ const originsSchema: JsonRecord = {
     weaponBackground:{type:"string"},equipmentBackground:{type:"string"}
   },required:["skillOrigins","weaponBackground","equipmentBackground"]
 };
-const auditItem = { type: "string", maxLength: 180 };
-const auditList = { type: "array", items: auditItem, maxItems: 3 };
+const auditItem = { type: "string", maxLength: 140 };
+const auditList = { type: "array", items: auditItem, maxItems: 2 };
 const compatibilitySchema: JsonRecord = {
   type: "object", additionalProperties: false,
   properties: {
     status: { type: "string", enum: ["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"] },
-    summary: { type: "string", maxLength: 360 },
+    summary: { type: "string", maxLength: 260 },
     supportedFacts: auditList,
     conflicts: auditList,
     unknowns: auditList,
@@ -464,7 +464,7 @@ Deno.serve(async (req: Request) => {
     "Пересчитывай только выводимое из листа. Не угадывай неизвестное. UNKNOWN не конфликт. Неизвестные вес, деньги, остатки ресурсов и хранение не блокируют проверку: приложение нормализует старт отдельно. При старте сохраняются одежда, оружие и броня; прочий инвентарь генерируется отдельно по предыстории.",
     "В Экдрасиле нет свободной повседневной магии. Не переноси автоматически магические черты SRD. Магические эффекты, мутации и проклятия требуют явного подтверждения правилами и хроникой.",
     "Статусы: COMPATIBLE — существенных проблем нет; COMPATIBLE_WITH_NOTES — конфликтов нет, но есть UNKNOWN/заметки; INCOMPATIBLE — доказанное нарушение правила или канона; INSUFFICIENT_DATA — нельзя идентифицировать/проверить лист.",
-    "Краткий русский JSON строго по схеме. summary — до 2 коротких предложений. Не более 3 пунктов в каждом массиве, каждый до 18 слов. Не дублируй. supportedFacts — подтверждённое; conflicts — доказанные ошибки с полем и причиной; unknowns — неизвестное; requiredChanges — обязательные исправления. Пустой список — [].",
+    "Краткий русский JSON строго по схеме. summary — до 2 коротких предложений. Не более 2 пунктов в каждом массиве, каждый до 14 слов. Не дублируй. supportedFacts — подтверждённое; conflicts — доказанные ошибки с полем и причиной; unknowns — неизвестное; requiredChanges — обязательные исправления. Пустой список — [].",
     "=== ФРАГМЕНТЫ SRD 5.2.1 ===",
     rulesContext,
     "=== ФРАГМЕНТЫ ХРОНИКИ ЭКДРАСИЛЯ ===",
@@ -527,7 +527,7 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: isCompatibilityRequest ? 1400 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 3200 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 5000 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
         }),
         signal: AbortSignal.timeout(isCompatibilityRequest ? 40_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 45_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 35_000),
       });
