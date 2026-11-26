@@ -239,6 +239,11 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
     "ОБСИДИАН 4.1 должен быть загружен, обработан, проверен пользователем и включён в контекст ИИ.",
     "GOVERNING_SOURCE_NOT_READY",
   );
+  const rulesSources = context.sources.filter((source) =>
+    source.type === "SUPPLEMENTAL" && source.contentStatus === "ATTACHED" &&
+    source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
+    /SRD\\s*5\\.2\\.1|D&D\\s*2024|DND\\s*2024/i.test(`${source.title} ${source.originLabel} ${source.fileName ?? ""}`)
+  );
   const dossier = context.sources.find((source) =>
     source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED" &&
     source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
@@ -282,6 +287,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "resourceAccounting показывает затронутые ресурсы и явно отмечает, если изменений нет. nextAction заканчивается открытым вопросом без навязывания вариантов.",
       "Ответ должен быть на русском языке.",
       "В mechanics указывай точное правило/источник SRD 5.2.1 или ID подтверждённого rule source. Если покрытие домена REFERENCE_REQUIRED и текст конкретного правила не передан, явно укажи RULE UNCERTAINTY и не выдумывай DC, урон, дальность, длительность, стоимость действия или эффект.",
+      "Если подтверждённый источник SRD 5.2.1 прикреплён, сверяй конкретные правила с его текстом; при конфликте с более ранним пересказом используй подтверждённый SRD и сообщи о конфликте. Если источник не прикреплён, используй только встроенные базовые формулы и отмечай остальные правила как RULE UNCERTAINTY.",
       "Не заявляй, что вся система D&D 2024 полностью закодирована. Базовые формулы можно применять из встроенного реестра; классовые таблицы, полные описания заклинаний/предметов/монстров, состояния и ситуативные правила сверяй с переданным источником.",
       "Это свободная кампания: не подсовывай игроку задания и не формулируй обязательную цель. Завершай сцену открытым состоянием мира, а не списком квестов. События и предложения NPC допустимы только как естественные последствия их собственных целей и обстоятельств; игрок свободен проигнорировать их.",
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
