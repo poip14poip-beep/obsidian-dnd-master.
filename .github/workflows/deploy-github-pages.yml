@@ -41,6 +41,8 @@ jobs:
       - name: Build app for GitHub Pages
         env:
           GITHUB_PAGES: "true"
+          VITE_SUPABASE_URL: "https://dbchfgkdrqpjspptoezh.supabase.co"
+          VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_DSbvWZk4wHJ3CAcXeqwuUA_9F-FzB7J"
         run: bun run build
       - name: Prepare SPA fallback
         run: |
