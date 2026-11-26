@@ -24,7 +24,10 @@ function PlayPage() {
     const names = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
     const species = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
     const stats = Object.fromEntries(["strength","dexterity","constitution","intelligence","wisdom","charisma"].map(k => [k, rollAbility()]));
-    setCandidate({ ...stats, level: 1 });
+    const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
+    const speciesList = ["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"];
+    const draw = (list: string[]) => list[Math.floor(Math.random() * list.length)]!;
+    setCandidate({ ...stats, level: 1, classChoice: draw(classes), speciesChoice: draw(speciesList) });
     setMode("RANDOM");
     setConfirmed(false);
   };
@@ -62,7 +65,7 @@ function PlayPage() {
     const result = updatePlayerCharacter({
       name: "Новый персонаж (имя не задано)",
       nameCertainty: "APPROXIMATE",
-      speciesAndClass: "Случайная заготовка · " + (["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"][Math.floor(Math.random()*8)]) + " · " + (["Человек", "Эльф", "Дварф", "Полурослик", "Гном", "Тифлинг", "Драконорождённый"][Math.floor(Math.random()*7)]),
+      speciesAndClass: "Случайная заготовка · " + (String(candidate.classChoice) + " · " + String(candidate.speciesChoice),
       level: 1, hpCurrent: null, hpMax: null, armorClass: null,
       abilityScores: { strength:candidate.strength!, dexterity:candidate.dexterity!, constitution:candidate.constitution!, intelligence:candidate.intelligence!, wisdom:candidate.wisdom!, charisma:candidate.charisma! },
       statsCertainty: "APPROXIMATE",
@@ -92,7 +95,7 @@ function PlayPage() {
     </section>}
     {mode === "RANDOM" && candidate && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Случайная заготовка персонажа</h2>
-      <p className="text-sm text-muted-foreground">Характеристики: 4d6, отбрасывается наименьший кубик. Вид и класс будут выбраны при подтверждении.</p>
+      <p className="text-sm text-muted-foreground">Характеристики: 4d6, отбрасывается наименьший кубик. Вид: <strong>{candidate.speciesChoice}</strong> · класс: <strong>{candidate.classChoice}</strong>.</p>
       <div className="grid grid-cols-3 gap-2">{Object.entries(candidate).filter(([k])=>k!=="level").map(([k,v])=><div className="rounded bg-muted/40 p-2 text-center" key={k}><p className="text-xs text-muted-foreground">{k.toUpperCase()}</p><p className="text-xl font-bold">{v}</p></div>)}</div>
       <div className="rounded bg-muted/30 p-3 text-sm">HP, КД, навыки, владения, происхождение, снаряжение, заклинания и классовые особенности останутся UNKNOWN до следующего этапа заполнения и проверки по D&D 2024.</div>
       <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Перебросить характеристики</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить заготовку</Button></div>
