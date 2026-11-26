@@ -50,7 +50,7 @@ function GamePage() {
   const [draftChecked, setDraftChecked] = useState(false);
   const [explicitConfirm, setExplicitConfirm] = useState(false);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
-  const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge">("chat");
+  const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge" | "skills">("chat");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
@@ -395,8 +395,8 @@ function GamePage() {
       )}
 
       <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-xs">
-        <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p></div>
-        <span className="shrink-0 text-muted-foreground">Ход #{String(nextTurnNumber).padStart(4, "0")}</span>
+        <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p><p className="mt-1 text-[10px] text-muted-foreground">Ход #{String(nextTurnNumber).padStart(4, "0")}</p></div>
+        <Link to="/character" aria-label="Состояние персонажа" title="Состояние персонажа" className="flex shrink-0 flex-col items-center gap-1 rounded-lg border border-border bg-background/70 px-3 py-2 text-muted-foreground hover:text-foreground"><UserRound className="h-6 w-6"/><span className="text-[10px] font-semibold">Персонаж</span></Link>
       </section>
 
       {activePanel === "chat" && (
@@ -576,6 +576,17 @@ function GamePage() {
         </section>
       )}
 
+      {activePanel === "skills" && (
+        <section className="space-y-3">
+          <div className="panel-surface space-y-1 p-3"><h2 className="flex items-center gap-2 text-sm font-semibold"><UserRound className="h-4 w-4"/>Навыки и способности</h2><p className="text-xs text-muted-foreground">{character.name} · {character.speciesAndClass} · уровень {character.level ?? "не установлен"}</p><p className="text-[10px] text-muted-foreground">Показываются только значения из листа персонажа. Неустановленные бонусы не рассчитываются автоматически.</p></div>
+          <div className="panel-surface space-y-2 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Основные характеристики</h3>{character.abilityScores ? <div className="grid grid-cols-3 gap-2">{([["СИЛ", character.abilityScores.strength], ["ЛОВ", character.abilityScores.dexterity], ["ТЕЛ", character.abilityScores.constitution], ["ИНТ", character.abilityScores.intelligence], ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma]] as const).map(([label, score]) => <div key={label} className="rounded-lg border border-border bg-background/60 p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="text-lg font-semibold tabular-nums">{score}</p><p className="text-[10px] text-muted-foreground">{score >= 10 ? "+" : ""}{Math.floor((score - 10) / 2)}</p></div>)}</div> : <p className="text-xs text-muted-foreground">Характеристики не загружены.</p>}</div>
+          <div className="panel-surface space-y-2 p-3"><div className="flex items-center justify-between"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Навыки</h3><span className="text-[10px] text-muted-foreground">Бонус мастерства: {character.proficiencyBonus == null ? "не установлен" : `+${character.proficiencyBonus}`}</span></div>{!character.skillBonuses?.length ? <p className="text-xs text-muted-foreground">Навыки и бонусы не загружены.</p> : character.skillBonuses.map((skill, index) => <div key={`${skill.name}-${index}`} className="flex items-start justify-between gap-3 border-b border-border py-2 last:border-0"><div className="min-w-0"><p className="text-sm font-medium">{skill.name}</p><p className="text-[10px] text-muted-foreground">{skill.basis}</p></div><span className="mono-code shrink-0 text-sm font-semibold">{skill.bonus >= 0 ? "+" : ""}{skill.bonus}</span></div>)}</div>
+          <div className="panel-surface space-y-2 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Спасброски</h3>{character.savingThrowBonuses ? <div className="grid grid-cols-2 gap-2 text-xs">{(["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const).map((key) => { const labels = { strength: "Сила", dexterity: "Ловкость", constitution: "Телосложение", intelligence: "Интеллект", wisdom: "Мудрость", charisma: "Харизма" }; const value = character.savingThrowBonuses![key]; return <div key={key} className="flex justify-between rounded-md bg-background/60 px-2 py-2"><span>{labels[key]}</span><strong className="mono-code">{value >= 0 ? "+" : ""}{value}</strong></div>; })}</div> : <p className="text-xs text-muted-foreground">Бонусы спасбросков не установлены.</p>}</div>
+          <div className="panel-surface space-y-2 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Особенности класса</h3>{!character.classFeaturesByLevel?.length ? <p className="text-xs text-muted-foreground">Особенности класса не загружены.</p> : character.classFeaturesByLevel.map((entry) => <div key={entry.level} className="border-b border-border py-2 last:border-0"><p className="text-xs font-semibold">Уровень {entry.level}</p><p className="whitespace-pre-wrap text-xs">{entry.features}</p></div>)}</div>
+          <div className="panel-surface space-y-2 p-3"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Боевые параметры</h3><div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-md bg-background/60 p-2">Класс брони <strong className="float-right">{character.armorClass ?? "—"}</strong></div><div className="rounded-md bg-background/60 p-2">Скорость <strong className="float-right">{character.speedFeet == null ? "—" : `${character.speedFeet} фт.`}</strong></div><div className="rounded-md bg-background/60 p-2">Кость хитов <strong className="float-right">{character.hitDice || "—"}</strong></div><div className="rounded-md bg-background/60 p-2">HP <strong className="float-right">{character.hpCurrent ?? "—"}/{character.hpMax ?? "—"}</strong></div></div>{character.weaponAttacks?.length ? character.weaponAttacks.map((attack, index) => <div key={`${attack.weapon}-${index}`} className="border-t border-border pt-2 text-xs"><p className="font-semibold">{attack.weapon}</p><p className="text-muted-foreground">Атака {attack.attackBonus >= 0 ? "+" : ""}{attack.attackBonus} · урон {attack.damage} · мастерство {attack.mastery || "не указано"}</p></div>) : <p className="text-xs text-muted-foreground">Атаки оружием не загружены.</p>}</div>
+        </section>
+      )}
+
       <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.24)] backdrop-blur lg:left-64">
         <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2 sm:px-4">
           <div className="min-w-0 flex-1">
@@ -605,8 +616,9 @@ function GamePage() {
           </Button>
           <div className="flex shrink-0 items-center gap-0.5 border-l border-border pl-1">
             <Button type="button" size="icon" variant={activePanel === "inventory" ? "default" : "ghost"} aria-label="Инвентарь" title="Инвентарь" className="h-10 w-9" onClick={() => setActivePanel("inventory")}><Backpack className="h-4 w-4"/></Button>
-            <Button type="button" size="icon" variant={activePanel === "knowledge" ? "default" : "ghost"} aria-label="Журнал знаний" title="Журнал знаний" className="h-10 w-9" onClick={() => setActivePanel("knowledge")}><BookOpen className="h-4 w-4"/></Button>
             <Button type="button" size="icon" variant={activePanel === "quests" ? "default" : "ghost"} aria-label="Журнал квестов" title="Журнал квестов" className="h-10 w-9" onClick={() => setActivePanel("quests")}><ClipboardList className="h-4 w-4"/></Button>
+            <Button type="button" size="icon" variant={activePanel === "knowledge" ? "default" : "ghost"} aria-label="Журнал знаний" title="Журнал знаний" className="h-10 w-9" onClick={() => setActivePanel("knowledge")}><BookOpen className="h-4 w-4"/></Button>
+            <Button type="button" size="icon" variant={activePanel === "skills" ? "default" : "ghost"} aria-label="Навыки персонажа" title="Навыки персонажа" className="h-10 w-9" onClick={() => setActivePanel("skills")}><UserRound className="h-4 w-4"/></Button>
           </div>
         </div>
         {draftReady && <p className="mx-auto max-w-3xl px-4 pb-1 text-[10px] text-status-approx">Ответ мастера — черновик. Проверь и подтверди его в чате, чтобы записать ход.</p>}
