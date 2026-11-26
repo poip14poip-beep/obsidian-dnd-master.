@@ -39,7 +39,7 @@ function PlayPage() {
   const [startError, setStartError] = useState<string | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
-  const [biographyConsent, setBiographyConsent] = useState(false);
+  const [biographyReady, setBiographyReady] = useState(false);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -138,18 +138,26 @@ function PlayPage() {
     worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
   ]);
   const randomize = () => {
+    if (biographyBusy || locked) return;
     try {
-      const generated = generateRandomCharacter(secureIndex);
+      const generated = {
+        ...generateRandomCharacter(secureIndex),
+        generationSeed: Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join("-"),
+      };
       setCandidate(generated);
       setMode("RANDOM");
       setConfirmed(false);
+      setBiographyReady(false);
+      setImportError(null);
+      void generateBiographyWithMaster(generated);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     }
   };
-  async function generateBiographyWithMaster() {
-    if (!candidate || biographyBusy || !biographyConsent || locked) return;
+  async function generateBiographyWithMaster(target: RandomCharacterResult | null = candidate) {
+    if (!target || biographyBusy || locked) return;
     setBiographyBusy(true);
+    setBiographyReady(false);
     setImportError(null);
     try {
       const env = readSupabaseEnv();
@@ -189,7 +197,7 @@ function PlayPage() {
           typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
         throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
       }
-      setCandidate({ ...candidate, character: { ...candidate.character, biography } });
+      setCandidate((current) => current?.generationSeed === target.generationSeed ? { ...current, character: { ...current.character, biography } } : current);\n      setBiographyReady(true);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
     } finally {
@@ -298,7 +306,7 @@ function PlayPage() {
     {locked && <div className="rounded border border-amber-500/40 p-3 text-sm"><Lock className="mr-2 inline h-4 w-4"/>Кампания уже подтверждена или содержит игровые ходы. Изменение стартового персонажа заблокировано. <Button type="button" variant="destructive" size="sm" className="mt-3 w-full" onClick={handleResetCampaign}>Очистить активную кампанию и начать заново</Button></div>}{startError && locked && <p role="alert" className="text-sm text-destructive">{startError}</p>}
     <section className="grid gap-3 sm:grid-cols-2">
       <button disabled={locked} onClick={loadDossier} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><FileText className="mb-2 h-6 w-6"/><h2 className="font-semibold">Загрузить персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Распознать подтверждённые поля, показать неизвестные данные и только затем предложить импорт.</p></button>
-      <button disabled={locked} onClick={randomize} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><Dice5 className="mb-2 h-6 w-6"/><h2 className="font-semibold">Создать случайного персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Сгенерировать первичную заготовку с бросками характеристик, видом и классом.</p></button>
+      <button disabled={locked || biographyBusy} onClick={randomize} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><Dice5 className="mb-2 h-6 w-6"/><h2 className="font-semibold">Создать случайного персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Криптографические броски D&D 2024, затем мастер автоматически создаст биографию по канону Экдрасиля через RouterAI.</p></button>
     </section>
     {mode === "DOSSIER" && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Проверка досье перед импортом</h2>
@@ -423,15 +431,15 @@ function PlayPage() {
       </section>
       <div className="rounded border border-primary/30 p-3 space-y-2">
         <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
-        <p className="text-xs text-muted-foreground">Мастер создаст индивидуальную историю и объяснит происхождение каждого навыка, оружия и предмета снаряжения. Броски и механические параметры останутся неизменными.</p>
-        <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={biographyConsent} onChange={(event) => setBiographyConsent(event.target.checked)} className="mt-0.5"/>Я разрешаю отправить параметры этого персонажа в RouterAI. Запрос может расходовать баланс подключённого сервиса.</label>
-        <Button type="button" variant="outline" disabled={locked || biographyBusy || !biographyConsent} onClick={() => void generateBiographyWithMaster()}>{biographyBusy ? "Мастер пишет биографию…" : "Сформировать биографию мастером"}</Button>
-        {candidate.character.biography && candidate.character.biography.lifeEvents.length > 1 && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character.biography.ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character.biography.ageYears}</p><p>{candidate.character.biography.biography}</p><p className="text-xs text-muted-foreground">События: {candidate.character.biography.lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character.biography.weaponBackground}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character.biography.equipmentBackground}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character.biography.canonBasis.join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
+        <p className="text-xs text-muted-foreground">После случайных бросков приложение автоматически отправляет только параметры сгенерированного персонажа в RouterAI. Ключ хранится на сервере Supabase и не попадает в браузер. Запрос может расходовать баланс RouterAI.</p>
+        {biographyBusy && <p className="text-sm text-primary">Мастер изучает хронику Экдрасиля и создаёт индивидуальную историю, внешность, связи и объяснения навыков…</p>}
+        {!biographyBusy && !biographyReady && <div className="space-y-2"><p className="text-xs text-destructive">{importError || "Биография ещё не создана. Персонажа нельзя подтвердить без ответа мастера."}</p><Button type="button" variant="outline" disabled={locked} onClick={() => void generateBiographyWithMaster(candidate)}>Повторить генерацию через API</Button></div>}
+        {biographyReady && candidate.character.biography && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character.biography.ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character.biography.ageYears}</p><p>{candidate.character.biography.biography}</p><p className="text-xs text-muted-foreground">События: {candidate.character.biography.lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character.biography.weaponBackground}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character.biography.equipmentBackground}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character.biography.canonBasis.join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
       </div>
       <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
       <p className="text-xs text-muted-foreground">Сейчас доступны 7 народов Экдрасиля: люди, эльфы, тёмные эльфы, гномы, краснолюды, полуэльфы и зверолюди. Классы и предыстории выбираются из реализованных профилей; места рождения — из 16 подтверждённых городов хроники. Механические параметры рассчитываются генератором, а мастер пишет индивидуальное досье и объясняет происхождение навыков, оружия и снаряжения. Мутации и проклятия не добавляются автоматически.</p>
       {importError && <p role="alert" className="text-xs text-destructive">{importError}</p>}
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Создать другого</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить персонажа</Button></div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={locked || biographyBusy} onClick={randomize}>Создать другого</Button><Button disabled={locked || confirmed || biographyBusy || !biographyReady} onClick={confirmRandom}>Подтвердить персонажа</Button></div>
     </section>}
     {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Досье персонажа импортировано и сохранено отдельно от канона мира.</div>}
     {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
