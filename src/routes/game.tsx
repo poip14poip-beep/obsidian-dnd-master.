@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Lock, Send, ShieldCheck, Sparkles, Swords, UserRound } from "lucide-react";
+import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Cloud, Lock, RefreshCw, Send, ShieldCheck, Sparkles, Swords, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
@@ -31,6 +31,7 @@ function GamePage() {
   const {
     sources, worldState, character, canonFacts, npcs, factions, locations, timelineEvents,
     sessionLog, turnDraft, updateTurnDraft, checkTurnDraft, commitTurnDraft, saveOpeningScene, lastStorageError,
+    cloudSyncStatus, cloudSyncMessage, retryCloudSnapshot,
   } = useObsidianStore();
 
   const { session } = useAuth();
@@ -354,6 +355,24 @@ function GamePage() {
         </div>
         <p className="text-xs text-muted-foreground">Живой мастер · ОБСИДИАН 4.1 · D&D 5e (2024) · SRD 5.2.1</p>
       </header>
+
+      {cloudSyncStatus !== "IDLE" && (
+        <section role="status" className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-xs ${cloudSyncStatus === "ERROR" ? "border-status-danger/50 bg-status-danger-bg/30" : "border-border bg-background/50"}`}>
+          <div className="flex items-start gap-2">
+            <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+            <div>
+              <p className="font-semibold text-foreground">{cloudSyncStatus === "SAVING" ? "Сохранение облачной копии" : cloudSyncStatus === "SAVED" ? "Облачная копия подтверждена" : "Облачное сохранение не выполнено"}</p>
+              <p className="text-muted-foreground">{cloudSyncMessage}</p>
+              {cloudSyncStatus === "ERROR" && <p className="mt-1 text-muted-foreground">Игровой ход уже сохранён локально. Облачная копия не подтверждена.</p>}
+            </div>
+          </div>
+          {cloudSyncStatus === "ERROR" && (
+            <Button type="button" variant="secondary" size="sm" className="touch-target" onClick={() => void retryCloudSnapshot()}>
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Повторить сохранение
+            </Button>
+          )}
+        </section>
+      )}
 
       <section className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-2 text-xs">
         <div className="min-w-0"><p className="truncate font-semibold text-foreground">{worldState.startLocationName || "Место не установлено"}</p><p className="truncate text-muted-foreground">{worldState.currentInGameDate || "Дата не установлена"}</p></div>
