@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatGameMasterAnswer } from "./game-master-presentation";
+import { formatCampaignOpening, formatGameMasterAnswer } from "./game-master-presentation";
 import type { GameMasterTurn } from "./game-master";
 import { createInitialCollections } from "./defaults";
 
@@ -31,5 +31,16 @@ describe("OBSIDIAN 4.1 GM answer formatting", () => {
     expect(answer).toContain("RAW / МЕХАНИКА");
     expect(answer).toContain("СЛЕДУЮЩЕЕ ДЕЙСТВИЕ");
     expect(answer).toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
+  });
+
+  it("shows a confirmed approximate year and labels the opening as outside turn numbering", () => {
+    const state = createInitialCollections();
+    state.world_state.currentInGameDate = "2000 год (APPROXIMATE; точные день и время UNKNOWN)";
+    const opening = formatCampaignOpening(turn, state.world_state, state.player_character_state, []);
+    expect(opening).toContain("ВСТУПЛЕНИЕ · ПЕРЕД ХОДОМ #0001");
+    expect(opening).toContain("ИГРОВОЙ ГОД: 2000 (APPROXIMATE)");
+    expect(opening).toContain("МЕСЯЦ: НЕ УСТАНОВЛЕНО");
+    expect(opening).toContain("НЕ ИГРОВОЙ ХОД");
+    expect(opening).not.toContain("ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА");
   });
 });
