@@ -287,6 +287,8 @@ export interface PlayerCharacterState {
   name: string;
   nameCertainty: CertaintyStatus;
   speciesAndClass: string;
+  /** Background/предыстория used to generate the campaign's random non-fixed starter kit. */
+  background?: string;
   biography?: CharacterBiography;
   level: number | null;
   classLevel?: number | null;
