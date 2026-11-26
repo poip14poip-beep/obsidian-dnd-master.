@@ -64,6 +64,7 @@ export function buildSessionLogMarkdown(collections: ObsidianCollections): strin
       `Summary: ${entry.summary}`,
       `World outcome: ${entry.worldOutcome}`,
       entry.gmNarration ? `GM narration:\n\n${entry.gmNarration}` : "",
+      entry.campaignMemory ? `Campaign memory (derived index; verify against current state):\n\n${entry.campaignMemory}` : "",
       entry.npcChanges?.length ? `NPC changes:\n\n${JSON.stringify(entry.npcChanges, null, 2)}` : "",
       `HP delta: ${entry.hpDelta}`,
       `Character changes: ${JSON.stringify(entry.characterChanges ?? null)}`,
