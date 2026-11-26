@@ -56,7 +56,7 @@ function GamePage() {
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
   const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
-      source.type === type && (type === "GOVERNING_DOC"
+      source.type === type && ((type === "GOVERNING_DOC" || type === "WORLD_CANON")
         ? source.serverManaged === true
         : source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
           source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true)
@@ -405,7 +405,11 @@ function GamePage() {
           <p className="text-sm text-muted-foreground">Нужны подтверждённая подготовка, обработанные и проверенные источники ОБСИДИАН 4.1 / Хроника / досье, а также полный лист персонажа. Никакая сцена не создаётся на основании неподтверждённых или пустых источников.</p>
           <ul className="space-y-1 text-xs">
             {requiredSourceTypes.map((type) => {
-              const ready = sources.some((source) => source.type === type && source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true);
+              const ready = sources.some((source) => source.type === type && (
+                (type === "GOVERNING_DOC" || type === "WORLD_CANON")
+                  ? source.serverManaged === true
+                  : source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+              ));
               const label = type === "GOVERNING_DOC" ? "ОБСИДИАН 4.1" : type === "WORLD_CANON" ? "Хроника Экдрасиля" : "Досье персонажа";
               return <li key={type} className={ready ? "text-status-verified" : "text-status-approx"}>{ready ? "✓" : "○"} {label}</li>;
             })}
