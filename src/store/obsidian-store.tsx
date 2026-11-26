@@ -69,6 +69,7 @@ export interface CampaignParametersPatch {
   startNarrative?: string;
   startGeneration?: WorldState["startGeneration"];
   encumbranceMode?: WorldState["encumbranceMode"];
+  campaignPreferences?: WorldState["campaignPreferences"];
   setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
 }
 
@@ -1027,6 +1028,7 @@ export function ObsidianStoreProvider({
         ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
         ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
         encumbranceMode: patch.encumbranceMode ?? ws.encumbranceMode,
+        campaignPreferences: patch.campaignPreferences ?? ws.campaignPreferences,
         setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
       };
       return commitCollections({ ...collections, world_state: nextWorld });
@@ -1098,6 +1100,7 @@ export function ObsidianStoreProvider({
       ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
       ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
       encumbranceMode: patch.encumbranceMode ?? currentWorld.encumbranceMode,
+      campaignPreferences: patch.campaignPreferences ?? currentWorld.campaignPreferences,
       setup: patch.setupPatch ? { ...currentWorld.setup, ...patch.setupPatch } : currentWorld.setup,
     };
     const pc = collections.player_character_state;
@@ -1147,6 +1150,10 @@ export function ObsidianStoreProvider({
           "Укажите название кампании, дату, стартовую точку и режим учёта нагрузки перед подтверждением старта.",
         report: lastIntegrityReport,
       };
+    }
+    const preferenceValues = Object.values(ws.campaignPreferences ?? {});
+    if (preferenceValues.length !== 10 || preferenceValues.some((value) => !value.trim())) {
+      return { ok: false, error: "Не согласованы все настройки Приложения B: книги и опциональные правила, броски, прогрессия, питание/жажда, случайные встречи, PvP, смерть/воскрешение, экономика, границы содержания и домашние правила. Для неиспользуемого пункта явно укажи «Не используется».", report: lastIntegrityReport };
     }
     if (!pc.name.trim() || pc.name.trim() === "UNKNOWN") {
       return {
