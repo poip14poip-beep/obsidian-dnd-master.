@@ -175,6 +175,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   id:
     | '__root__'
     | '/'
