@@ -61,10 +61,12 @@ describe("player dossier summary extraction", () => {
     expect(result.classFeaturesByLevel).toHaveLength(2);
     expect(result.weaponAttacks).toHaveLength(2);
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
-    expect(result.inventory).toHaveLength(4);
+    expect(result.inventory).toHaveLength(5);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER" });
-    expect(result.inventory.some((item) => item.name === "Инструменты кузнеца")).toBe(false);
+    expect(result.inventory).toContainEqual(expect.objectContaining({
+      name: "Инструменты кузнеца", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER",
+    }));
     expect(result.inventory).toContainEqual(expect.objectContaining({
       name: "Набор дорожного ремонта", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER",
     }));
