@@ -62,65 +62,37 @@ export function extractDossierBasics(text: string): DossierBasics {
   const speedMatch = normalizedText.match(/Скорость\s*\|\s*(\d+)\s*фут/i);
   const hitDiceMatch = normalizedText.match(/Кость хитов\s*\|\s*([\d]+d\d+)/i);
   const inventory: DossierInventoryItem[] = [];
-  let inventoryLocation: "WORN" | "CARRIED" | "UNKNOWN" | null = null;
-  let inventoryStartPolicy: DossierInventoryItem["startPolicy"] | null = null;
+  let inventoryLocation: "WORN" | "CARRIED" | null = null;
+  const weaponOrArmorOrClothing = (name: string) =>
+    /катан|меч|кинжал|лук|арбалет|копь|топор|секир|посох|щит|стрел|болт|дротик|пращ|дубин|рапир|шпаг|молот|цеп|боеприпас|weapon|sword|katana|dagger|bow|crossbow|arrow|bolt|spear|axe|shield|staff|rapier|mace|chain|armor|armour|доспех|брон|кольчуг|латы|панцир|кожан|одежд|роб|плащ|сапог|ботин|перчат|пояс|шляп|капюшон|обув|туник|куртк|накидк|cloak|boots|clothing|robe|coat|gloves|belt|hood|tunic/i.test(name);
   for (const line of lines) {
     const heading = line.replace(/^#{1,6}\s*/, "");
-    if (/^11\.1\./.test(heading)) {
-      inventoryLocation = "WORN";
-      inventoryStartPolicy = "KEEP_FROM_DOSSIER";
-    } else if (/^11\.2\./.test(heading)) {
-      inventoryLocation = "UNKNOWN";
-      inventoryStartPolicy = "KEEP_FROM_DOSSIER";
-    } else if (/^11\.[3-5]\./.test(heading)) {
-      inventoryLocation = "UNKNOWN";
-      // These are explicit sections of the player dossier, not generated starter gear.
-      inventoryStartPolicy = "KEEP_FROM_DOSSIER";
-    } else if (/^11\.(?:6|7|8|9|10|11)\./.test(heading) || /^12\./.test(heading)) {
-      inventoryLocation = null;
-      inventoryStartPolicy = null;
-    }
-    if (!inventoryLocation || !inventoryStartPolicy || !line.includes("|")) continue;
+    if (/^11\.1\./.test(heading)) inventoryLocation = "WORN";
+    else if (/^11\.2\./.test(heading)) inventoryLocation = "CARRIED";
+    else if (/^11\./.test(heading) || /^12\./.test(heading)) inventoryLocation = null;
+    if (!inventoryLocation || !line.includes("|")) continue;
     const cells = line.split("|").map((cell) => cell.trim());
     if (cells.length < 2 || /^(?:кол-во|количество)$/i.test(cells[0]!) || /^(?:предмет|оружие)$/i.test(cells[1]!)) continue;
-    const quantityText = cells[0]!;
-    const quantityMatch = quantityText.match(/^(\d+)(?!\s*[–—-])/);
-    if (!quantityMatch || /[–—-]/.test(quantityText) || /дня|дней|недел/i.test(quantityText)) continue;
-    if (!quantityMatch) continue;
+    const quantityMatch = cells[0]!.match(/^(\d+)(?!\s*[–—-])/);
+    if (!quantityMatch || /[–—-]/.test(cells[0]!) || /дня|дней|недел/i.test(cells[0]!)) continue;
     const quantity = Number(quantityMatch[1]!);
     if (!Number.isInteger(quantity) || quantity < 1) continue;
     const name = cells[1]!.replace(/^["«]|["»]$/g, "").trim();
-    if (!name) continue;
-    const unitNote = quantityText.replace(/^\d+\s*/, "").trim();
+    if (!name || !weaponOrArmorOrClothing(name)) continue;
+    const unitNote = cells[0]!.replace(/^\d+\s*/, "").trim();
     const notes = [unitNote, cells.slice(2).join(" | ")].filter(Boolean).join("; ");
     const explicitLocation = /^(?:Катана в ножнах|Кинжал)$/i.test(name) ? "CARRIED" as const : inventoryLocation;
-    const explicitLocationNote = explicitLocation === "CARRIED" && name === "Катана в ножнах" ? "Досье указывает: закреплена по диагонали на спине." : explicitLocation === "CARRIED" && name === "Кинжал" ? "Досье указывает ножны кинжала на поясе." : "";
-    inventory.push({ name, quantity, notes: [notes, explicitLocationNote].filter(Boolean).join("; "), location: explicitLocation, startPolicy: inventoryStartPolicy,
+    const explicitLocationNote = explicitLocation === "CARRIED" && name === "Катана в ножнах"
+      ? "Досье указывает: закреплена по диагонали на спине."
+      : explicitLocation === "CARRIED" && name === "Кинжал"
+        ? "Досье указывает ножны кинжала на поясе." : "";
+    inventory.push({
+      name, quantity, notes: [notes, explicitLocationNote].filter(Boolean).join("; "),
+      location: explicitLocation, startPolicy: "KEEP_FROM_DOSSIER",
       ...( /Cloak of Protection/i.test(name) ? { attunement: "UNKNOWN" as const } : {}),
-      certainty: /[–—-]/.test(quantityText) ? "APPROXIMATE" : "KNOWN" });
-  }
-  const personalInventoryRows = lines.flatMap((line, index) => {
-    const heading = line.replace(/^#{1,6}\s*/, "");
-    if (!/^11\.5\./.test(heading)) return [];
-    const end = lines.findIndex((candidate, candidateIndex) => candidateIndex > index && /^11\.6\./.test(candidate.replace(/^#{1,6}\s*/, "")));
-    const rows = lines.slice(index + 1, end < 0 ? lines.length : end);
-    return rows.flatMap((row) => {
-      if (!row.includes("|")) return [];
-      const cells = row.split("|").map((cell) => cell.trim());
-      if (cells.length < 2 || /^(?:предмет|кол-во|количество)$/i.test(cells[0]!)) return [];
-      const name = cells[0]!;
-      if (!name || /^(?:описание|назначение)$/i.test(cells[1]!)) return [];
-      return [{
-        name,
-        quantity: 1,
-        notes: `Агрегированная запись из раздела личных вещей; точное количество и текущее местоположение UNKNOWN. ${cells.slice(1).join(" | ")}`,
-        location: "UNKNOWN" as const,
-        certainty: "APPROXIMATE" as const,
-        startPolicy: "KEEP_FROM_DOSSIER" as const,
-      }];
+      certainty: "KNOWN",
     });
-  });
-  inventory.push(...personalInventoryRows);
+  }
   const section = (startPrefix: string, endPrefix: string): string[] => {
     const clean = (line: string) => line.replace(/^#{1,6}\s*/, "").trim();
     const start = lines.findIndex((line) => clean(line).startsWith(startPrefix));
