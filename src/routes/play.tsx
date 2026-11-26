@@ -124,7 +124,7 @@ function PlayPage() {
     }
     try {
       const generated = generateRandomStart(character.hpMax ?? 0, undefined, {
-        background: character.background ?? undefined,
+        ...(character.background ? { background: character.background } : {}),
         retainedInventory: character.inventory,
         generateBackgroundKit: character.sourceDossierId !== "GENERATED_RANDOM",
       });
@@ -437,13 +437,13 @@ function PlayPage() {
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
-      background: parsed.background ?? undefined,
+      ...(parsed.background ? { background: parsed.background } : {}),
       inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: "KEEP_FROM_DOSSIER" as const, ...(item.attunement ? { attunement: "UNKNOWN" as const } : {}) })),
       resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.max, max: item.max, recovery: item.recovery, certainty: item.certainty })),
       conditions: [],
       // Starting money is generated from the character's background at campaign start.
       currentLocationLabel: "Будет определено при запуске кампании",
-      notes: "Загружено из проверенного досье. Новая кампания автоматически начинает персонажа с полными HP, нулевыми временными HP, восстановленными классовыми ресурсами, без состояний и с нулевым стартовым балансом, если иное не указано в листе. Стартовая локация назначается при запуске кампании.",
+      notes: "Загружено из проверенного досье. Новая кампания автоматически начинает персонажа с полными HP, нулевыми временными HP, восстановленными классовыми ресурсами, без состояний и со случайным стартовым балансом по предыстории. Стартовая локация назначается при запуске кампании.",
     });
     if (result.ok) setConfirmed(true);
   };
