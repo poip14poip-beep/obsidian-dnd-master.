@@ -1062,6 +1062,7 @@ export function ObsidianStoreProvider({
         conditions: [],
         resources: collections.player_character_state.resources.map((resource) => ({ ...resource, current: null })),
         inventory: [],
+        notes: "",
         updatedAt: now,
       },
       audit_log: {
