@@ -80,11 +80,23 @@ describe("game master resolver", () => {
     expect(request.input).toContain('"mode":"OPENING"');
     expect(request.input).toContain("Служебный запрос мастеру");
   });
-  it("rejects opening output that mutates the campaign", async () => {
-    const invalidOpening = { ...validTurn, timeDeltaMinutes: 1, newInGameDate: context.world.currentInGameDate };
+  it("strips attempted state mutations from opening output instead of rejecting the opening scene", async () => {
+    const invalidOpening = {
+      ...validTurn, timeDeltaMinutes: 1, hpDelta: -4,
+      newInGameDate: "invented date", newLocationId: "invented-location",
+      consequenceText: "A new consequence", questChanges: [{ action: "CREATE" }],
+      characterChanges: { inventory: [{ action: "ADD" }], resources: [], conditions: [], currencyDelta: { cp: 1, sp: 0, ep: 0, gp: 0, pp: 0 } },
+    };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidOpening) }), { status: 200 }));
-    await expect(resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch)))
-      .rejects.toMatchObject({ code: "OPENING_MUTATION_REJECTED" });
+    const result = await resolvePlayerAction("test-user-jwt", { ...context, action: "", mode: "OPENING" }, testOptions(fetcher as unknown as typeof fetch));
+    expect(result.turn.timeDeltaMinutes).toBe(0);
+    expect(result.turn.hpDelta).toBe(0);
+    expect(result.turn.newInGameDate).toBe(context.world.currentInGameDate);
+    expect(result.turn.newLocationId).toBeNull();
+    expect(result.turn.consequenceText).toBe("");
+    expect(result.turn.questChanges).toEqual([]);
+    expect(result.turn.characterChanges.inventory).toEqual([]);
+    expect(result.turn.characterChanges.currencyDelta).toEqual({ cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 });
   });
   it("does not send a verified but context-disabled world source to the model", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
