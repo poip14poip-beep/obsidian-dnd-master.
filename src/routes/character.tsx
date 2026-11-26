@@ -81,14 +81,14 @@ function CharacterPage() {
         )}
         <Value label="Текущее местоположение персонажа" value={character.currentLocationLabel} />
         {character.hitDice && <Value label="Кости хитов" value={character.hitDice} />}
-        {character.baseSavingThrowBonuses && (
+        {(character.savingThrowBonuses ?? character.baseSavingThrowBonuses) && (
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-muted-foreground">Спасброски (без неподтверждённых бонусов предметов)</h3>
+            <h3 className="text-xs font-semibold text-muted-foreground">Текущие спасброски</h3>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
               {([
-                ["СИЛ", character.baseSavingThrowBonuses.strength], ["ЛОВ", character.baseSavingThrowBonuses.dexterity],
-                ["ТЕЛ", character.baseSavingThrowBonuses.constitution], ["ИНТ", character.baseSavingThrowBonuses.intelligence],
-                ["МДР", character.baseSavingThrowBonuses.wisdom], ["ХАР", character.baseSavingThrowBonuses.charisma],
+                ["СИЛ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.strength], ["ЛОВ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.dexterity],
+                ["ТЕЛ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.constitution], ["ИНТ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.intelligence],
+                ["МДР", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.wisdom], ["ХАР", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.charisma],
               ] as const).map(([label, value]) => <Value key={label} label={label} value={value >= 0 ? `+${value}` : value} />)}
             </div>
           </div>
