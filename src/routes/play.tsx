@@ -257,29 +257,29 @@ function PlayPage() {
         flaw: identity.flaw,
         motivation: identity.motivation,
         preCampaignDesire: identity.preCampaignDesire,
-        appearance: String(appearancePart.appearance ?? ""),
-        appearanceDetails: appearancePart.appearanceDetails,
-        biography: String(storyPart.biography ?? ""),
-        birthplaceSource: String(storyPart.birthplaceSource ?? ""),
-        canonBasis: storyPart.canonBasis,
-        inventedDetailsNotice: String(storyPart.inventedDetailsNotice ?? ""),
-        skillOrigins: originsPart.skillOrigins,
-        weaponBackground: String(originsPart.weaponBackground ?? ""),
-        equipmentBackground: String(originsPart.equipmentBackground ?? ""),
+        appearance: String(appearancePart["appearance"] ?? ""),
+        appearanceDetails: appearancePart["appearance"]Details,
+        biography: String(storyPart["biography"] ?? ""),
+        birthplaceSource: String(storyPart["birthplaceSource"] ?? ""),
+        canonBasis: storyPart["canonBasis"],
+        inventedDetailsNotice: String(storyPart["inventedDetailsNotice"] ?? ""),
+        skillOrigins: originsPart["skillOrigins"],
+        weaponBackground: String(originsPart["weaponBackground"] ?? ""),
+        equipmentBackground: String(originsPart["equipmentBackground"] ?? ""),
       } as CharacterBiography;
       const skillNames = generated.character.skillBonuses?.map((skill) => skill.name) ?? [];
-      const skillOriginMap = new Map(biography.skillOrigins.map((entry) => {
+      const skillOriginMap = new Map(biography["skillOrigins"].map((entry) => {
         const separator = entry.indexOf(" — ");
         return [separator < 0 ? "" : entry.slice(0, separator).trim(), separator < 0 ? "" : entry.slice(separator + 3).trim()];
       }));
       const skillOrigins = skillNames.map((name) => skillOriginMap.get(name) ?? "");
       if (skillOrigins.some((origin) => origin.length < 20) ||
-          !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.length < 25) ||
-          typeof biography.biography !== "string" || biography.biography.length < 350 ||
-          !Array.isArray(biography.canonBasis) || biography.canonBasis.length < 1) {
+          !biography["appearance"]Details || Object.values(biography["appearance"]Details).some((value) => typeof value !== "string" || value.length < 25) ||
+          typeof biography["biography"] !== "string" || biography["biography"].length < 350 ||
+          !Array.isArray(biography["canonBasis"]) || biography["canonBasis"].length < 1) {
         throw new Error("Полное досье не прошло проверку внешности, биографии, навыков или канона. Ничего не сохранено.");
       }
-      const completeBiography: CharacterBiography = { ...biography, skillOrigins };
+      const completeBiography: CharacterBiography = { ..["biography"], skillOrigins };
       setCandidate({ ...generated, character: { ...generated.character, biography: completeBiography } });
       setBiographyReady(true);
     } catch (error) {
@@ -452,36 +452,36 @@ function PlayPage() {
             <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">3. Предыстория и жизнь до кампании</h3>
         {biographyReady ? <div className="space-y-3 rounded-lg border p-3 text-sm">
-          <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character.biography?.birthplace ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character.biography?.family ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character.biography?.upbringing ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character.biography?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character.biography?.preCampaignDesire ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character.biography?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character["biography"]?.birthplace ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character["biography"]?.family ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character["biography"]?.upbringing ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character["biography"]?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character["biography"]?.preCampaignDesire ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character["biography"]?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
         </div> : <p className="rounded-lg border p-3 text-sm text-muted-foreground">Мастер создаёт биографию по канону Экдрасиля. Шаблонная история пока не показывается.</p>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
-        {biographyReady && candidate.character.biography?.appearance && (
+        {biographyReady && candidate.character["biography"]?["appearance"] && (
           <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Общий портрет</p>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character.biography.appearance}</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character["biography"]["appearance"]}</p>
           </div>
         )}
-        {biographyReady && candidate.character.biography?.appearanceDetails ? (
+        {biographyReady && candidate.character["biography"]?["appearance"]Details ? (
           <div className="overflow-hidden rounded-lg border">
             {([
-              ["Рост", candidate.character.biography.appearanceDetails.height],
-              ["Телосложение", candidate.character.biography.appearanceDetails.build],
-              ["Кожа", candidate.character.biography.appearanceDetails.skin],
-              ["Волосы", candidate.character.biography.appearanceDetails.hair],
-              ["Глаза", candidate.character.biography.appearanceDetails.eyes],
-              ["Лицо", candidate.character.biography.appearanceDetails.face],
-              ["Одежда", candidate.character.biography.appearanceDetails.clothing],
-              ["Обувь", candidate.character.biography.appearanceDetails.footwear],
-              ["Аксессуары", candidate.character.biography.appearanceDetails.accessories],
-              ["Отличительные особенности", candidate.character.biography.appearanceDetails.distinctiveFeatures],
-              ["Первое впечатление", candidate.character.biography.appearanceDetails.firstImpression],
+              ["Рост", candidate.character["biography"]["appearance"]Details.height],
+              ["Телосложение", candidate.character["biography"]["appearance"]Details.build],
+              ["Кожа", candidate.character["biography"]["appearance"]Details.skin],
+              ["Волосы", candidate.character["biography"]["appearance"]Details.hair],
+              ["Глаза", candidate.character["biography"]["appearance"]Details.eyes],
+              ["Лицо", candidate.character["biography"]["appearance"]Details.face],
+              ["Одежда", candidate.character["biography"]["appearance"]Details.clothing],
+              ["Обувь", candidate.character["biography"]["appearance"]Details.footwear],
+              ["Аксессуары", candidate.character["biography"]["appearance"]Details.accessories],
+              ["Отличительные особенности", candidate.character["biography"]["appearance"]Details.distinctiveFeatures],
+              ["Первое впечатление", candidate.character["biography"]["appearance"]Details.firstImpression],
             ] as const).map(([label, value]) => (
               <div key={label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 border-b last:border-b-0 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">{label}</span><span className="text-right">{value || "UNKNOWN"}</span>
@@ -499,12 +499,12 @@ function PlayPage() {
           <div className="space-y-2">{candidate.character.inventory?.filter((item)=>!/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}<span className="block text-xs text-muted-foreground">{item.notes}</span></span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
           <div className="mt-3 border-t pt-3 text-sm">Деньги: <strong>{candidate.character.currency?.gp ?? 0} зм</strong></div>
         </div>
-        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character.biography?.weaponBackground || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character.biography?.equipmentBackground || "UNKNOWN"}</p></div>}
+        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character["biography"]?["weaponBackground"] || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character["biography"]?["equipmentBackground"] || "UNKNOWN"}</p></div>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">5. Навыки</h3>
         <div className="rounded-lg border p-3">{candidate.character.skillBonuses?.map((skill)=><div key={skill.name} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"><span>{skill.name}</span><strong className="tabular-nums">+{skill.bonus}</strong></div>)}</div>
-        {candidate.character.biography?.skillOrigins?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
+        {candidate.character["biography"]?["skillOrigins"]?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
         <p className="text-xs text-muted-foreground">Навыки отражают обучение и практику. Они сами по себе не дают магических способностей или защиты от магии.</p>
       </section>
       <section className="space-y-2">
@@ -520,7 +520,7 @@ function PlayPage() {
         <p className="text-xs text-muted-foreground">После случайных бросков приложение автоматически отправляет только параметры сгенерированного персонажа в RouterAI. Ключ хранится на сервере Supabase и не попадает в браузер. Запрос может расходовать баланс RouterAI.</p>
         {biographyBusy && <p className="text-sm text-primary">Мастер Экдрасиля одновременно создаёт личность, полную историю, подробную внешность и досье…</p>}
         {!biographyBusy && !biographyReady && <div className="space-y-2"><p className="text-xs text-destructive">{importError || "Биография ещё не создана. Персонажа нельзя подтвердить без ответа мастера."}</p><Button type="button" variant="outline" disabled={locked} onClick={() => generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></div>}
-        {biographyReady && candidate.character.biography && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character.biography.ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character.biography.ageYears}</p><p>{candidate.character.biography.biography}</p><p className="text-xs text-muted-foreground">События: {candidate.character.biography.lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character.biography.weaponBackground}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character.biography.equipmentBackground}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character.biography.canonBasis.join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
+        {biographyReady && candidate.character["biography"] && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character["biography"].ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character["biography"].ageYears}</p><p>{candidate.character["biography"]["biography"]}</p><p className="text-xs text-muted-foreground">События: {candidate.character["biography"].lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character["biography"]["weaponBackground"]}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character["biography"]["equipmentBackground"]}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character["biography"]["canonBasis"].join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
       </div>
       <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
       <p className="text-xs text-muted-foreground">Сейчас доступны 7 народов Экдрасиля: люди, эльфы, тёмные эльфы, гномы, краснолюды, полуэльфы и зверолюди. Классы и предыстории выбираются из реализованных профилей; места рождения — из 16 подтверждённых городов хроники. Механические параметры рассчитываются генератором, а мастер пишет индивидуальное досье и объясняет происхождение навыков, оружия и снаряжения. Мутации и проклятия не добавляются автоматически.</p>
