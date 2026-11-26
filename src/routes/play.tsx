@@ -186,7 +186,7 @@ function PlayPage() {
     if (sessionError || !sessionToken) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
     let response: Response;
     try {
-      response = await fetch(`${env.config.url.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+      response = await fetch(`${env.config.url.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
