@@ -109,7 +109,7 @@ describe("verified SRD rules context", () => {
 
   it("uses PDF page breaks when extracting relevant SRD passages", () => {
     const rules = {
-      ...source("SUPPLEMENTAL", "Unrelated introductory page with no combat rule.\\fCombat\\nThe Attack action lets you make one attack."),
+      ...source("SUPPLEMENTAL", "Unrelated introductory page with no combat rule.\fCombat\nThe Attack action lets you make one attack."),
       title: "SRD 5.2.1",
       originLabel: "Official D&D 2024 SRD 5.2.1",
     };
