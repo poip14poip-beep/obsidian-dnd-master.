@@ -82,6 +82,7 @@ export interface RandomCharacterResult {
   character: Partial<PlayerCharacterState>;
   summary: { name:string; className:string; classNameRu:string; background:string; backgroundRu:string; species:string; speciesRu:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
   rolls: string[];
+  generationSeed?: string;
 }
 
 export function generateRandomCharacter(random:Random):RandomCharacterResult {
