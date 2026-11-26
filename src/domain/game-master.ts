@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment } from "./types";
 import { DND_2024_CORE_RULES_REFERENCE, DND_2024_RULE_COVERAGE, DND_2024_RULESET } from "./rules-2024";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 
@@ -12,6 +12,7 @@ export interface GameMasterTurn {
   mechanics: string; consequences: string; resourceAccounting: string; nextAction: string;
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
+  environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
   rolls: Array<{ label: string; formula: string; result: string }>;
   npcChanges: NpcTurnChange[];
   characterChanges: {
@@ -42,13 +43,30 @@ const turnSchema = {
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
       role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
+      playerVisible: { type: "boolean" },
       locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
       certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["factSummary", "acquisitionPath", "certainty"] } },
-    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions"] } },
+      playerKnowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+        factSummary: { type: "string" }, acquisitionPath: { type: "string" },
+        certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      }, required: ["factSummary", "acquisitionPath", "certainty"] } },
+    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
+    environment: { type: "object", additionalProperties: false, properties: {
+      temperatureC: { type: ["number", "null"] }, temperatureCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
+      weather: { type: "string" }, lighting: { type: "string" }, visibility: { type: "string" }, wind: { type: "string" },
+      precipitation: { type: "string" }, ambientSounds: { type: "string" }, ambientSmells: { type: "string" }, notes: { type: "string" },
+    }, required: ["temperatureC", "temperatureCertainty", "weather", "lighting", "visibility", "wind", "precipitation", "ambientSounds", "ambientSmells", "notes"] },
+    environmentReason: { type: "string" },
+    questChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+      action: { type: "string", enum: ["CREATE", "UPDATE"] }, title: { type: "string" }, description: { type: "string" },
+      objectives: { type: "array", items: { type: "string" } }, status: { type: "string", enum: ["RUMOR", "ACTIVE", "ON_HOLD", "COMPLETED", "FAILED"] },
+      giverName: { type: ["string", "null"] }, locationName: { type: ["string", "null"] }, deadline: { type: ["string", "null"] },
+      reward: { type: "string" }, sourcePath: { type: "string" }, certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
+    }, required: ["action", "title", "description", "objectives", "status", "giverName", "locationName", "deadline", "reward", "sourcePath", "certainty", "reason"] } },
     characterChanges: { type: "object", additionalProperties: false, properties: {
       inventory: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         action: { type: "string", enum: ["ADD", "REMOVE", "SET"] }, name: { type: "string" },
@@ -68,7 +86,7 @@ const turnSchema = {
     needsClarification: { type: "boolean" }, clarificationQuestion: { type: "string" },
     stateNotes: { type: "array", items: { type: "string" } },
   },
-  required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
+  required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "environment", "environmentReason", "questChanges", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
@@ -264,13 +282,34 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     !Array.isArray(turn["rolls"]) || !Array.isArray(turn["stateNotes"]))
     throw new GameMasterError("Модель вернула неполную структуру игрового хода. Ничего не сохранено.", "INVALID_TURN");
   if (!Array.isArray(turn["npcChanges"])) throw new GameMasterError("Модель не вернула обязательный список изменений NPC.", "INVALID_NPC_CHANGES");
+  const environment = turn["environment"] as Record<string, unknown> | undefined;
+  if (!environment || !Number.isFinite(environment["temperatureC"] === null ? 0 : environment["temperatureC"]) ||
+      !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(environment["temperatureCertainty"])) ||
+      ["weather", "lighting", "visibility", "wind", "precipitation", "ambientSounds", "ambientSmells", "notes"].some((key) => typeof environment[key] !== "string") ||
+      typeof turn["environmentReason"] !== "string") {
+    throw new GameMasterError("Мастер не вернул полный блок текущего окружения.", "INVALID_ENVIRONMENT");
+  }
+  if (!Array.isArray(turn["questChanges"])) throw new GameMasterError("Мастер не вернул список изменений журнала заданий.", "INVALID_QUEST_CHANGES");
+  for (const quest of turn["questChanges"] as Array<Record<string, unknown>>) {
+    if (!["CREATE", "UPDATE"].includes(String(quest["action"])) || typeof quest["title"] !== "string" || !quest["title"].trim() ||
+        typeof quest["description"] !== "string" || !Array.isArray(quest["objectives"]) || quest["objectives"].some((item) => typeof item !== "string") ||
+        !["RUMOR", "ACTIVE", "ON_HOLD", "COMPLETED", "FAILED"].includes(String(quest["status"])) ||
+        (quest["giverName"] !== null && typeof quest["giverName"] !== "string") || (quest["locationName"] !== null && typeof quest["locationName"] !== "string") ||
+        (quest["deadline"] !== null && typeof quest["deadline"] !== "string") || typeof quest["reward"] !== "string" ||
+        typeof quest["sourcePath"] !== "string" || !quest["sourcePath"].trim() ||
+        !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(quest["certainty"])) || typeof quest["reason"] !== "string") {
+      throw new GameMasterError("Некорректная запись журнала заданий.", "INVALID_QUEST_CHANGE");
+    }
+    const existingQuest = (knownNpcs.length >= 0 ? [] : []) as unknown[];
+    void existingQuest;
+  }
   for (const npc of turn["npcChanges"] as Array<Record<string, unknown>>) {
     if (!["CREATE", "UPDATE"].includes(String(npc["action"])) || typeof npc["name"] !== "string" || !npc["name"].trim() ||
-        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["resources"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" ||
+        typeof npc["role"] !== "string" || typeof npc["goals"] !== "string" || typeof npc["resources"] !== "string" || typeof npc["attitudeToPlayer"] !== "string" || typeof npc["playerVisible"] !== "boolean" ||
         (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
         (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
-        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"])) {
+        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
     }
     const existingNpc = knownNpcs.find((item) => item.name.toLocaleLowerCase() === (npc["name"] as string).toLocaleLowerCase());
@@ -289,7 +328,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     if (npc["factionName"] !== null && !knownFactions.some((item) => item.name.toLocaleLowerCase() === (npc["factionName"] as string).toLocaleLowerCase())) {
       throw new GameMasterError("Для NPC «" + npc["name"] + "» указана неизвестная фракция.", "UNKNOWN_NPC_FACTION");
     }
-    for (const knowledge of npc["knowledgeAdditions"] as Array<Record<string, unknown>>) {
+    for (const knowledge of [...npc["knowledgeAdditions"] as Array<Record<string, unknown>>, ...npc["playerKnowledgeAdditions"] as Array<Record<string, unknown>>]) {
       if (typeof knowledge["factSummary"] !== "string" || !knowledge["factSummary"].trim() ||
           typeof knowledge["acquisitionPath"] !== "string" || !knowledge["acquisitionPath"].trim() ||
           !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(knowledge["certainty"]))) {
@@ -423,12 +462,15 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     requirements: [
       ...(context.mode === "OPENING" ? [
         "Это вступительная сцена, а не действие персонажа и не игровой ход. summary = «Вступительная сцена кампании»; worldOutcome = «Вступление показано; действие персонажа ещё не совершено»; consequenceText = пустая строка.",
-        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], characterChanges содержит пустые массивы и нулевую currencyDelta.",
+        "Все изменения строго нулевые: timeDeltaMinutes=0, hpDelta=0, newInGameDate в точности равна campaign.currentInGameDate, newLocationId=null, rolls=[], npcChanges=[], questChanges=[], environment в точности повторяет campaign.environment или сохраняет UNKNOWN для неизвестных полей, characterChanges содержит пустые массивы и нулевую currencyDelta.",
         "Не придумывай новые сведения о мире, NPC, фракциях, истории или событиях. Используй startNarrative и подтверждённые источники. Неизвестные поля оставь UNKNOWN/НЕ УСТАНОВЛЕНО.",
         "campaignMemory отражает только подтверждённую стартовую ситуацию и релевантные известные сведения. sensoryDescription — только сенсорная информация, которую Лия может воспринимать в этой стартовой сцене. spatialAccounting не выдумывает позиции и расстояния. mechanics указывает, что проверка не требуется, поскольку персонаж ещё не совершал действия. nextAction задаёт открытый вопрос без навязывания вариантов."
       ] : []),
       "Верни отдельные обязательные блоки campaignMemory, sensoryDescription, spatialAccounting, mechanics, consequences, resourceAccounting и nextAction. narration — только описание сцены.",
-      "Не придумывай дату, погоду, освещение, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE.",
+      "Не придумывай дату, погоду, освещение, температуру, точные расстояния, позиции или параметры. Если поле неизвестно, явно напиши НЕ УСТАНОВЛЕНО/UNKNOWN; приблизительное пометь APPROXIMATE. Используй календарь campaign.calendarSystem. Для Technical Calendar 1.0 рассчитывай год/месяц/день/порядковый день года/неделю/день недели строго из даты; не придумывай названия месяцев. Время продвигай на фактическую длительность действия, а не на один чат-ответ.",
+      "Верни environment как полное текущее состояние окружающей среды: измеримая температура °C или null, certainty, погода, освещение, видимость, ветер, осадки, слышимые фоновые звуки и запахи. Не меняй неизменившиеся поля без причины. Изменения среды должны иметь причинное основание: время суток, место, высота, погода, сезон, укрытие или событие; environmentReason объясняет, почему состояние осталось прежним или изменилось. Не выдумывай числовую температуру: если нет источника/основания, temperatureC=null и certainty=UNKNOWN.",
+      "Журнал заданий содержит только поручения, слухи, обещания, цели или обязательства, которые Лия действительно узнала через наблюдение, документ, разговор или иной установленный канал. Не создавай квест ради сюжета. Не превращай случайную сцену в задание. CREATE — только при первом фактическом обнаружении; UPDATE — только существующей записи. sourcePath обязателен и описывает конкретный канал получения информации. Не раскрывай скрытые задачи NPC, о которых Лия не знает.",
+      "Журнал знаний NPC — это знания Лии о NPC, не знания самого NPC. playerVisible=true только если Лия лично увидела/услышала NPC или узнала о нём по конкретному каналу. playerKnowledgeAdditions — только факты, реально известные Лии; sourcePath/acquisitionPath обязателен. knowledgeAdditions — отдельно то, что знает сам NPC. Не смешивай эти два набора. Если Лия видит незнакомца, можно создать открытую запись с UNKNOWN-личностью и только наблюдаемыми деталями.",
       "sensoryDescription содержит только то, что персонаж реально воспринимает; если новых ощущений нет, так и напиши.",
       "spatialAccounting показывает только известные позиции, расстояния и препятствия; не выводи точные расстояния из художественного описания.",
       "mechanics указывает применённое правило/источник, проверку, модификатор, преимущество/помеху, DC/AC и результат; если бросок не нужен, объясни почему.",
