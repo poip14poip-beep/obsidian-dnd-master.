@@ -63,7 +63,7 @@ describe("player dossier summary extraction", () => {
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
     expect(result.inventory).toHaveLength(4);
     expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
-    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
+    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.inventory[3]).toMatchObject({ name: "Инструменты кузнеца", location: "UNKNOWN", startPolicy: "KEEP_FROM_DOSSIER" });
     expect(result.resources).toEqual([
       { name: "Second Wind", current: null, max: 4, recovery: "1 use on Short Rest; all uses on Long Rest", certainty: "KNOWN" },
@@ -138,6 +138,8 @@ describe("player dossier summary extraction", () => {
     expect(result.inventory.some((item) => item.name.includes("Кожа Последнего Часа") && item.location === "WORN")).toBe(true);
     expect(result.inventory.find((item) => /Cloak of Protection/i.test(item.name))?.attunement).toBe("UNKNOWN");
     expect(result.inventory.some((item) => item.location === "UNKNOWN")).toBe(true);
+    expect(result.inventory.find((item) => item.name === "Катана в ножнах")?.location).toBe("CARRIED");
+    expect(result.inventory.find((item) => item.name === "Кинжал")?.location).toBe("CARRIED");
     expect(result.inventory.some((item) => item.name === "Личный дневник" && item.quantity === 1 && item.certainty === "APPROXIMATE")).toBe(true);
     expect(result.inventory.some((item) => item.name === "Несколько старых писем" && item.location === "UNKNOWN")).toBe(true);
     expect(result.inventory.every((item) => item.startPolicy === "KEEP_FROM_DOSSIER")).toBe(true);
