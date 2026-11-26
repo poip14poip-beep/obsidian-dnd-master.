@@ -346,7 +346,12 @@ Deno.serve(async (req: Request) => {
   const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
   const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
     ? privateSources.SRD_5_2_1.content : "";
-  const ruleParagraphs = rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80);
+  // Story/appearance/origin generation does not need the 1.4 MB SRD document.
+  // Skip its split/scoring work to stay below the Edge CPU limit.
+  const needsRulesContext = !isStoryRequest && !isAppearanceRequest && !isIdentityRequest && !isOriginsRequest;
+  const ruleParagraphs = needsRulesContext
+    ? rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80)
+    : [];
   const canonDoc = isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string"
     ? privateSources.EKDRASIL_WORLD_BIBLE.content : "";
   const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
@@ -357,7 +362,9 @@ Deno.serve(async (req: Request) => {
       message: "В постоянную базу мастера ещё не добавлена хроника Экдрасиля. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
-  const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 60);
+  const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10))
+    .map((part) => part.trim()).filter((part) => part.length > 60)
+    .map((paragraph) => ({ paragraph, haystack: paragraph.toLowerCase() }));
 
   if (!rulesDoc.trim()) {
     return json({ error: {
@@ -396,7 +403,8 @@ Deno.serve(async (req: Request) => {
   );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
   const selectedRules = ruleParagraphs
-    .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
+    .map((paragraph) => ({ paragraph, haystack: paragraph.toLowerCase() }))
+    .map(({ paragraph, haystack }) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, isCompatibilityRequest ? 8 : 12)
@@ -428,8 +436,7 @@ Deno.serve(async (req: Request) => {
   } catch { /* action text remains the safe minimum query */ }
   const canonTerms = [...new Set([...canonSearchParts.join(" ").toLowerCase().split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
   const selectedCanon = canonParagraphs
-    .map((paragraph) => {
-      const haystack = paragraph.toLowerCase();
+    .map(({ paragraph, haystack }) => {
       const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
       const headingBoost = /^#{1,4}\s/m.test(paragraph) ? 1 : 0;
       return { paragraph, score: score + headingBoost };
