@@ -219,6 +219,12 @@ function OverviewPage() {
           count={`${locations.length} лок.`}
         />
         <QuickTile
+          to="/game"
+          icon={ScrollText}
+          label={worldState.setup.confirmed ? "Продолжить игру" : "Подготовить игру"}
+          count={worldState.setup.confirmed ? `Ход #${sessionLog.lastTurnNumber + 1}` : "СТАРТ ЗАБЛОКИРОВАН"}
+        />
+        <QuickTile
           to="/turns"
           icon={ScrollText}
           label="Ходы и журнал"
@@ -254,6 +260,7 @@ function QuickTile({
     | "/npcs"
     | "/time-map"
     | "/turns"
+    | "/game"
     | "/audit"
     | "/settings";
   icon: typeof FileText;
