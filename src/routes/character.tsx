@@ -55,6 +55,32 @@ function CharacterPage() {
         </div>
       </header>
 
+      {character.biography && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Биография</h2>
+          <p className="text-sm leading-relaxed">{character.biography.biography}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Value label="Возраст" value={character.biography.ageYears === null ? "UNKNOWN" : character.biography.ageYears} />
+            <Value label="Место рождения" value={character.biography.birthplace} />
+            <Value label="Внешность" value={character.biography.appearance} />
+          </div>
+          <p className="text-xs text-muted-foreground">{character.biography.inventedDetailsNotice}</p>
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Подробности личности и прошлого</summary>
+            <div className="mt-2 space-y-2 text-sm">
+              <p><strong>Семья:</strong> {character.biography.family}</p>
+              <p><strong>Воспитание:</strong> {character.biography.upbringing}</p>
+              <p><strong>События:</strong> {character.biography.lifeEvents.join(" ")}</p>
+              <p><strong>Характер:</strong> {character.biography.personalityTraits.join(", ")}</p>
+              <p><strong>Идеал:</strong> {character.biography.ideal}</p>
+              <p><strong>Привязанность:</strong> {character.biography.bond}</p>
+              <p><strong>Слабость:</strong> {character.biography.flaw}</p>
+              <p><strong>Мотивация:</strong> {character.biography.motivation}</p>
+              <p className="text-xs text-muted-foreground">Основа канона: {character.biography.canonBasis.join("; ")}</p>
+            </div>
+          </details>
+        </section>
+      )}
       <section className="panel-surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-foreground">Основные параметры</h2>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">

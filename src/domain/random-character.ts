@@ -133,8 +133,62 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
       ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
   const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
+  const origins = [
+    ["Вальдгард","Арденхольм"],["Элион","Солемар"],["Аэлиндор","Лиарен"],
+    ["Кхар-Дорн","Дорн-Кар"],["Крейнхольм","Вестмар"],["Тар-Нер","Неррат"],
+    ["Равенск","Кардения"],["Морвейн","Эстерваль"],["Греймарк","Драугмарк"],
+  ] as const;
+  const origin=choose(origins,random);
+  const appearance=choose([
+    "стройное телосложение, внимательный взгляд и заметный шрам на руке",
+    "крепкое телосложение, короткие волосы и следы тяжёлой работы на ладонях",
+    "невысокий рост, аккуратная одежда и настороженная манера держаться",
+    "высокий рост, дорожная одежда и несколько старых отметин от ран",
+    "подвижная фигура, выразительные глаза и привычка осматривать помещение",
+  ],random);
+  const family=choose([
+    "Вырос(ла) в большой семье ремесленников; отношения с родными остались непростыми.",
+    "Родители рано разошлись, и большую часть детства воспитывал близкий родственник.",
+    "Семья жила скромно; с детства приходилось помогать с работой и заботиться о младших.",
+    "Почти не помнит ранних лет и поддерживает связь только с одним родственником.",
+    "Происходит из семьи торговцев, часто переезжавшей между поселениями.",
+  ],random);
+  const event=choose([
+    "В юности пережил(а) неудачное ученичество и с тех пор предпочитает полагаться на собственные навыки.",
+    "Однажды помог(ла) незнакомцу в беде; тот поступок изменил отношение к чужим проблемам.",
+    "Потерял(а) работу после конфликта и был(а) вынужден(а) начать заново.",
+    "Несколько лет провёл(а) в дороге, работая за еду и ночлег.",
+    "Принял(а) неверное решение, последствия которого до сих пор старается исправить.",
+  ],random);
+  const traits=choose([
+    ["сдержанный","наблюдательный"],["прямолинейный","упорный"],
+    ["дружелюбный","любознательный"],["осторожный","недоверчивый"],
+    ["ироничный","импульсивный"],
+  ] as const,random);
+  const motivation=choose([
+    "Найти дело, которое позволит жить независимо и не быть никому обязанным.",
+    "Отыскать человека, с которым давно потеряна связь.",
+    "Доказать себе, что прошлые ошибки не определяют всю жизнь.",
+    "Заработать достаточно, чтобы обеспечить безопасность близким.",
+    "Понять, почему прежняя жизнь закончилась именно так.",
+  ],random);
+  const age=18+random(63);
+  const biography = {
+    ageYears:age, ageCertainty:"KNOWN" as const, genderPresentation:"UNKNOWN",
+    appearance, birthplace:origin[0]+", "+origin[1]+", Вальтерра",
+    birthplaceSource:"Хроника Экдрасиля, Том III, перечень государств и столиц; личное место рождения сгенерировано.",
+    family, upbringing:"Детство прошло в "+origin[0]+". "+family,
+    lifeEvents:[event], personalityTraits:[...traits],
+    ideal:"Самостоятельность и право самому выбирать свой путь.",
+    bond:"Сохраняет личную вещь, напоминающую о семье.",
+    flaw:"Неохотно просит о помощи, даже когда она необходима.",
+    motivation,
+    biography:"Персонаж родился в "+origin[0]+", столице государства "+origin[1]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
+    canonBasis:["Хроника Экдрасиля, Том III: столица "+origin[1]+" — "+origin[0]+"."],
+    inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
+  };
   const character:Partial<PlayerCharacterState>={
-    name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
+    name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography,
     speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
     abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
@@ -143,7 +197,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
-    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
+    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
   return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }

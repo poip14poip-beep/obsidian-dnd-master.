@@ -252,6 +252,26 @@ export interface InventoryItem {
  * PLAYER_CHARACTER_STATE — isolated root storage partition.
  * NEVER nested inside CAMPAIGN_STATE.
  */
+export interface CharacterBiography {
+  ageYears: number | null;
+  ageCertainty: CertaintyStatus;
+  genderPresentation: string;
+  appearance: string;
+  birthplace: string;
+  birthplaceSource: string;
+  family: string;
+  upbringing: string;
+  lifeEvents: string[];
+  personalityTraits: string[];
+  ideal: string;
+  bond: string;
+  flaw: string;
+  motivation: string;
+  biography: string;
+  canonBasis: string[];
+  inventedDetailsNotice: string;
+}
+
 export interface PlayerCharacterState {
   schemaVersion: number;
   stateVersion: number;
@@ -259,6 +279,7 @@ export interface PlayerCharacterState {
   name: string;
   nameCertainty: CertaintyStatus;
   speciesAndClass: string;
+  biography?: CharacterBiography;
   level: number | null;
   classLevel?: number | null;
   epicCampaignLevels?: number;

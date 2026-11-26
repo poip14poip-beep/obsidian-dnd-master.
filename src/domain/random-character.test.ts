@@ -17,6 +17,8 @@ describe("SRD 5.2.1 random character generator", () => {
     expect(result.character.classFeaturesByLevel?.[0]?.features).toContain("Second Wind");
     expect(result.character.currency?.gp).toBe(18);
     expect(result.character.inventory?.some((entry) => entry.name === "Кольчуга")).toBe(true);
+    expect(result.character.biography?.birthplace).toContain("Вальтерра");
+    expect(result.character.biography?.inventedDetailsNotice).toContain("сгенерированы");
   });
 
   it("creates a Rogue with Expertise and an Elf's traits", () => {
