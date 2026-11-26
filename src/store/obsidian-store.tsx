@@ -52,6 +52,7 @@ import type {
   TravelRoute,
   TurnDraft,
   WorldConsequence,
+  WorldEnvironment,
   WorldState,
 } from "@/domain/types";
 
