@@ -135,6 +135,7 @@ function SettingsPage() {
       startInGameDate: startInGameDate.trim() || "UNKNOWN",
       startLocationName: startLocationName.trim() || "UNKNOWN",
       encumbranceMode,
+      campaignPreferences,
     });
     if (res.ok) {
       toast.success("Подготовка кампании подтверждена! Раздел «Ходы и журнал» разблокирован.");
