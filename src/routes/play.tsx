@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
+import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
+import { generateRandomStart } from "@/domain/random-start";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 
 export const Route = createFileRoute("/play")({ component: PlayPage });
@@ -25,16 +27,94 @@ function rollAbility(): number {
   return dice[0]! + dice[1]! + dice[2]!;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, worldState, sessionLog } = useObsidianStore();
+  const { sources, updatePlayerCharacter, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup } = useObsidianStore();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [cloakAttunement, setCloakAttunement] = useState<"UNKNOWN" | "ATTUNED" | "NOT_ATTUNED">("UNKNOWN");
   const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
+  const [startPending, setStartPending] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
+  const characterReady = Boolean(
+    character.name.trim() && character.name !== "UNKNOWN" &&
+    character.hpMax !== null && character.armorClass !== null &&
+    character.level !== null && character.proficiencyBonus !== null &&
+    character.abilityScores && character.speciesAndClass !== "UNKNOWN" &&
+    character.baseSavingThrowBonuses && character.skillBonuses?.length &&
+    character.weaponAttacks?.length && character.classFeaturesByLevel?.length
+  );
+  const verifiedCoreSourcesReady = (["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const).every((type) =>
+    sources.some((source) =>
+      source.type === type && source.contentStatus === "ATTACHED" &&
+      source.content.trim().length > 0 && source.processing?.status === "PROCESSED" &&
+      source.reviewStatus === "VERIFIED" && source.contextEnabled === true
+    )
+  );
+
+  function handleStartCampaign() {
+    setStartError(null);
+    if (locked) return;
+    if (!verifiedCoreSourcesReady) {
+      setStartError("Перед запуском проверь и включи в контекст три источника: ОБСИДИАН 4.1, Хронику Экдрасиля и досье персонажа.");
+      return;
+    }
+    if (!characterReady) {
+      setStartError("Лист персонажа ещё не готов. Для случайной заготовки сначала требуется завершить характеристики, классовые особенности, навыки, атаки и снаряжение.");
+      return;
+    }
+    try {
+      const generated = generateRandomStart();
+      const result = applyGeneratedStart({
+        city: generated.city,
+        date: generated.date,
+        narrative: generated.narrative,
+        locationDescription: generated.location.description,
+        generationRecord: generated.generationRecord,
+        characterPatch: generated.characterPatch,
+        inventory: generated.inventory,
+      });
+      if (!result.ok) {
+        setStartError(result.error);
+        return;
+      }
+      setStartPending(true);
+    } catch (error) {
+      setStartError(error instanceof Error ? error.message : "Не удалось создать старт кампании.");
+    }
+  }
+
+  useEffect(() => {
+    if (!startPending || !worldState.startGeneration || character.hpCurrent === null) return;
+    const result = confirmCampaignSetup({
+      campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
+      calendarSystem: worldState.calendarSystem === "UNKNOWN"
+        ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
+        : worldState.calendarSystem,
+      startInGameDate: worldState.startInGameDate,
+      startLocationName: worldState.startLocationName,
+      startNarrative: worldState.startNarrative ?? "",
+      startGeneration: worldState.startGeneration,
+      encumbranceMode: "STANDARD",
+      campaignPreferences: DEFAULT_CAMPAIGN_PREFERENCES,
+      setupPatch: {
+        sourcesConfirmed: true,
+        parametersConfirmed: true,
+        startPointConfirmed: true,
+        characterConfirmed: true,
+        noAutoImportAcknowledged: true,
+      },
+    });
+    setStartPending(false);
+    if (!result.ok) setStartError(result.error);
+  }, [
+    startPending, worldState.startGeneration, worldState.startInGameDate,
+    worldState.startLocationName, worldState.startNarrative, worldState.campaignName,
+    worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup,
+  ]);
   const randomize = () => {
     const stats = { strength: rollAbility(), dexterity: rollAbility(), constitution: rollAbility(), intelligence: rollAbility(), wisdom: rollAbility(), charisma: rollAbility() };
     const classes = ["Боец", "Плут", "Жрец", "Следопыт", "Волшебник", "Паладин", "Варвар", "Бард"];
@@ -150,7 +230,15 @@ function PlayPage() {
       <div className="rounded bg-muted/30 p-3 text-sm">HP, КД, навыки, владения, происхождение, снаряжение, заклинания и классовые особенности останутся UNKNOWN до следующего этапа заполнения и проверки по D&D 2024.</div>
       <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Перебросить характеристики</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить заготовку</Button></div>
     </section>}
-    {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Подтверждение записано в локальное состояние. Следующий этап — обязательная подготовка кампании и проверка недостающих данных.</div>}
+    {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Досье персонажа импортировано и сохранено отдельно от канона мира.</div>}
+    {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
+      <div><h2 className="text-lg font-semibold">Персонаж готов к кампании</h2><p className="text-sm text-muted-foreground">{character.name} · {character.speciesAndClass} · HP будут определены случайной стартовой ситуацией; неизвестные остатки ресурсов останутся UNKNOWN.</p></div>
+      <p className="text-xs text-muted-foreground">Применится профиль ОБСИДИАН 4.1 / D&D 2024: SRD 5.2.1, броски через Web Crypto с показом результатов, XP, стандартный учёт нагрузки, базовые правила выживания, региональные встречи без универсальных таблиц, без PvP и без дополнительных правил смерти кроме проклятия Лии. Профиль можно изменить в настройках до первого игрового хода.</p>
+      {startError && <p role="alert" className="text-sm text-destructive">{startError}</p>}
+      <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
+    </section>}
+    {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайная заготовка создана, но ещё не является полным листом персонажа. До запуска нужно завершить её сборку по D&D 2024.</p>}
+    {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/turns">Перейти к игре</Link></div>}
     <div className="flex flex-wrap gap-3 text-sm"><Link className="underline" to="/settings">Мастер подготовки кампании</Link><Link className="underline" to="/character">Открыть лист персонажа</Link><Link className="underline" to="/">На главную</Link></div>
   </main>;
 }
