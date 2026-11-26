@@ -19,13 +19,13 @@ export function formatGameMasterAnswer(
   const date = known(world.currentInGameDate);
   const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
-  const yearMatch = date.match(/(?:год|year)\\s*[:№]?\\s*(\\d{1,4})|(?:^|\\D)(\\d{1,4})\\s*(?:год|г\\.?|year)\\b/i);
+  const yearMatch = date.match(/(?:год|year)\s*[:№]?\s*(\d{1,4})|(?:^|\D)(\d{1,4})\s*(?:год|г\.?|year)\b/i);
   const yearValue = yearMatch ? (yearMatch[1] ?? yearMatch[2]) : null;
   const year = yearValue ? `${yearValue}${/APPROXIMATE|ПРИБЛИЗИТЕЛЬНО/i.test(date) ? " (APPROXIMATE)" : ""}` : "НЕ УСТАНОВЛЕНО";
-  const monthMatch = date.match(/\\b(январ(?:ь|я)|феврал(?:ь|я)|март(?:а)?|апрел(?:ь|я)|ма(?:й|я)|июн(?:ь|я)|июл(?:ь|я)|август(?:а)?|сентябр(?:ь|я)|октябр(?:ь|я)|ноябр(?:ь|я)|декабр(?:ь|я))\\b/i);
+  const monthMatch = date.match(/\b(январ(?:ь|я)|феврал(?:ь|я)|март(?:а)?|апрел(?:ь|я)|ма(?:й|я)|июн(?:ь|я)|июл(?:ь|я)|август(?:а)?|сентябр(?:ь|я)|октябр(?:ь|я)|ноябр(?:ь|я)|декабр(?:ь|я))\b/i);
   const month = monthMatch?.[1] ?? "НЕ УСТАНОВЛЕНО";
   const day = monthMatch?.index !== undefined
-    ? (date.slice(0, monthMatch.index).match(/(?:^|\\D)(\\d{1,2})\\s*$/)?.[1] ?? "НЕ УСТАНОВЛЕНО")
+    ? (date.slice(0, monthMatch.index).match(/(?:^|\D)(\d{1,2})\s*$/)?.[1] ?? "НЕ УСТАНОВЛЕНО")
     : "НЕ УСТАНОВЛЕНО";
   const hour = timeMatch ? Number(timeMatch[1]) : null;
   const timeOfDay = hour === null ? "НЕ УСТАНОВЛЕНО" : hour < 5 ? "НОЧЬ" : hour < 12 ? "УТРО" : hour < 17 ? "ДЕНЬ" : hour < 22 ? "ВЕЧЕР" : "НОЧЬ";
@@ -121,5 +121,5 @@ export function formatArchivedGameMasterAnswer(
 ): string {
   return formatGameMasterAnswer(turn, world, character, locations, turnNumber)
     .replace(" · ПРЕДВАРИТЕЛЬНЫЙ ОТВЕТ МАСТЕРА", " · ОТВЕТ МАСТЕРА")
-    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "ПРОВЕРЕНО И СОХРАНЕНО В ЖУРНАЛЕ");
+    .replace("НЕ СОХРАНЕНО — требуется проверка и подтверждение игрока", "");
 }
