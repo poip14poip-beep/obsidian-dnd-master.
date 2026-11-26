@@ -36,9 +36,9 @@ const SCENES = [
 
 const HEALTH = [
   { label: "Без заметных ранений", description: "Персонаж отдохнувший; заметных ранений нет.", minRatio: 1, maxRatio: 1 },
-  { label: "Незначительные повреждения", description: "Синяки, ссадины и болезненность; отдельное состояние D&D не назначается.", minRatio: 0.9, maxRatio: 0.99 },
-  { label: "Заметные повреждения", description: "Несколько болезненных ушибов и одна перевязанная рана; отдельное состояние D&D не назначается.", minRatio: 0.74, maxRatio: 0.89 },
-  { label: "Серьёзно ранен, но на ногах", description: "Глубокая перевязанная рана и выраженная усталость; персонаж может передвигаться, но запас сил ограничен. Отдельное состояние D&D не назначается.", minRatio: 0.55, maxRatio: 0.73 },
+  { label: "Незначительные повреждения", description: "Синяки, ссадины и болезненность; отдельное состояние D&D не назначается.", minRatio: 165 / 184, maxRatio: 183 / 184 },
+  { label: "Заметные повреждения", description: "Несколько болезненных ушибов и одна перевязанная рана; отдельное состояние D&D не назначается.", minRatio: 135 / 184, maxRatio: 164 / 184 },
+  { label: "Серьёзно ранен, но на ногах", description: "Глубокая перевязанная рана и выраженная усталость; персонаж может передвигаться, но запас сил ограничен. Отдельное состояние D&D не назначается.", minRatio: 100 / 184, maxRatio: 134 / 184 },
 ];
 
 function secureIndex(length: number): number {
@@ -52,7 +52,7 @@ function secureIndex(length: number): number {
   return value % length;
 }
 
-export function generateRandomStart(index = secureIndex, hpMaximum = 1): RandomStartResult {
+export function generateRandomStart(index = secureIndex, hpMaximum: number): RandomStartResult {
   const cityIndex = index(CITIES.length);
   const sceneIndex = index(SCENES.length);
   const healthProfileRoll = index(HEALTH.length) + 1;
