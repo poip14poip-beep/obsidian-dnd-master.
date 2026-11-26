@@ -377,7 +377,7 @@ Deno.serve(async (req: Request) => {
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
   const orderedModelAttempts = isIdentityRequest || isBiographyRequest
-    ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!]
+    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
     : highImpactTurn
       ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
       : MODEL_ATTEMPTS;
@@ -432,9 +432,9 @@ Deno.serve(async (req: Request) => {
           response_format: responseFormat,
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: 8192,
+          max_tokens: (isIdentityRequest || isBiographyRequest) ? 5000 : 8192,
         }),
-        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 40_000 : 35_000),
+        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 22_000 : 35_000),
       });
       const raw = await upstream.text();
       let payload: unknown;
