@@ -259,7 +259,7 @@ function SettingsPage() {
       <section className="panel-surface space-y-3 p-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Чистая пробная кампания</h2>
-          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Остаются ОБСИДИАН 4.1, хроника Экдрасиля, досье Лии и проверенный SRD 5.2.1; старые дополнительные источники кампании удаляются из активного набора. Основные параметры персонажа сохраняются; HP, ресурсы, инвентарь, деньги и местоположение сбрасываются. После очистки заново импортируй досье Лии в разделе «Играть». Файлы в библиотеке не изменяются.</p>
+          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Остаются ОБСИДИАН 4.1, Хроника Экдрасиля и проверенный SRD 5.2.1; старые дополнительные источники кампании удаляются из активного набора. Состояние выбранного персонажа, HP, ресурсы, инвентарь, деньги и местоположение сбрасываются. После очистки загрузи карточку нужного персонажа в разделе «Играть». Файлы в библиотеке не изменяются.</p>
         </div>
         <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleExportBackup}>
           <Download className="mr-1.5 h-4 w-4" />
@@ -300,7 +300,7 @@ function SettingsPage() {
               Открыть источники
             </Link>
           </div>
-          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье Лии или другого персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье выбранного персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
             {sources.slice(0, 3).map((src) => (
               <li key={src.id}>
                 • <strong className="text-foreground">{src.title}</strong> ({src.targetPartition}) —{" "}
@@ -345,7 +345,7 @@ function SettingsPage() {
                 <option value="VARIANT">Вариантные пороги перегрузки</option>
                 <option value="ABSTRACT">Абстрактный режим без расчёта веса</option>
               </select>
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Стандартный режим использует грузоподъёмность по Силе и размеру; вариантный добавляет пороги перегрузки. Если размер Лии неизвестен, точная грузоподъёмность останется UNKNOWN. Не выбирай режим за счёт догадки.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Стандартный режим использует грузоподъёмность по Силе и размеру; вариантный добавляет пороги перегрузки. Если размер персонажа неизвестен, точная грузоподъёмность останется UNKNOWN. Не выбирай режим за счёт догадки.</p>
             </div>
             <div className="space-y-1">
               <Label htmlFor="cfg-cal">Календарная система</Label>
@@ -356,7 +356,7 @@ function SettingsPage() {
                 placeholder="Единая письменная эра; год 0 — начало общей письменной эры"
                 className="touch-target"
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Если не хочешь менять случайный результат, оставь город как сгенерирован. Досье не фиксирует предыдущий маршрут Лии в 2000 году.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Если не хочешь менять случайный результат, оставь город как сгенерирован. Досье не фиксирует предыдущий маршрут персонажа.</p>
             </div>
           </div>
           <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
@@ -395,12 +395,12 @@ function SettingsPage() {
           <h3 className="text-sm font-semibold text-foreground">
             Шаг 3. Случайное начало свободной кампании
           </h3>
-          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение прежней биографии Лии. Задания, обязательные встречи и сюжетные цели не назначаются.</p>
+          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение биографии персонажа. Задания, обязательные встречи и сюжетные цели не назначаются.</p>
           <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleGenerateRandomStart} disabled={s.confirmed || !sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED")}>
             Сгенерировать случайную стартовую ситуацию
           </Button>
           {!sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED") && (
-            <p className="text-[11px] text-status-approx">Сначала прикрепи досье Лии в разделе «Источники», чтобы генератор не создавал лист персонажа без исходного документа.</p>
+            <p className="text-[11px] text-status-approx">Сначала прикрепи досье выбранного персонажа в разделе «Источники», чтобы мастер не создавал биографию без исходного документа.</p>
           )}
           {startNarrative && (
             <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
@@ -432,7 +432,7 @@ function SettingsPage() {
                 disabled={s.confirmed}
                 className="touch-target"
               />
-              <p className="text-[11px] leading-relaxed text-muted-foreground">Авторская биография говорит лишь, что в 1901–2000 годах Лия перемещалась между крупными городами и пограничными областями. Генератор выбирает новую стартовую точку; точный предыдущий маршрут и причина прибытия остаются UNKNOWN.</p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Генератор не предполагает предыдущий маршрут или причину прибытия персонажа. Если исходное досье не подтверждает эти сведения, они остаются UNKNOWN.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
