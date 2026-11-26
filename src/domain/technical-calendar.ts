@@ -32,23 +32,25 @@ export interface TechnicalDate {
   dayOfMonth: number | null;
   intercalaryDay: string | null;
   /** Time is deliberately unset until the game establishes it. */
-  hour: null;
-  minute: null;
+  hour: number | null;
+  minute: number | null;
   formatted: string;
 }
 
-export function resolveTechnicalDate(dayOfYear: number, year: number): TechnicalDate {
+export function resolveTechnicalDate(dayOfYear: number, year: number, hour: number | null = null, minute: number | null = null): TechnicalDate {
   if (!Number.isInteger(dayOfYear) || dayOfYear < 1 || dayOfYear > TECHNICAL_CALENDAR_DAYS_PER_YEAR) {
     throw new Error("День года должен быть в диапазоне от 1 до 365.");
   }
   if (!Number.isInteger(year) || year < 0) throw new Error("Год должен быть целым неотрицательным числом.");
+  if ((hour === null) !== (minute === null) || (hour !== null && (!Number.isInteger(hour) || hour < 0 || hour > 23)) || (minute !== null && (!Number.isInteger(minute) || minute < 0 || minute > 59))) throw new Error("Некорректное время.");
+  const clock = hour === null || minute === null ? "время не установлено" : String(hour).padStart(2,"0") + ":" + String(minute).padStart(2,"0");
 
   if (dayOfYear > TECHNICAL_CALENDAR_MONTH_COUNT * TECHNICAL_CALENDAR_DAYS_PER_MONTH) {
     const intercalaryDay = INTERCALARY_DAYS[dayOfYear - 361]!;
     return {
       year, dayOfYear, season: null, month: null, dayOfMonth: null, intercalaryDay,
-      hour: null, minute: null,
-      formatted: `${intercalaryDay}, ${year} год · время не установлено · ${TECHNICAL_CALENDAR_NAME}`,
+      hour, minute,
+      formatted: `${intercalaryDay}, ${year} год · ${clock} · ${TECHNICAL_CALENDAR_NAME}`,
     };
   }
 
@@ -58,51 +60,33 @@ export function resolveTechnicalDate(dayOfYear: number, year: number): Technical
   const month = season.months[monthIndex % 3]!;
   return {
     year, dayOfYear, season: season.name, month, dayOfMonth, intercalaryDay: null,
-    hour: null, minute: null,
-    formatted: `${dayOfMonth} ${month}, ${year} год · время не установлено · ${TECHNICAL_CALENDAR_NAME}`,
+    hour, minute,
+    formatted: `${dayOfMonth} ${month}, ${year} год · ${clock} · ${TECHNICAL_CALENDAR_NAME}`,
   };
 }
 
 
-/**
- * Advances the technical date by full 24-hour periods since the campaign start.
- * The campaign start clock is intentionally unknown, so the first calendar day
- * begins at campaign start rather than assuming an invented midnight.
- */
-export function advanceTechnicalDateByElapsedMinutes(
-  startDate: string,
-  elapsedMinutes: number,
-): string | null {
+/** Advances the calendar date and clock from the campaign-start time. */
+export function advanceTechnicalDateByElapsedMinutes(startDate: string, elapsedMinutes: number): string | null {
   if (!Number.isInteger(elapsedMinutes) || elapsedMinutes < 0) return null;
-
-  const datePart = startDate.split(" · ")[0]?.trim();
-  if (!datePart) return null;
-
-  let dayOfYear: number | null = null;
-  let year: number | null = null;
-
-  const regularDate = datePart.match(/^(\d{1,2})\s+(.+),\s*(\d+)\s+год$/);
-  if (regularDate) {
-    const day = Number(regularDate[1]);
-    const monthName = regularDate[2];
-    year = Number(regularDate[3]);
-    const monthIndex = TECHNICAL_SEASONS.flatMap((season) => season.months)
-      .findIndex((month) => month === monthName);
-    if (monthIndex < 0 || day < 1 || day > TECHNICAL_CALENDAR_DAYS_PER_MONTH) return null;
-    dayOfYear = monthIndex * TECHNICAL_CALENDAR_DAYS_PER_MONTH + day;
+  const parts = startDate.split(" · "); const datePart = parts[0]?.trim(); if (!datePart) return null;
+  const clockMatch = parts.slice(1).join(" · ").match(/(?:^|\\s)([01]\\d|2[0-3]):([0-5]\\d)(?:\\s|$)/);
+  const initialHour = clockMatch ? Number(clockMatch[1]) : null; const initialMinute = clockMatch ? Number(clockMatch[2]) : null;
+  let dayOfYear: number | null = null; let year: number | null = null;
+  const regular = datePart.match(/^(\\d{1,2})\\s+(.+),\\s*(\\d+)\\s+год$/);
+  if (regular) {
+    const day = Number(regular[1]); year = Number(regular[3]);
+    const monthIndex = TECHNICAL_SEASONS.flatMap((season) => season.months).findIndex((month) => month === regular[2]);
+    if (monthIndex < 0 || day < 1 || day > 30) return null; dayOfYear = monthIndex * 30 + day;
   } else {
-    const intercalaryDate = datePart.match(/^(.+),\s*(\d+)\s+год$/);
-    if (!intercalaryDate) return null;
-    const intercalaryIndex = INTERCALARY_DAYS.findIndex((name) => name === intercalaryDate[1]);
-    if (intercalaryIndex < 0) return null;
-    year = Number(intercalaryDate[2]);
-    dayOfYear = TECHNICAL_CALENDAR_MONTH_COUNT * TECHNICAL_CALENDAR_DAYS_PER_MONTH + intercalaryIndex + 1;
+    const intercalary = datePart.match(/^(.+),\\s*(\\d+)\\s+год$/); if (!intercalary) return null;
+    const index = INTERCALARY_DAYS.findIndex((name) => name === intercalary[1]); if (index < 0) return null;
+    year = Number(intercalary[2]); dayOfYear = 360 + index + 1;
   }
-
   if (year === null || !Number.isInteger(year) || year < 0 || dayOfYear === null) return null;
-  const absoluteDay = year * TECHNICAL_CALENDAR_DAYS_PER_YEAR + dayOfYear - 1 +
-    Math.floor(elapsedMinutes / 1440);
-  const nextYear = Math.floor(absoluteDay / TECHNICAL_CALENDAR_DAYS_PER_YEAR);
-  const nextDayOfYear = (absoluteDay % TECHNICAL_CALENDAR_DAYS_PER_YEAR) + 1;
-  return resolveTechnicalDate(nextDayOfYear, nextYear).formatted;
+  const clockStart = initialHour === null || initialMinute === null ? null : initialHour * 60 + initialMinute;
+  const total = (clockStart ?? 0) + elapsedMinutes; const absoluteDay = year * 365 + dayOfYear - 1 + Math.floor(total / 1440);
+  const nextYear = Math.floor(absoluteDay / 365); const nextDay = absoluteDay % 365 + 1;
+  const nextHour = clockStart === null ? null : Math.floor((total % 1440) / 60); const nextMinute = clockStart === null ? null : total % 60;
+  return resolveTechnicalDate(nextDay, nextYear, nextHour, nextMinute).formatted;
 }
