@@ -233,3 +233,31 @@ describe("clean trial campaign reset", () => {
     expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
   });
 });
+
+
+describe("explicit resource reconciliation", () => {
+  it("allows the player to set a known current resource count without advancing a game turn", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.player_character_state.resources = [{ id: "second-wind", name: "Second Wind", current: null, max: 4, recovery: "Short/Long Rest", certainty: "KNOWN" }];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+    let saved: ReturnType<typeof result.current.updateCharacterResource>;
+    act(() => { saved = result.current.updateCharacterResource("second-wind", 3); });
+    expect(saved!.ok).toBe(true);
+    expect(result.current.character.resources[0]?.current).toBe(3);
+    expect(result.current.sessionLog.lastTurnNumber).toBe(0);
+  });
+
+  it("rejects resource corrections outside the confirmed maximum", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.player_character_state.resources = [{ id: "second-wind", name: "Second Wind", current: null, max: 4, recovery: "Short/Long Rest", certainty: "KNOWN" }];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+    let saved: ReturnType<typeof result.current.updateCharacterResource>;
+    act(() => { saved = result.current.updateCharacterResource("second-wind", 5); });
+    expect(saved!.ok).toBe(false);
+    expect(result.current.character.resources[0]?.current).toBeNull();
+  });
+});
