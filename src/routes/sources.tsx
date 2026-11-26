@@ -187,19 +187,19 @@ function SourcesPage() {
           <span>ОБСИДИАН 4.1 · полный управляющий промт</span>
           <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("OBSIDIAN_MASTER_PROMPT", event)} className="block w-full text-xs" />
           <span className="block text-[11px] text-muted-foreground">MD, TXT или DOCX. Загружается один раз и далее подключается сервером.</span>
-          {vaultStatus.OBSIDIAN_MASTER_PROMPT && <span className="block text-[11px] text-emerald-500">{vaultStatus.OBSIDIAN_MASTER_PROMPT}</span>}
+          {vaultStatus["OBSIDIAN_MASTER_PROMPT"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["OBSIDIAN_MASTER_PROMPT"]}</span>}
         </label>
         <label className="space-y-1.5 text-sm font-medium">
           <span>SRD 5.2.1 · правила D&D 2024</span>
           <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("SRD_5_2_1", event)} className="block w-full text-xs" />
           <span className="block text-[11px] text-muted-foreground">Нужна текстовая версия MD/TXT/DOCX; PDF пока не поддерживается.</span>
-          {vaultStatus.SRD_5_2_1 && <span className="block text-[11px] text-emerald-500">{vaultStatus.SRD_5_2_1}</span>}
+          {vaultStatus["SRD_5_2_1"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["SRD_5_2_1"]}</span>}
         </label>
         <label className="space-y-1.5 text-sm font-medium">
           <span>Хроника Экдрасиля · постоянный лор мира</span>
           <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("EKDRASIL_WORLD_BIBLE", event)} className="block w-full text-xs" />
           <span className="block text-[11px] text-muted-foreground">Подключается ко всем кампаниям Экдрасиля. Персонажи и события кампаний сюда не попадают.</span>
-          {vaultStatus.EKDRASIL_WORLD_BIBLE && <span className="block text-[11px] text-emerald-500">{vaultStatus.EKDRASIL_WORLD_BIBLE}</span>}
+          {vaultStatus["EKDRASIL_WORLD_BIBLE"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["EKDRASIL_WORLD_BIBLE"]}</span>}
         </label>
       </div>
       {vaultBusy && <p className="text-xs text-muted-foreground">Сохраняю документ в постоянной базе мастера…</p>}
