@@ -186,6 +186,7 @@ export interface ObsidianStoreValue {
   }) => PersistVerifyResult;
   updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
   confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
+  resetForTrialCampaign: () => PersistVerifyResult;
 
   // Turns & Append-only Journal
   updateTurnDraft: (patch: Partial<TurnDraft>) => void;
@@ -1019,6 +1020,36 @@ export function ObsidianStoreProvider({
     [collections, commitCollections],
   );
 
+  const resetForTrialCampaign: ObsidianStoreValue["resetForTrialCampaign"] = useCallback(() => {
+    const now = new Date().toISOString();
+    const blank = createInitialCollections();
+    const next: ObsidianCollections = {
+      ...blank,
+      // Preserve verified source documents and the isolated player dossier import.
+      sources: collections.sources,
+      player_character_state: collections.player_character_state,
+      audit_log: {
+        ...blank.audit_log,
+        entries: [{
+          id: makeId("aud"),
+          timestamp: now,
+          action: "CAMPAIGN_RESET_FOR_TRIAL",
+          status: "OK",
+          details: "Создано чистое состояние пробной кампании. Источники и PLAYER_CHARACTER_STATE сохранены; старые NPC, фракции, локации, факты, события, ходы и журнал не перенесены. Перед сбросом пользователь подтвердил создание резервной копии.",
+          campaignVersion: blank.world_state.stateVersion,
+          characterVersion: collections.player_character_state.stateVersion,
+          turnNumber: null,
+          checksumSnapshot: computeChecksum({
+            resetAt: now,
+            preservedSourceIds: collections.sources.map((source) => source.id),
+            characterVersion: collections.player_character_state.stateVersion,
+          }),
+        }],
+      },
+    };
+    return commitCollections(next);
+  }, [collections, commitCollections]);
+
   const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback((patch = {}) => {
     const currentWorld = collections.world_state;
     const ws: WorldState = {
@@ -1588,6 +1619,7 @@ export function ObsidianStoreProvider({
       applyGeneratedStart,
       updateCampaignParameters,
       confirmCampaignSetup,
+    resetForTrialCampaign,
       updateTurnDraft,
       saveTurnDraftExplicit,
       checkTurnDraft,
