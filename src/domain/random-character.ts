@@ -5,6 +5,7 @@ type Random = (length: number) => number;
 type ClassKey = "Fighter" | "Rogue" | "Barbarian";
 type BackgroundKey = "Soldier" | "Criminal";
 type SpeciesKey = "Dwarf" | "Elf";
+type ElfLineage = "Drow" | "High Elf" | "Wood Elf";
 
 const ABILITIES: Ability[] = ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma"];
 const SKILL_ABILITY: Record<string, Ability> = {
@@ -47,7 +48,7 @@ const BACKGROUND_DATA = {
 
 const SPECIES_DATA = {
   Dwarf: { size:"MEDIUM" as const, speed:30, hp:1, traits:"Тёмное зрение 120 футов; сопротивление урону ядом и преимущество на спасброски против состояния Отравлен; Dwarven Toughness: +1 к максимуму HP." },
-  Elf: { size:"MEDIUM" as const, speed:35, hp:0, traits:"Тёмное зрение 60 футов; преимущество на спасброски против состояния Очарован; владение Восприятием (Keen Senses); Trance: продолжительный отдых за 4 часа медитации; Wood Elf: скорость 35 футов, заговор Druidcraft." },
+  Elf: { size:"MEDIUM" as const, speed:30, hp:0, traits:"Тёмное зрение 60 футов; Fey Ancestry: преимущество на спасброски для избегания или окончания состояния Очарован; Trance: не нуждается во сне, магия не может усыпить; продолжительный отдых за 4 часа медитации; Keen Senses: владение одним навыком на выбор — Проницательность, Восприятие или Выживание." },
 } as const;
 
 const GIVEN_NAMES = ["Арен","Брен","Кайр","Лиор","Мира","Селин","Тарен","Эйра","Вейл","Нерис","Оррин","Илана"];
@@ -76,6 +77,8 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
   const classData=CLASS_DATA[className];
   const backgroundData=BACKGROUND_DATA[background];
   const speciesData=SPECIES_DATA[species];
+  const elfLineage: ElfLineage | null = species === "Elf" ? choose(["Drow","High Elf","Wood Elf"] as const,random) : null;
+  const elfKeenSkill = species === "Elf" ? choose(["Insight","Perception","Survival"] as const,random) : null;
   const rolls=ABILITIES.map((ability)=>({ability,total:rollStat(random)}));
   // Assign rolled scores to abilities in random order, then apply the background's legal ability increases.
   const shuffled=[...ABILITIES];
@@ -94,7 +97,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     const next=choose(classSkills,random); classSkills.splice(classSkills.indexOf(next),1); chosenClassSkills.push(next);
   }
   const skills=[...new Set([...chosenClassSkills,...backgroundData.skills])];
-  if(species==="Elf"&&!skills.includes("Perception")) skills.push("Perception");
+  if(elfKeenSkill && !skills.includes(elfKeenSkill)) skills.push(elfKeenSkill);
   const proficiency=2;
   const expertisePool=[...skills];
   const expertiseSkills:string[]=[];
@@ -120,18 +123,20 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     :className==="Rogue"
       ?"Владение: лёгкие доспехи, простое оружие и воинское оружие со свойствами Finesse или Light; воровские инструменты."
       :"Владение: лёгкие и средние доспехи, щиты, простое и воинское оружие.";
-  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`];
+  const lineageText = elfLineage === "Drow" ? "Elven Lineage — Drow: тёмное зрение 120 футов; заговор Dancing Lights." : elfLineage === "High Elf" ? "Elven Lineage — High Elf: заговор Prestidigitation; после продолжительного отдыха можно заменить его другим заговором из списка волшебника." : elfLineage === "Wood Elf" ? "Elven Lineage — Wood Elf: скорость 35 футов; заговор Druidcraft." : "";
+  const dwarfText = species === "Dwarf" ? "Dwarven Resilience: сопротивление урону ядом и преимущество на спасброски для избегания или окончания состояния Отравлен. Dwarven Toughness: +1 к максимуму HP за каждый уровень. Stonecunning: бонусным действием получает Tremorsense 60 футов на 10 минут, находясь на каменной поверхности; число использований равно бонусу мастерства, восстановление после продолжительного отдыха." : "";
+  const featureText=[classProficiencies,classData.feature,...(className==="Rogue"?[`Expertise: ${expertiseSkills.join(", ")} (бонус мастерства удвоен).`]:[]),`Предыстория ${background}: Origin Feat — ${backgroundData.feat}. ${featDescription} Навыки: ${backgroundData.skills.join(", ")}; инструмент: ${backgroundData.tool}.`,`Вид ${species}: ${speciesData.traits}`,lineageText,dwarfText].filter(Boolean);
   const character:Partial<PlayerCharacterState>={
     name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",
-    speciesAndClass:`${species} · ${className} 1 уровня · Предыстория: ${background}`,
+    speciesAndClass:`${species}${elfLineage ? ` (${elfLineage})` : ""} · ${className} 1 уровня · Предыстория: ${background}`,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
-    abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
+    abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:elfLineage === "Wood Elf" ? 35 : speciesData.speed,
     hitDice:`1d${classData.die}`,baseSavingThrowBonuses:saves,savingThrowBonuses:saves,
     skillBonuses,classFeaturesByLevel:[{level:1,features:featureText.join(" ")}],
     weaponAttacks:[{weapon:classData.weapon,attackBonus:attackMod,damage:`${classData.damage} + ${mod(abilityScores[classData.attackAbility])} урона`,mastery:classData.mastery}],
     statsCertainty:"KNOWN",currentLocationLabel:"UNKNOWN",conditions:[],resources:resource,inventory,
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
-    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Дополнительные опции и детали, не входящие в этот генератор, не подразумеваются.`,
+    notes:`Случайный персонаж 1 уровня, создан по ограниченному генератору D&D 2024 / SRD 5.2.1. Класс: ${className}; предыстория: ${background}; вид: ${species}${elfLineage ? ` (${elfLineage})` : ""}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Дополнительные опции и детали, не входящие в этот генератор, не подразумеваются.`,
   };
-  return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
+  return {character,summary:{name:character.name!,className,background,species:elfLineage ? `${species} (${elfLineage})` : species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }
