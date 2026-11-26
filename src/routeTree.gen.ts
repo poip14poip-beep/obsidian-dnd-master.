@@ -169,6 +169,7 @@ export interface FileRouteTypes {
     | '/canon'
     | '/character'
     | '/factions'
+    | '/game'
     | '/npcs'
     | '/reset-password'
     | '/settings'
