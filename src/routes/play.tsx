@@ -437,7 +437,7 @@ function PlayPage() {
     try {
       // Send the parsed dossier only. The original file can contain a large amount
       // of repeated prose and is not needed for a rules/canon compatibility check.
-      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, dossierText: dossier.content });
+      await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName });
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Проверка совместимости не пройдена.");
       setBiographyBusy(false);
