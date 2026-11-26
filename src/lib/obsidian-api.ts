@@ -320,9 +320,15 @@ export async function saveLinkedCloudSnapshot(
   const remoteRevision = remote.found ? remote.revision : 0;
   if (remoteRevision !== link.revision) {
     const remoteChecksums = remote.payload?.["checksums"];
+    const sameChecksums = typeof remoteChecksums === "object" && remoteChecksums !== null &&
+      !Array.isArray(remoteChecksums) &&
+      Object.keys(remoteChecksums).length === Object.keys(payload.checksums).length &&
+      Object.entries(payload.checksums).every(([key, value]) =>
+        (remoteChecksums as Record<string, unknown>)[key] === value
+      );
     const sameCommittedState = remote.found &&
       remote.turn_number === payload.collections.session_log.lastTurnNumber &&
-      JSON.stringify(remoteChecksums) === JSON.stringify(payload.checksums);
+      sameChecksums;
     if (sameCommittedState) {
       // The previous request may have reached the server even if its response was lost.
       // Adopt that already-verified revision instead of creating a duplicate checkpoint.
