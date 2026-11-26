@@ -132,9 +132,9 @@ export function extractDossierBasics(text: string): DossierBasics {
   const numberWords: Record<string, number> = { "один": 1, "одна": 1, "два": 2, "две": 2, "три": 3, "четыре": 4 };
   const resources: DossierResource[] = [];
   const resourcePatterns: Array<{ name: string; pattern: RegExp; recovery: string }> = [
-    { name: "Второе дыхание", pattern: /Second Wind:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "Одно использование после короткого отдыха; все использования после продолжительного отдыха" },
-    { name: "Всплеск действий", pattern: /Action Surge:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "Все использования после короткого или продолжительного отдыха" },
-    { name: "Несгибаемость", pattern: /Indomitable:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "Все использования после продолжительного отдыха" },
+    { name: "Second Wind", pattern: /Second Wind:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "1 use on Short Rest; all uses on Long Rest" },
+    { name: "Action Surge", pattern: /Action Surge:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?[^.]{0,100}?(?:между|до) продолжительными отдыхами/iu, recovery: "All uses on Short or Long Rest" },
+    { name: "Indomitable", pattern: /Indomitable:\s*(один|одна|два|две|три|четыре|\d+)\s+использован(?:ия|ие|ий|о)?/iu, recovery: "All uses on Long Rest" },
   ];
   for (const resource of resourcePatterns) {
     const match = normalizedText.match(resource.pattern);
