@@ -173,6 +173,7 @@ function PlayPage() {
       if (!historySaved.ok) throw new Error(historySaved.error);
       const result = applyGeneratedStart({
         city: generated.city,
+        placeName: generated.placeName,
         date: generated.date,
         narrative: generated.narrative,
         locationDescription: generated.location.description,
