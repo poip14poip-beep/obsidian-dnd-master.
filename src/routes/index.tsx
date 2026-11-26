@@ -14,6 +14,7 @@ import {
 
 import { CertaintyBadge, SetupGateBanner } from "@/components/StatusPill";
 import { useObsidianStore } from "@/store/obsidian-store";
+import { isCampaignActive } from "@/domain/campaign-state";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -79,7 +80,7 @@ function OverviewPage() {
         </div>
       )}
 
-      <SetupGateBanner confirmed={worldState.setup.confirmed || sessionLog.lastTurnNumber > 0} />
+      <SetupGateBanner confirmed={isCampaignActive(worldState.setup.confirmed, sessionLog.lastTurnNumber)} />
 
       <div className="panel-surface border-border/80 bg-surface-elevated/60 px-3.5 py-2.5 text-xs text-muted-foreground">
         <strong className="text-foreground">Локальное хранилище браузера:</strong> данные
