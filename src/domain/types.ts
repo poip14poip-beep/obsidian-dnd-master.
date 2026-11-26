@@ -268,6 +268,9 @@ export interface CharacterBiography {
   flaw: string;
   motivation: string;
   biography: string;
+  skillOrigins: string[];
+  weaponBackground: string;
+  equipmentBackground: string;
   canonBasis: string[];
   inventedDetailsNotice: string;
 }
