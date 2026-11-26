@@ -30,6 +30,8 @@ function PlayPage() {
   const [candidate, setCandidate] = useState<RandomCandidate | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [cloakAttunement, setCloakAttunement] = useState<"UNKNOWN" | "ATTUNED" | "NOT_ATTUNED">("UNKNOWN");
+  const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
+  const [importError, setImportError] = useState<string | null>(null);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
@@ -42,9 +44,20 @@ function PlayPage() {
     setMode("RANDOM");
     setConfirmed(false);
   };
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setCloakAttunement("UNKNOWN"); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setCloakAttunement("UNKNOWN"); setResourceCurrentInputs({}); setImportError(null); };
   const confirmDossier = () => {
     if (!parsed || !dossier) return;
+    const invalidResource = parsed.resources.find((resource) => {
+      const raw = resourceCurrentInputs[resource.name];
+      if (raw === undefined || raw.trim() === "") return false;
+      const value = Number(raw);
+      return !Number.isInteger(value) || value < 0 || value > resource.max;
+    });
+    if (invalidResource) {
+      setImportError(`Текущее количество ресурса «${invalidResource.name}» должно быть целым числом от 0 до ${invalidResource.max}.`);
+      return;
+    }
+    setImportError(null);
     const result = updatePlayerCharacter({
       name: parsed.name ?? "UNKNOWN",
       nameCertainty: parsed.name ? "KNOWN" : "UNKNOWN",
@@ -66,7 +79,7 @@ function PlayPage() {
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
       inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: cloakAttunement === "UNKNOWN" ? "UNKNOWN" : cloakAttunement } : {}) })),
-      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
+      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: resourceCurrentInputs[item.name]?.trim() ? Number(resourceCurrentInputs[item.name]) : item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
       notes: `Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Настройка Cloak of Protection: ${cloakAttunement}. Без подтверждённой настройки используется КБ 19 и базовые спасброски; при подтверждённой настройке — КБ 20 и +1 ко всем спасброскам. Размер существа в досье не указан и остаётся UNKNOWN.`,
     });
     if (result.ok) setConfirmed(true);
@@ -109,6 +122,24 @@ function PlayPage() {
           </select>
         </div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <p className="text-xs font-semibold">Фактические остатки классовых ресурсов</p>
+          <p className="text-[11px] text-muted-foreground">Оставь поле пустым, если текущее количество неизвестно. Не будет автоматически подставлено максимальное значение.</p>
+          {parsed.resources.map((resource) => (
+            <div key={resource.name} className="grid grid-cols-[1fr_100px] items-center gap-2">
+              <label htmlFor={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`} className="text-xs">{resource.name} · максимум {resource.max}</label>
+              <input
+                id={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`}
+                type="number" min={0} max={resource.max} step={1}
+                value={resourceCurrentInputs[resource.name] ?? ""}
+                onChange={(event) => setResourceCurrentInputs((current) => ({ ...current, [resource.name]: event.target.value }))}
+                placeholder="UNKNOWN"
+                className="touch-target w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
+              />
+            </div>
+          ))}
+        </div>
+        {importError && <p className="text-xs text-destructive">{importError}</p>}
         <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
       </>}
     </section>}
