@@ -191,7 +191,7 @@ function PlayPage() {
     };
     let response: Response;
     try {
-      response = await fetch(env.config.url.replace(/\\/$/, "") + "/functions/v1/obsidian-gm", {
+      response = await fetch((env.config.url.endsWith("/") ? env.config.url.slice(0, -1) : env.config.url) + "/functions/v1/obsidian-gm", {
         method: "POST",
         mode: "cors",
         headers: {
