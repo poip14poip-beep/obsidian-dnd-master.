@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { CertaintyStatus, PlayerCharacterState } from "@/domain/types";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { calculatePlayerInventoryWeight } from "@/domain/inventory-weight";
+import { getSkillDescription, localizeInventoryItemName, localizeSkillName } from "@/domain/dnd-localization";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/character")({
@@ -467,7 +468,7 @@ function CharacterPage() {
           {character.skillBonuses && character.skillBonuses.length > 0 && <div className="space-y-1">
             <p className="text-xs font-medium text-muted-foreground">Навыки</p>
             <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-              {character.skillBonuses.map((skill) => <div key={skill.name} className="flex justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><span>{skill.name}<span className="ml-1 text-muted-foreground">· {skill.basis}</span></span><strong className="mono-code">{skill.bonus >= 0 ? "+" : ""}{skill.bonus}</strong></div>)}
+              {character.skillBonuses.map((skill) => <div key={skill.name} className="flex justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><span>{localizeSkillName(skill.name)}<span className="ml-1 text-muted-foreground">· {skill.basis}</span><span className="mt-1 block text-muted-foreground">{getSkillDescription(skill.name)}</span></span><strong className="mono-code">{skill.bonus >= 0 ? "+" : ""}{skill.bonus}</strong></div>)}
             </div>
           </div>}
           {character.weaponAttacks && character.weaponAttacks.length > 0 && <div className="space-y-1">
@@ -609,11 +610,11 @@ function CharacterPage() {
                 className="flex items-center justify-between gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-sm"
               >
                 <div>
-                  <span className="font-medium text-foreground">{item.name}</span>
+                  <span className="font-medium text-foreground">{localizeInventoryItemName(item.name)}</span>
                   <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>
                   <div className="mt-1 flex flex-wrap items-center gap-2">
                     <select
-                      aria-label={`Местоположение: ${item.name}`}
+                      aria-label={`Местоположение: ${localizeInventoryItemName(item.name)}`}
                       value={item.location ?? "CARRIED"}
                       onChange={(e) => {
                         const result = updateInventoryItem(item.id, { location: e.target.value as NonNullable<typeof item.location> });
@@ -630,7 +631,7 @@ function CharacterPage() {
                     <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
                       Вес/ед. (lb)
                       <Input
-                        aria-label={`Вес единицы: ${item.name}`}
+                        aria-label={`Вес единицы: ${localizeInventoryItemName(item.name)}`}
                         inputMode="decimal"
                         defaultValue={item.unitWeightLb ?? ""}
                         placeholder="?"
@@ -660,7 +661,7 @@ function CharacterPage() {
                   variant="ghost"
                   size="sm"
                   className="touch-target text-muted-foreground hover:text-destructive"
-                  aria-label={`Удалить ${item.name}`}
+                  aria-label={`Удалить ${localizeInventoryItemName(item.name)}`}
                   onClick={() => removeInventoryItem(item.id)}
                 >
                   <Trash2 className="h-4 w-4" />
