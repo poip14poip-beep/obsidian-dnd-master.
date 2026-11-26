@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { createEmptyTurnDraft, createInitialCollections } from "@/domain/defaults";
+import { applyEkdrasilSeed, loadEkdrasilSeed } from "@/domain/campaign-seed";
 import {
   buildBackupEnvelope,
   computeChecksum,
@@ -221,15 +222,58 @@ export function ObsidianStoreProvider({
   );
 
   useEffect(() => {
-    const storage = resolveStorage();
-    const loaded = loadAllCollections(storage);
-    if (loaded.turn_drafts.length === 0) {
-      loaded.turn_drafts = [createEmptyTurnDraft()];
+    let cancelled = false;
+
+    async function hydrate() {
+      const storage = resolveStorage();
+      const loaded = loadAllCollections(storage);
+      if (loaded.turn_drafts.length === 0) {
+        loaded.turn_drafts = [createEmptyTurnDraft()];
+      }
+
+      // Test/custom stores stay isolated; the production browser gets the bundled Ekdrasil pack.
+      if (storageOverride) {
+        if (!cancelled) {
+          setCollections(loaded);
+          setLastIntegrityReport(runIntegrityAudit(loaded));
+          setHydrated(true);
+        }
+        return;
+      }
+
+      try {
+        const bundle = await loadEkdrasilSeed();
+        const seeded = await applyEkdrasilSeed(loaded, bundle);
+        if (cancelled) return;
+
+        const persisted = persistAndVerifyCollections(storage, seeded);
+        setCollections(seeded);
+        if (persisted.ok) {
+          setLastIntegrityReport(persisted.report);
+          setLastStorageError(null);
+        } else {
+          setLastIntegrityReport(persisted.report ?? runIntegrityAudit(seeded));
+          setLastStorageError(persisted.error);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setCollections(loaded);
+        setLastIntegrityReport(runIntegrityAudit(loaded));
+        setLastStorageError(
+          error instanceof Error
+            ? `Не удалось автоматически подключить встроенный пакет Экдрасиля: ${error.message}`
+            : "Не удалось автоматически подключить встроенный пакет Экдрасиля.",
+        );
+      } finally {
+        if (!cancelled) setHydrated(true);
+      }
     }
-    setCollections(loaded);
-    setLastIntegrityReport(runIntegrityAudit(loaded));
-    setHydrated(true);
-  }, [resolveStorage]);
+
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolveStorage, storageOverride]);
 
   const commitCollections = useCallback(
     (next: ObsidianCollections, expectedTailTurnNumber?: number): PersistVerifyResult => {

@@ -25,10 +25,19 @@ export interface DossierBasics {
 }
 /** Extracts explicit sheet values and item rows; current HP, coin balance and origin are never inferred. */
 export function extractDossierBasics(text: string): DossierBasics {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  // DOCX text extraction often preserves table columns as aligned spaces rather than pipes.
+  // Normalize those rows for the same parser used by Markdown dossier imports.
+  const normalizedText = text.split(/\r?\n/).map((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || /^<PARSED TEXT FOR PAGE:/i.test(trimmed) || /^<!-- Страница /i.test(trimmed)) return line;
+    const cells = trimmed.split(/\s{2,}/).map((cell) => cell.trim()).filter(Boolean);
+    return cells.length >= 2 ? cells.join(" | ") : line;
+  }).join("\n");
+  const lines = normalizedText.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   const name = lines.find((line) => /^[А-ЯЁ][А-ЯЁ\s-]{2,}$/u.test(line))?.replace(/\s+/g, " ") ?? null;
-  const summary = text;
-  const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\r\n]{0,120})/i);
+  const summary = normalizedText.replace(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)\s*\.\s*\n\s*(Fighter|Воин|Wizard|Rogue|Paladin|Боец)/i, "$1. $2");
+  const classMatch = summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[.,; —-]{0,12}((?:Fighter|Воин|Wizard|Rogue|Paladin|Боец)[^\r\n]{0,120})/i)
+    ?? summary.match(/(Человек|Эльф|Дварф|Полуэльф|Полуорк|Гном|Тифлинг|Драконорождённый)[\s\S]{0,120}?(Fighter\s*\d+[^\r\n]{0,100})/i);
   const speciesAndClass = classMatch ? `${classMatch[1]!}. ${classMatch[2]!.trim()}` : null;
   const levelMatch = text.match(/(?:общий\s+уровень\s*\|\s*)(\d{1,2})\b/i)
     ?? text.match(/(?:общий\s*)?(\d{1,2})-й\s+уровень[^\n]{0,120}(?:Fighter\s*20|эпическ)/i)
