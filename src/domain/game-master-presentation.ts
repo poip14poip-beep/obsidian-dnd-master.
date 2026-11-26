@@ -6,8 +6,8 @@ function known(value: string | null | undefined): string {
 }
 
 function parseTechnicalCalendar(date: string, calendar: string) {
-  if (!/technical calendar 1\\.0/i.test(calendar)) return null;
-  const match = date.match(/(?:^|\\D)(\\d{1,4})\\s*(?:год)?\\s*,?\\s*месяц\\s*(\\d{1,2})\\s*,?\\s*день\\s*(\\d{1,2})/i);
+  if (!/technical calendar 1\.0/i.test(calendar)) return null;
+  const match = date.match(/(?:^|\D)(\d{1,4})\s*(?:год)?\s*,?\s*месяц\s*(\d{1,2})\s*,?\s*день\s*(\d{1,2})/i);
   if (!match) return null;
   const year = Number(match[1]);
   const month = Number(match[2]);
@@ -52,7 +52,7 @@ export function formatGameMasterAnswer(
   const place = known(location?.name ?? character.currentLocationLabel ?? world.startLocationName);
   const region = known(location?.region);
   const date = known(world.currentInGameDate);
-  const timeMatch = date.match(/(?:^|\\b)([01]\\d|2[0-3]):([0-5]\\d)(?:\\b|$)/);
+  const timeMatch = date.match(/(?:^|\b)([01]\d|2[0-3]):([0-5]\d)(?:\b|$)/);
   const time = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : "НЕ УСТАНОВЛЕНО";
   const numericDate = parseTechnicalCalendar(date, world.calendarSystem);
   const fallbackYear = date.match(/(?:год|year)\\s*[:№]?\\s*(\\d{1,4})|(?:^|\\s|[,(])(\\d{1,4})\\s*(?:год|г\\.?|year)(?:\\s|[,(]|$)/i);
