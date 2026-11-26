@@ -2,7 +2,6 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   BookOpen,
   Clock,
-  FileText,
   Flag,
   Globe,
   LayoutGrid,
@@ -26,7 +25,6 @@ import { cn } from "@/lib/utils";
 
 export type NavRoutePath =
   | "/"
-  | "/sources"
   | "/canon"
   | "/world"
   | "/character"
@@ -45,7 +43,6 @@ export const NAV_ITEMS: ReadonlyArray<{
   icon: typeof LayoutGrid;
 }> = [
   { to: "/", label: "Обзор", shortLabel: "Обзор", icon: LayoutGrid },
-  { to: "/sources", label: "Источники", shortLabel: "Источники", icon: FileText },
   { to: "/canon", label: "Канон", shortLabel: "Канон", icon: BookOpen },
   { to: "/world", label: "Мир", shortLabel: "Мир", icon: Globe },
   { to: "/character", label: "Персонаж", shortLabel: "Персонаж", icon: User },
