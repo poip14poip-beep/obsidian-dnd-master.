@@ -182,6 +182,7 @@ function PlayPage() {
           !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
           !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
           !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (candidate.character.skillBonuses?.length ?? 0) ||
+          typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
           typeof biography.weaponBackground !== "string" || biography.weaponBackground.trim().length < 30 ||
           typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
         throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
@@ -328,13 +329,30 @@ function PlayPage() {
       </>}
     </section>}
     {mode === "RANDOM" && candidate && <section className="space-y-3 rounded-lg border p-4">
-      <h2 className="text-lg font-semibold">Случайный персонаж · 1 уровень</h2>
-      <div className="rounded bg-muted/30 p-3">
-        <p className="text-lg font-semibold">{candidate.summary.name}</p>
-        <p className="text-sm text-muted-foreground">{candidate.summary.species} · {candidate.summary.className} · {candidate.summary.background}</p>
-        <p className="mt-2 text-sm">HP <strong>{candidate.summary.hitPoints}</strong> · КД <strong>{candidate.summary.armorClass}</strong> · Скорость и владения рассчитаны</p>
-      </div>
-      <div className="grid grid-cols-3 gap-2">{Object.entries(candidate.summary.abilityScores).map(([key,value])=><div className="rounded bg-muted/40 p-2 text-center" key={key}><p className="text-xs text-muted-foreground">{key.toUpperCase()}</p><p className="text-xl font-bold">{value}</p></div>)}</div>
+      <h2 className="text-lg font-semibold">Досье персонажа · 1 уровень</h2>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">1. Имя и основные данные</h3>
+        <div className="overflow-hidden rounded-lg border">
+          {[
+            ["Имя",candidate.summary.name],["Народ",candidate.summary.species],
+            ["Класс и уровень",candidate.summary.className+" · 1"],["Предыстория",candidate.summary.background],
+            ["Очки здоровья",String(candidate.summary.hitPoints)],["Класс доспеха",String(candidate.summary.armorClass)],
+            ["Скорость",String(candidate.character.speedFeet ?? "UNKNOWN")+" футов"],
+            ["Бонус мастерства",String(candidate.character.proficiencyBonus ?? "UNKNOWN")],
+          ].map(([label,value])=><div key={label} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-3 border-b last:border-b-0 px-3 py-2 text-sm"><span className="text-muted-foreground">{label}</span><strong className="break-words text-right">{value}</strong></div>)}
+        </div>
+      </section>
+      <section className="space-y-2">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">2. Характеристики</h3>
+        <div className="overflow-hidden rounded-lg border">
+          {(["strength","dexterity","constitution","intelligence","wisdom","charisma"] as const).map((key)=> {
+            const labels={strength:"Сила",dexterity:"Ловкость",constitution:"Телосложение",intelligence:"Интеллект",wisdom:"Мудрость",charisma:"Харизма"};
+            const score=candidate.summary.abilityScores[key];
+            const modifier=Math.floor((score-10)/2);
+            return <div key={key} className="grid grid-cols-[1fr_auto_auto] items-center gap-4 border-b last:border-b-0 px-3 py-2"><span className="text-sm">{labels[key]}</span><strong className="text-lg tabular-nums">{score}</strong><span className="w-10 text-right text-sm text-muted-foreground tabular-nums">{modifier>=0?"+":""}{modifier}</span></div>;
+          })}
+        </div>
+      </section>
       <div className="space-y-1 text-sm"><p><strong>Навыки:</strong> {candidate.summary.skills.join(", ")}</p><p><strong>Снаряжение:</strong> {candidate.summary.equipment.join("; ")}</p><p><strong>Особенности:</strong> {candidate.summary.features.join(" ")}</p></div>
       <div className="rounded border border-primary/30 p-3 space-y-2">
         <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
