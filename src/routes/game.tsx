@@ -52,7 +52,7 @@ function GamePage() {
   const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge">("chat");
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
-  const requiredSourceTypes = ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
+  const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
   const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
       source.type === type && source.contentStatus === "ATTACHED" &&
