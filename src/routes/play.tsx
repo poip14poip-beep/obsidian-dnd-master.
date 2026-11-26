@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
+import { CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
@@ -33,7 +33,6 @@ function PlayPage() {
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
   const [startPending, setStartPending] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
@@ -288,7 +287,7 @@ function PlayPage() {
       setBiographyBusy(false);
     }
   }
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setImportError(null); };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || dossierUploadBusy) return;
@@ -337,16 +336,6 @@ function PlayPage() {
       setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
       return;
     }
-    const invalidResource = parsed.resources.find((resource) => {
-      const raw = resourceCurrentInputs[resource.name];
-      if (raw === undefined || raw.trim() === "") return false;
-      const value = Number(raw);
-      return !Number.isInteger(value) || value < 0 || value > resource.max;
-    });
-    if (invalidResource) {
-      setImportError(`Текущее количество ресурса «${invalidResource.name}» должно быть целым числом от 0 до ${invalidResource.max}.`);
-      return;
-    }
     setImportError(null);
     const result = updatePlayerCharacter({
       sourceDossierId: dossier.id,
@@ -356,12 +345,14 @@ function PlayPage() {
       level: parsed.level,
       classLevel: parsed.classLevel,
       epicCampaignLevels: parsed.epicCampaignLevels,
-      hpCurrent: null,
+      hpCurrent: parsed.hitPointMaximum,
       hpMax: parsed.hitPointMaximum,
+      hpTemp: 0,
       armorClass: parsed.armorClass,
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
+      size: /gnome/i.test(parsed.speciesAndClass ?? "") ? "SMALL" : "MEDIUM",
       ...(parsed.hitDice ? { hitDice: parsed.hitDice } : {}),
       ...(parsed.baseSavingThrowBonuses ? { baseSavingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       ...(parsed.baseSavingThrowBonuses ? { savingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
@@ -370,8 +361,11 @@ function PlayPage() {
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
       inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: "UNKNOWN" } : {}) })),
-      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: resourceCurrentInputs[item.name]?.trim() ? Number(resourceCurrentInputs[item.name]) : item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Неуказанные в досье сведения и настройки предметов остаются UNKNOWN.",
+      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.max, max: item.max, recovery: item.recovery, certainty: item.certainty })),
+      conditions: [],
+      currency: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+      currentLocationLabel: "Будет определено при запуске кампании",
+      notes: "Загружено из проверенного досье. Новая кампания автоматически начинает персонажа с полными HP, нулевыми временными HP, восстановленными классовыми ресурсами, без состояний и с нулевым стартовым балансом, если иное не указано в листе. Стартовая локация назначается при запуске кампании.",
     });
     if (result.ok) setConfirmed(true);
   };
@@ -401,23 +395,6 @@ function PlayPage() {
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
         <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Текущие HP, деньги, местоположение, активные состояния и фактические остатки ресурсов не выводятся автоматически. После импорта потребуется отдельная подготовка старта.</div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
-        <div className="space-y-2 rounded-md border border-border p-3">
-          <p className="text-xs font-semibold">Фактические остатки классовых ресурсов</p>
-          <p className="text-[11px] text-muted-foreground">Оставь поле пустым, если текущее количество неизвестно. Не будет автоматически подставлено максимальное значение.</p>
-          {parsed.resources.map((resource) => (
-            <div key={resource.name} className="grid grid-cols-[1fr_100px] items-center gap-2">
-              <label htmlFor={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`} className="text-xs">{resource.name} · максимум {resource.max}</label>
-              <input
-                id={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`}
-                type="number" min={0} max={resource.max} step={1}
-                value={resourceCurrentInputs[resource.name] ?? ""}
-                onChange={(event) => setResourceCurrentInputs((current) => ({ ...current, [resource.name]: event.target.value }))}
-                placeholder="UNKNOWN"
-                className="touch-target w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-              />
-            </div>
-          ))}
-        </div>
         {importError && <p className="text-xs text-destructive">{importError}</p>}
         <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
       </>}
