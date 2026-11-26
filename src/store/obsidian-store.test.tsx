@@ -143,7 +143,7 @@ describe("random free-roam start", () => {
       expect(imported.ok).toBe(true);
     });
     const draws = [7, 2, 1, 18];
-    const generated = generateRandomStart((length) => {
+    const generated = generateRandomStart(184, (length) => {
       const value = draws.shift();
       if (value === undefined || value >= length) throw new Error("Invalid test draw");
       return value;
@@ -184,7 +184,7 @@ describe("random free-roam start", () => {
     initial.world_state.setup.confirmed = true;
     expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
     const { result } = await renderCampaignStore(storage);
-    const generated = generateRandomStart((length) => 0);
+    const generated = generateRandomStart(184, (length) => 0);
 
     let applied: ReturnType<typeof result.current.applyGeneratedStart>;
     act(() => {
