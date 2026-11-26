@@ -39,6 +39,8 @@ describe("cloud mapping primitives", () => {
       warnings: [],
     };
     sources[1]!.contentStatus = "ATTACHED";
+    sources[1]!.reviewStatus = "UNREVIEWED";
+    sources[1]!.contextEnabled = false;
 
     const mapped = await mapCloudSources(campaignId, sources);
     expect(mapped.rows[0]!.source_type).toBe("master_rules");
@@ -71,7 +73,7 @@ describe("cloud mapping primitives", () => {
 
   it("keeps player character data separate and unverified until reviewed", async () => {
     const collections = createInitialCollections();
-    collections.player_character_state.name = "Лия Вейн";
+    collections.player_character_state.name = "Тестовый персонаж";
     const sources = await mapCloudSources(campaignId, collections.sources);
     const row = await mapCloudPlayerCharacter(
       campaignId,
@@ -79,7 +81,7 @@ describe("cloud mapping primitives", () => {
       sources.ids,
     );
 
-    expect(row.character_name).toBe("Лия Вейн");
+    expect(row.character_name).toBe("Тестовый персонаж");
     expect(row.character_data).toEqual(collections.player_character_state);
     expect(row.source_id).toBe(sources.ids[collections.player_character_state.sourceDossierId]);
     expect(row.verified_at).toBeNull();
