@@ -6,6 +6,7 @@ const SUPABASE_PUBLISHABLE_KEY =
   Deno.env.get("SUPABASE_PUBLISHABLE_KEY") ??
   "";
 const ROUTERAI_API_KEY = Deno.env.get("ROUTERAI_API_KEY") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
@@ -103,7 +104,7 @@ Deno.serve(async (req: Request) => {
   if (!origin || !ALLOWED_ORIGINS.has(origin)) return json({ error: { code: "ORIGIN_NOT_ALLOWED", message: "This app origin is not allowed." } }, 403, cors);
 
   const declaredLength = Number(req.headers.get("content-length") ?? "0");
-  if (declaredLength > 1_000_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
+  if (declaredLength > 3_500_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
   const authorization = req.headers.get("authorization") ?? "";
   const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
   if (!tokenMatch) return json({ error: { code: "AUTH_REQUIRED", message: "Sign in to use the game master." } }, 401, cors);
@@ -117,6 +118,44 @@ Deno.serve(async (req: Request) => {
   if (authError || !authData.user) {
     return json({ error: { code: "INVALID_SESSION", message: "Your session is invalid or expired. Sign in again." } }, 401, cors);
   }
+  let rawBody: string;
+  try { rawBody = await req.text(); }
+  catch { return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors); }
+  if (rawBody.length > 3_500_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
+
+  let body: unknown;
+  try { body = JSON.parse(rawBody); }
+  catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
+  if (isRecord(body) && body.operation === "STORE_GM_SOURCE") {
+    const sourceKind = body.sourceKind;
+    const title = body.title;
+    const content = body.content;
+    if (sourceKind !== "OBSIDIAN_MASTER_PROMPT" && sourceKind !== "SRD_5_2_1") {
+      return json({ error: { code: "INVALID_GM_SOURCE_KIND", message: "Unsupported master source type." } }, 400, cors);
+    }
+    if (typeof title !== "string" || !title.trim() || typeof content !== "string" ||
+        !content.trim() || content.length > 2_500_000) {
+      return json({ error: { code: "INVALID_GM_SOURCE", message: "Файл пуст или превышает допустимый размер 2,5 млн символов." } }, 400, cors);
+    }
+    if (!SUPABASE_SERVICE_ROLE_KEY) {
+      return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроен серверный доступ к закрытому хранилищу мастера." } }, 503, cors);
+    }
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(content));
+    const sha256 = Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await serviceClient.rpc("obsidian_api_upsert_gm_source", {
+      p_actor: authData.user.id,
+      p_source_kind: sourceKind,
+      p_title: title.trim(),
+      p_content: content,
+      p_sha256: sha256,
+    });
+    if (error) return json({ error: { code: "PRIVATE_VAULT_WRITE_FAILED", message: "Не удалось сохранить закрытый документ мастера." } }, 500, cors);
+    return json({ stored: true, source: data }, 200, cors);
+  }
+
   if (!ROUTERAI_API_KEY) {
     return json({ error: {
       code: "ROUTERAI_SECRET_MISSING",
@@ -124,14 +163,6 @@ Deno.serve(async (req: Request) => {
     } }, 503, cors);
   }
 
-  let rawBody: string;
-  try { rawBody = await req.text(); }
-  catch { return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors); }
-  if (rawBody.length > 1_000_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
-
-  let body: unknown;
-  try { body = JSON.parse(rawBody); }
-  catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
   if (!isRecord(body) ||
       typeof body.model !== "string" || !ALLOWED_MODELS.has(body.model) ||
       typeof body.instructions !== "string" || body.instructions.length < 1 || body.instructions.length > 250_000 ||
@@ -145,8 +176,51 @@ Deno.serve(async (req: Request) => {
   }
 
   const schema = body.text.format.schema;
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
+    return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
+  }
+  const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data: privateSources, error: privateSourcesError } = await serviceClient.rpc(
+    "obsidian_api_get_gm_sources", { p_actor: authData.user.id },
+  );
+  if (privateSourcesError || !isRecord(privateSources) ||
+      !isRecord(privateSources.OBSIDIAN_MASTER_PROMPT) ||
+      typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string") {
+    return json({ error: {
+      code: "OBSIDIAN_MASTER_PROMPT_NOT_CONFIGURED",
+      message: "В закрытом хранилище мастера ещё не загружен полный документ ОБСИДИАН 4.1. Игровой запрос не отправлен.",
+    } }, 503, cors);
+  }
+  const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
+  const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
+    ? privateSources.SRD_5_2_1.content : "";
+  const ruleParagraphs = rulesDoc.split(/\\n\\s*\\n/g).map((part) => part.trim()).filter((part) => part.length > 80);
+  let actionText = body.input.toLowerCase();
+  try {
+    const parsedInput = JSON.parse(body.input);
+    if (isRecord(parsedInput) && typeof parsedInput.action === "string") actionText += " " + parsedInput.action.toLowerCase();
+  } catch { /* input remains available for matching */ }
+  const ruleTerms = [...new Set(actionText.split(/[^a-z0-9а-яё]+/i).filter((term) => term.length > 3))];
+  const selectedRules = ruleParagraphs
+    .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 12)
+    .map((item) => item.paragraph);
+  const rulesContext = selectedRules.length
+    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:\\n" + selectedRules.join("\\n\\n")
+    : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
+  const serverInstructions = [
+    masterPrompt,
+    "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
+    body.instructions,
+    "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
+    rulesContext,
+  ].join("\\n\\n");
   const messages = [
-    { role: "system", content: body.instructions },
+    { role: "system", content: serverInstructions },
     { role: "user", content: body.input },
   ];
   const failures: string[] = [];
