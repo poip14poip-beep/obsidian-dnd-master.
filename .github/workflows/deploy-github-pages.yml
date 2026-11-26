@@ -1,15 +1,6 @@
 name: Deploy Obsidian app to GitHub Pages
 
 on:
-  push:
-    branches: [cloud-api-client]
-    paths:
-      - "src/**"
-      - "public/**"
-      - "vite.config.ts"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/deploy-github-pages.yml"
   workflow_dispatch:
 
 permissions:
