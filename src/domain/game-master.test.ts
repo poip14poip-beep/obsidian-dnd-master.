@@ -87,9 +87,9 @@ describe("game master resolver", () => {
   });
   it("rejects creation of an NPC that already exists in the campaign registry", async () => {
     const existingNpc = { id: "npc-1", name: "Страж", role: "Страж", locationId: null, factionId: null,
-      goals: "UNKNOWN", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN" as const, sourceId: "test",
+      goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN" as const, sourceId: "test",
       locked: false, knowledge: [], version: 1, history: [] };
-    const duplicate = { ...validTurn, npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN",
+    const duplicate = { ...validTurn, npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN",
       attitudeToPlayer: "UNKNOWN", locationName: null, factionName: null, certainty: "KNOWN", reason: "test", knowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(duplicate) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", { ...context, npcs: [existingNpc] }, testOptions(fetcher as unknown as typeof fetch)))
