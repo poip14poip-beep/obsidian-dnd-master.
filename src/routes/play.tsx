@@ -3,7 +3,6 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
-import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
 import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
@@ -109,25 +108,7 @@ function PlayPage() {
 
   useEffect(() => {
     if (!startPending || !worldState.startGeneration || character.hpCurrent === null) return;
-    const result = confirmCampaignSetup({
-      campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
-      calendarSystem: worldState.calendarSystem === "UNKNOWN"
-        ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
-        : worldState.calendarSystem,
-      startInGameDate: worldState.startInGameDate,
-      startLocationName: worldState.startLocationName,
-      startNarrative: worldState.startNarrative ?? "",
-      startGeneration: worldState.startGeneration,
-      encumbranceMode: "STANDARD",
-      campaignPreferences: DEFAULT_CAMPAIGN_PREFERENCES,
-      setupPatch: {
-        sourcesConfirmed: true,
-        parametersConfirmed: true,
-        startPointConfirmed: true,
-        characterConfirmed: true,
-        noAutoImportAcknowledged: true,
-      },
-    });
+    const result = confirmCampaignSetup();
     setStartPending(false);
     if (!result.ok) setStartError(result.error);
     else void navigate({ to: "/game" });
