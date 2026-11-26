@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { createInitialCollections } from "@/domain/defaults";
+import { createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
 import { persistAndVerifyCollections, type StorageLike } from "@/domain/storage";
 import { ObsidianStoreProvider, useObsidianStore } from "./obsidian-store";
@@ -232,7 +232,8 @@ describe("clean trial campaign reset", () => {
     expect(result.current.character.hpCurrent).toBeNull();
     expect(result.current.character.inventory).toHaveLength(0);
     expect(result.current.character.currentLocationLabel).toBe("UNKNOWN");
-    expect(result.current.sources.every((source) => source.contentStatus === "ATTACHED")).toBe(true);
+    expect(result.current.sources.filter((source) => source.id !== DEFAULT_SOURCE_IDS.SRD).every((source) => source.contentStatus === "ATTACHED")).toBe(true);
+    expect(result.current.sources.find((source) => source.id === DEFAULT_SOURCE_IDS.SRD)?.contentStatus).toBe("NOT_ATTACHED");
     expect(result.current.sources.some((source) => source.id === "old-campaign-map")).toBe(false);
     expect(result.current.sources.some((source) => source.id === "srd-test")).toBe(true);
     expect(result.current.auditLog.entries.at(-1)?.action).toBe("CAMPAIGN_RESET_FOR_TRIAL");
