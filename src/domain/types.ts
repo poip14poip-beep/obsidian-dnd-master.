@@ -257,6 +257,10 @@ export interface CharacterBiography {
   ageCertainty: CertaintyStatus;
   genderPresentation: string;
   appearance: string;
+  appearanceDetails?: {
+    height: string; build: string; skin: string; hair: string; eyes: string; face: string;
+    clothing: string; footwear: string; accessories: string; distinctiveFeatures: string; firstImpression: string;
+  };
   birthplace: string;
   birthplaceSource: string;
   family: string;
