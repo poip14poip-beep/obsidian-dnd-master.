@@ -42,7 +42,7 @@ describe("generateRandomStart", () => {
     expect(result.characterPatch.abilityScores).toBeUndefined();
   });
 
-  it("keeps only confirmed equipment, adds a background kit, assigns weights and generates starting money", () => {
+  it("preserves confirmed gear, adds only random consumables and generates starting money", () => {
     const result = generateRandomStart(40, () => 0, {
       background: "Солдат",
       generateBackgroundKit: true,
