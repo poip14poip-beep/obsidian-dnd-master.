@@ -585,6 +585,7 @@ function GamePage() {
               rows={1}
               value={playerAction}
               onChange={(event) => setPlayerAction(event.target.value)}
+              onFocus={() => setActivePanel("chat")}
               onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (playerAction.trim() && setupReady && !draftReady && !gmTurn && !gmBusy && session?.access_token) { setActivePanel("chat"); void handleResolveAction(); } } }}
               disabled={!setupReady || draftReady || Boolean(gmTurn) || gmBusy}
               placeholder={!setupReady ? "Сначала подготовь кампанию…" : draftReady ? "Подтверди текущий ход выше…" : gmBusy ? "Мастер обрабатывает действие…" : "Что делает персонаж?…"}
