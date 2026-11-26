@@ -90,7 +90,12 @@ function GamePage() {
       const committed = commitTurnDraft(true);
       setOpeningCommitStage(null);
       if (!committed.ok) setGmError(committed.error);
-      else toast.success("Кампания началась. Вступление записано как игровой ход №0001.");
+      else {
+        setDraftReady(false);
+        setDraftChecked(false);
+        setExplicitConfirm(false);
+        toast.success("Кампания началась. Вступление записано как игровой ход №0001.");
+      }
     }
   }, [openingCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft]);
 
