@@ -48,7 +48,7 @@ Deno.serve(async (req: Request) => {
   if (declaredLength > 1_000_000) return json({ error: { code: "REQUEST_TOO_LARGE", message: "Request is too large." } }, 413, cors);
 
   const authorization = req.headers.get("authorization") ?? "";
-  const tokenMatch = authorization.match(/^Bearer\\s+(.+)$/i);
+  const tokenMatch = authorization.match(/^Bearer\s+(.+)$/i);
   if (!tokenMatch) return json({ error: { code: "AUTH_REQUIRED", message: "Sign in to use the game master." } }, 401, cors);
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
