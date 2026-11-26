@@ -897,13 +897,18 @@ export function ObsidianStoreProvider({
 
   const updateCharacterResource: ObsidianStoreValue["updateCharacterResource"] = useCallback(
     (id, current) => {
+      const existing = collections.player_character_state.resources.find((resource) => resource.id === id);
+      if (!existing) return { ok: false, error: "Ресурс не найден в листе персонажа.", report: lastIntegrityReport };
+      if (!Number.isInteger(current) || current < 0 || (existing.max !== null && current > existing.max)) {
+        return { ok: false, error: "Текущее количество ресурса должно быть целым числом от 0 до его максимума.", report: lastIntegrityReport };
+      }
       return updatePlayerCharacter({
-        resources: collections.player_character_state.resources.map((r) =>
-          r.id === id ? { ...r, current } : r,
+        resources: collections.player_character_state.resources.map((resource) =>
+          resource.id === id ? { ...resource, current } : resource,
         ),
       });
     },
-    [collections.player_character_state.resources, updatePlayerCharacter],
+    [collections.player_character_state.resources, lastIntegrityReport, updatePlayerCharacter],
   );
 
   const addInventoryItem: ObsidianStoreValue["addInventoryItem"] = useCallback(
