@@ -143,7 +143,7 @@ function SourcesPage() {
     <div className="space-y-4">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-bold text-foreground">Источники (Provenance)</h1>
+          <h1 className="text-xl font-bold text-foreground">Служебные источники мастера</h1>
           <p className="text-xs text-muted-foreground">
             Три раздельных типа документов: управляющий документ, канон мира и отдельный лист
             персонажа. Содержимое не выдумывается; загрузка файла не запускает кампанию. Для полного SRD уже предусмотрен отдельный источник «SRD 5.2.1»: открой его редактор и загрузи текстовый .md/.txt. PDF напрямую не разбирается; после обработки отдельно проверь источник и включи его в контекст.
