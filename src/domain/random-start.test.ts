@@ -42,8 +42,9 @@ describe("generateRandomStart", () => {
     });
     expect(result.date).toContain("день и время UNKNOWN");
     expect(result.narrative).toContain("не задание");
-    expect(result.inventory.find((item) => item.name === "Кошелёк")?.certainty).toBe("UNKNOWN");
-    expect(result.characterPatch.conditions).toEqual([]);
+    expect(result.inventory).toEqual([]);
+    expect(result.characterPatch.hpMax).toBeUndefined();
+    expect(result.characterPatch.abilityScores).toBeUndefined();
   });
 
   it("keeps generated HP inside the selected non-lethal starting ranges", () => {
