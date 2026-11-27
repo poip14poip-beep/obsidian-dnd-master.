@@ -132,7 +132,7 @@ export async function runGameTurnAgents(args: {
       role: "DND_RULES_AND_CHARACTER",
       model: "google/gemini-4-argon",
       apiKey: args.apiKey,
-      fetcher: args.fetcher,
+      ...(args.fetcher ? { fetcher: args.fetcher } : {}),
       system: [
         "Ты специализированный аналитик D&D 2024 / SRD 5.2.1 и листа персонажа.",
         "Определи применимые правила, действие/реакцию/движение, нужную проверку, характеристику, навык, модификатор, преимущество/помеху, формулу броска и необходимые условия.",
