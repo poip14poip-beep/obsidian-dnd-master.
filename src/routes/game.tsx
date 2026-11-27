@@ -48,10 +48,10 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; success: boolean | null } | null>(null);
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; targetType: "DC" | "AC" | "NONE"; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; result: string }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; targetType?: "DC" | "AC" | "NONE"; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -294,6 +294,7 @@ function GamePage() {
               label: roll.label,
               formula: roll.formula,
               dc: roll.dc,
+              targetType: roll.targetType,
               result: roll.result,
             })),
           ],
@@ -331,13 +332,14 @@ function GamePage() {
     setRollAnimating(false);
 
     const formula = pending.formula;
-    const success = pending.dc === null ? null : rolled.total >= pending.dc;
-    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total, dc: pending.dc, success });
+    const success = pending.targetType === "NONE" || pending.dc === null ? null : rolled.total >= pending.dc;
+    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total, dc: pending.dc, targetType: pending.targetType, success });
     const rollRecord = {
       id: `gm-roll-${Date.now().toString(36)}`,
       label: pending.label,
       formula,
       dc: pending.dc,
+      targetType: pending.targetType,
       result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
     const allRolls = [...completedPlayerRolls, rollRecord];
@@ -349,6 +351,7 @@ function GamePage() {
       label: pending.label,
       formula,
       dc: pending.dc,
+      targetType: pending.targetType,
       success,
       mechanics: gmTurn.mechanics,
       consequences: gmTurn.consequences,
@@ -357,6 +360,7 @@ function GamePage() {
     };
     const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ${pending.roller === "GM" ? "МАСТЕРА ЗА NPC/СУЩЕСТВО" : "ИГРОКА ЗА ГЛАВНОГО ГЕРОЯ"}: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
     const checkedAction = continuedAction + "\n\nЗАФИКСИРОВАННЫЙ РЕЗУЛЬТАТ ПРОВЕРКИ: DC " +
+      (pending.targetType === "AC" ? "AC " : pending.targetType === "DC" ? "DC " : "цель ") +
       (pending.dc ?? "UNKNOWN") + "; " +
       (success === null ? "сложность не задана" : success ? "УСПЕХ" : "ПРОВАЛ") +
       ". Не меняй DC и не пересчитывай бонус.";
@@ -417,7 +421,7 @@ function GamePage() {
         {entry.rolls.length > 0 && (
           <div className="rounded-lg border border-primary/25 bg-background/60 p-2 text-xs">
             <p className="mb-1 flex items-center gap-1 font-semibold"><Dices className="h-3.5 w-3.5" />Броски</p>
-            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula}{roll.dc !== null && roll.dc !== undefined ? ` · DC ${roll.dc}` : ""} → {roll.result}</p>)}
+            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula}{roll.dc !== null && roll.dc !== undefined ? ` · ${roll.targetType ?? "DC"} ${roll.dc}` : ""} → {roll.result}</p>)}
           </div>
         )}
         <p className="text-right text-[10px] text-muted-foreground">HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
@@ -584,7 +588,7 @@ function GamePage() {
                     <div className="space-y-1 text-center">
                       <p className="text-lg font-semibold">{pending.label}</p>
                       <p className="text-sm text-muted-foreground">Формула: <span className="mono-code font-semibold">{pending.formula}</span></p>
-                      {pending.dc !== null && <p className="text-sm font-semibold">Сложность проверки: DC {pending.dc}</p>}
+                      {pending.dc !== null && <p className="text-sm font-semibold">{pending.targetType === "AC" ? "Класс защиты цели" : "Сложность проверки"}: {pending.targetType} {pending.dc}</p>}
                       <p className="text-xs text-muted-foreground">Исход действия будет определён после твоего броска.</p>
                     </div>
                     <button
@@ -632,7 +636,7 @@ function GamePage() {
             <p className="font-semibold">{rollDisplay.label}</p>
             <p className="text-xs text-muted-foreground">Модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
-            {rollDisplay.dc !== null && <p className="text-xs font-semibold">DC {rollDisplay.dc} · {rollDisplay.success ? "УСПЕХ" : "ПРОВАЛ"}</p>}
+            {rollDisplay.dc !== null && rollDisplay.targetType !== "NONE" && <p className="text-xs font-semibold">{rollDisplay.targetType} {rollDisplay.dc} · {rollDisplay.success ? "УСПЕХ" : "ПРОВАЛ"}</p>}
             <p className="text-xs text-muted-foreground">Результат броска передан мастеру без изменений.</p>
           </div>
         </div>
