@@ -292,7 +292,7 @@ function SettingsPage() {
               Открыть источники
             </Link>
           </div>
-          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье Лии или другого персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">ОБСИДИАН 4.1 прикрепляется в приложении. Полная редакция Экдрасиля 2.4 хранится в закрытой серверной базе и проверяется отдельно; не подключай старую локальную редакцию вместо неё. Досье персонажа остаётся отдельным источником.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
             {sources.slice(0, 3).map((src) => (
               <li key={src.id}>
                 • <strong className="text-foreground">{src.title}</strong> ({src.targetPartition}) —{" "}
@@ -306,7 +306,7 @@ function SettingsPage() {
               disabled={s.confirmed}
               onCheckedChange={(v) => toggleStep("sourcesConfirmed", v === true)}
             />
-            <span>Подтверждаю роли и разделение источников (ОБСИДИАН 4.1 / Хроника / Досье)</span>
+            <span>Подтверждаю роли и разделение источников (ОБСИДИАН 4.1 / серверный канон 2.4 / Досье)</span>
           </label>
         </div>
 
