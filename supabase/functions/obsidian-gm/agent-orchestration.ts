@@ -75,7 +75,7 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
         temperature: 0.1,
         max_tokens: 1_100,
       }),
-      signal: AbortSignal.timeout(26_000),
+      signal: AbortSignal.timeout(18_000),
     });
     if (!response.ok) return unavailable();
     const payload = await response.json().catch(() => null);
