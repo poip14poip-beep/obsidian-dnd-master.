@@ -280,4 +280,37 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.error).toContain("базовая характеристика");
   });
 
+  it("prepares a player weapon attack only when the weapon and target AC are source-grounded", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const excerpts = [{ text: "Goblin\nArmor Class 15 (leather armor, shield)\nHit Points 7", lines: "120–122" }];
+    const result = executeEkdrasilReadTool("prepare_player_attack", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", targetAC: 15,
+      advantage: "NONE", reason: "Ударить гоблина мечом",
+    }), rules, canon, character, false, excerpts);
+    expect(result).toMatchObject({
+      ok: true,
+      preparedPlayerRoll: {
+        roller: "PLAYER", label: "Атака Longsword по Goblin",
+        formula: "1d20+5", dc: 15, targetType: "AC", modifier: 5, kind: "WEAPON_ATTACK",
+      },
+      targetACSource: { sourceId: "SRD_5_2_1", sha256: "rules-hash", lines: "120–122" },
+    });
+  });
+
+  it("refuses to prepare an attack against an unverified AC", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_attack", JSON.stringify({
+      weapon: "Longsword", targetName: "Unknown Horror", targetAC: 18,
+      advantage: "NONE", reason: "Атаковать неизвестное существо",
+    }), rules, canon, character, false, []);
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("AC цели не подтверждён");
+  });
+
 });
