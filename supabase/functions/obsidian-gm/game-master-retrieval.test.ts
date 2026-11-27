@@ -43,7 +43,9 @@ describe("Ekdrasil read-only game-master tools", () => {
     expect(result.toolCalls).toBe(1);
     expect(result.exhausted).toBe(false);
     expect(fetcher).toHaveBeenCalledTimes(2);
-    const secondBody = JSON.parse(fetcher.mock.calls[1][1].body as string);
+    const secondCall = fetcher.mock.calls[1];
+    expect(secondCall).toBeDefined();
+    const secondBody = JSON.parse(String(secondCall?.[1]?.body ?? "{}"));
     expect(secondBody.messages.some((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "call-1")).toBe(true);
     expect(secondBody.response_format).toBeUndefined();
   });
