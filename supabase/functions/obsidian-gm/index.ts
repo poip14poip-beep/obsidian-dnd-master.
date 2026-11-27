@@ -722,7 +722,7 @@ Deno.serve(async (req: Request) => {
     messages.splice(1, 0, {
       role: "system",
       content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
-        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
+        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Список npcAgencyProposals — только гипотезы, не события и не факты: проверь цели, знания, ресурсы, местоположение и прошедшее время каждого NPC; фиксируй действие только если оно причинно обосновано текущей сценой и допустимо по канону. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
     });
     console.log("[obsidian-gm] specialist agents completed", {
       elapsedMs: Date.now() - agentStartedAt,
@@ -732,6 +732,7 @@ Deno.serve(async (req: Request) => {
         status: result.status,
         findings: result.findings.length,
         uncertainties: result.uncertainties.length,
+        npcAgencyProposals: result.npcAgencyProposals.length,
       })),
       agentContextChars: agentContext.length,
     });
