@@ -392,13 +392,13 @@ describe("game master resolver", () => {
       .rejects.toMatchObject({ code: "UNKNOWN_LOCATION_ID" });
   });
   it("rejects model-invented dice results", async () => {
-    const invented = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Скрытность", formula: "1d20+5", dc: 15, result: "17" }] };
+    const invented = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Скрытность", formula: "1d20+5", dc: 15, targetType: "DC", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
   it("rejects unsupported player dice formulas before opening the roll dialog", async () => {
-    const invalidFormula = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Восприятие", formula: "1d7+5", dc: 15, result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }] };
+    const invalidFormula = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Восприятие", formula: "1d7+5", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidFormula) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_DICE_FORMULA" });
