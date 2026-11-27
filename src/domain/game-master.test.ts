@@ -7,7 +7,7 @@ const source = (type: SourceDocument["type"], content: string): SourceDocument =
 });
 const context: GameMasterContext = {
   action: "Осмотреть дверь",
-  sources: [source("GOVERNING_DOC", "Полный промт ОБСИДИАН 4.1"), source("WORLD_CANON", "# Регион\nКаменная дверь у старого города."), source("PLAYER_DOSSIER", "Досье игрока")],
+  sources: [source("GOVERNING_DOC", "Полный промт ОБСИДИАН 4.1"), source("WORLD_CANON", "# ЭКДРАСИЛЬ\n\n## Полная каноническая редакция 2.4\n\n## 250. Итоговый принцип живого канона\n\nКаменная дверь у старого города.\n\nКОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"), source("PLAYER_DOSSIER", "Досье игрока")],
   world: { schemaVersion: 1, stateVersion: 1, campaignName: "Тест", ruleset: "D&D 2024", calendarSystem: "UNKNOWN", startInGameDate: "UNKNOWN", currentInGameDate: "UNKNOWN", elapsedMinutes: 0, startLocationName: "UNKNOWN", currentLocationId: null, setup: { sourcesConfirmed: false, parametersConfirmed: false, startPointConfirmed: false, characterConfirmed: false, noAutoImportAcknowledged: false, confirmed: false, confirmedAt: null }, routes: [], consequences: [], updatedAt: "2026-01-01T00:00:00Z" },
   character: { schemaVersion: 1, stateVersion: 1, sourceDossierId: "dossier", name: "Лия", nameCertainty: "KNOWN", speciesAndClass: "Человек / Воин", level: 20, hpCurrent: 100, hpMax: 100, hpTemp: 0, armorClass: 18, statsCertainty: "KNOWN", currentLocationLabel: "UNKNOWN", conditions: [], resources: [], inventory: [], notes: "", updatedAt: "2026-01-01T00:00:00Z" },
   canonFacts: [], npcs: [], factions: [], locations: [], journal: [],
@@ -31,6 +31,17 @@ describe("game master resolver", () => {
     expect(request.model).toBe("obsidian-free");
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
+  });
+  it("ignores stale local world canon and relies on the server-locked v2.4 source", async () => {
+    const staleSources = context.sources.map((item) => item.type === "WORLD_CANON"
+      ? { ...item, content: "# Хроника Экдрасиля — редакция 2.0\\nСТАРЫЙ ФАКТ, который нельзя передавать мастеру." }
+      : item);
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction({ ...context, sources: staleSources }, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } });
+    const [, init] = fetcher.mock.calls[0];
+    const request = JSON.parse(init?.body as string);
+    expect(request.input).not.toContain("СТАРЫЙ ФАКТ");
+    expect(request.instructions).toContain("Каноническая редакция 2.4");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
