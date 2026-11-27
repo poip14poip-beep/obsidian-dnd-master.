@@ -70,7 +70,7 @@ export function validateGameTurnSemantics(value: unknown): string | null {
       return "pending player roll requires a label and formula";
     }
     if (item["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      return "model attempted to supply a dice result; only the player/application may roll";
+      return "model attempted to supply a dice result; only the authenticated server may roll";
     }
   }
   if (turn["rolls"].length === 0) return null;
@@ -102,6 +102,53 @@ export interface RuleExcerpt {
   startLine: number;
   endLine: number;
   score: number;
+}
+
+type SearchableExcerpt = RuleExcerpt & { headingPath?: string[] };
+
+function tokenizeSearchText(value: string): string[] {
+  return value.normalize("NFKC").toLocaleLowerCase()
+    .match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+}
+
+/** BM25-style ranking with rare-term, phrase and canon-heading boosts. */
+function rankExcerpts<T extends SearchableExcerpt>(candidates: T[], terms: string[]): T[] {
+  const queryTokens = [...new Set(terms.flatMap(tokenizeSearchText))];
+  if (!queryTokens.length || !candidates.length) return [];
+  const documents = candidates.map((candidate) => {
+    const context = [...(candidate.headingPath ?? []), candidate.text].join(" ");
+    const tokens = tokenizeSearchText(context);
+    const frequencies = new Map<string, number>();
+    for (const token of tokens) frequencies.set(token, (frequencies.get(token) ?? 0) + 1);
+    return { candidate, tokens, frequencies, normalized: context.normalize("NFKC").toLocaleLowerCase() };
+  });
+  const averageLength = documents.reduce((sum, document) => sum + document.tokens.length, 0) /
+    Math.max(1, documents.length);
+  const documentFrequency = new Map<string, number>();
+  for (const token of queryTokens) {
+    documentFrequency.set(token, documents.filter((document) => document.frequencies.has(token)).length);
+  }
+  const ranked = documents.map((document) => {
+    let score = 0;
+    let matchedTerms = 0;
+    for (const token of queryTokens) {
+      const frequency = document.frequencies.get(token) ?? 0;
+      if (!frequency) continue;
+      matchedTerms += 1;
+      const df = documentFrequency.get(token) ?? 0;
+      const inverseFrequency = Math.log(1 + (documents.length - df + 0.5) / (df + 0.5));
+      const lengthNorm = 1.2 * (1 - 0.68 + 0.68 * document.tokens.length / Math.max(1, averageLength));
+      score += inverseFrequency * (frequency * 2.2) / (frequency + lengthNorm);
+    }
+    for (const phrase of terms.map((term) => term.normalize("NFKC").toLocaleLowerCase().trim()).filter((term) => term.length > 3)) {
+      if (document.normalized.includes(phrase)) score += 1.8;
+    }
+    const headingTokens = tokenizeSearchText((document.candidate.headingPath ?? []).join(" "));
+    score += queryTokens.filter((token) => headingTokens.includes(token)).length * 0.9;
+    score += matchedTerms / queryTokens.length;
+    return { ...document.candidate, score };
+  }).filter((candidate) => candidate.score > 0);
+  return ranked.sort((a, b) => b.score - a.score || a.startLine - b.startLine);
 }
 
 /**
@@ -140,10 +187,10 @@ export function selectRuleExcerpts(
   });
   flush(lines.length);
 
-  ranked.sort((a, b) => b.score - a.score || a.startLine - b.startLine);
+  const relevanceRanked = rankExcerpts(ranked, terms);
   const selected: RuleExcerpt[] = [];
   let remaining = maxChars;
-  for (const excerpt of ranked) {
+  for (const excerpt of relevanceRanked) {
     // Reserve space for the source ID, checksum and line attribution added by the caller.
     const cost = excerpt.text.length + 140;
     if (cost > remaining) continue;
@@ -214,10 +261,10 @@ export function selectCanonExcerpts(
   });
   flush(lines.length);
 
-  ranked.sort((a, b) => b.score - a.score || a.startLine - b.startLine);
+  const relevanceRanked = rankExcerpts(ranked, terms);
   const selected: CanonExcerpt[] = [];
   let remaining = maxChars;
-  for (const excerpt of ranked) {
+  for (const excerpt of relevanceRanked) {
     const attributionCost = 240 + excerpt.sectionId.length + excerpt.headingPath.join(" > ").length;
     const cost = excerpt.text.length + attributionCost;
     if (cost > remaining) continue;

@@ -2,7 +2,7 @@ import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
-import { parseDiceFormula } from "./dice";
+import { parseDiceFormula, type DiceRollResult } from "./dice";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -28,6 +28,84 @@ export interface GameMasterTurn {
 export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
 export class GameMasterError extends Error {
   constructor(message: string, readonly code: string) { super(message); this.name = "GameMasterError"; }
+}
+
+export interface ServerDiceRollOptions {
+  fetcher?: typeof fetch;
+  supabaseUrl?: string;
+  publishableKey?: string;
+}
+
+/** Ask the authenticated Edge Function to generate and return a cryptographic dice result. */
+export async function rollDiceAtServer(
+  sessionToken: string,
+  formula: string,
+  options: ServerDiceRollOptions = {},
+): Promise<DiceRollResult> {
+  const env = readSupabaseEnv();
+  const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
+  const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
+  if (!supabaseUrl || !publishableKey) {
+    throw new GameMasterError(env.ok ? "Не настроено подключение к серверу." : env.error, "SUPABASE_ENV_MISSING");
+  }
+  if (!sessionToken.trim()) throw new GameMasterError("Для броска требуется активная сессия.", "AUTH_REQUIRED");
+  if (!parseDiceFormula(formula)) throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска.", "INVALID_DICE_FORMULA");
+
+  let response: Response;
+  try {
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+        apikey: publishableKey,
+      },
+      body: JSON.stringify({ operation: "ROLL_DICE", formula }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new GameMasterError("Не удалось получить серверный бросок. Игровой ход не продолжен.", "DICE_ROLL_NETWORK_ERROR");
+  }
+
+  const payload = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const error = payload && typeof payload === "object" && "error" in payload
+      ? (payload as { error?: { message?: unknown } }).error : undefined;
+    const message = error && typeof error.message === "string" ? error.message : "Сервер отклонил бросок.";
+    throw new GameMasterError(message, "DICE_ROLL_REJECTED");
+  }
+  if (!payload || typeof payload !== "object" || !("dice" in payload) ||
+      !Array.isArray((payload as { dice: unknown }).dice) ||
+      !("modifier" in payload) || !Number.isInteger((payload as { modifier: unknown }).modifier) ||
+      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total)) {
+    throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
+  }
+  const result = payload as DiceRollResult & { formula?: unknown };
+  const parsed = parseDiceFormula(formula)!;
+  let offset = 0;
+  let diceMatch = result.dice.length === parsed.totalDice &&
+    result.dice.every((die) => die && Number.isInteger(die.value) && Number.isInteger(die.sides) &&
+      typeof die.kept === "boolean" && die.value >= 1 && die.value <= die.sides);
+  for (const term of parsed.terms) {
+    const group = result.dice.slice(offset, offset + term.count);
+    if (group.length !== term.count || group.some((die) => die.sides !== term.sides)) {
+      diceMatch = false;
+      break;
+    }
+    const kept = group.filter((die) => die.kept);
+    if (term.keep === null ? kept.length !== term.count : kept.length !== 1 ||
+        (term.keep === "highest" && kept[0]?.value !== Math.max(...group.map((die) => die.value))) ||
+        (term.keep === "lowest" && kept[0]?.value !== Math.min(...group.map((die) => die.value)))) {
+      diceMatch = false;
+      break;
+    }
+    offset += term.count;
+  }
+  if (result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
+      result.total !== result.dice.reduce((sum, die) => sum + (die.kept ? die.value : 0), 0) + result.modifier) {
+    throw new GameMasterError("Результат броска не соответствует исходной формуле. Ход не продолжен.", "DICE_RESULT_MISMATCH");
+  }
+  return result;
 }
 const turnSchema = {
   type: "object", additionalProperties: false,
@@ -439,7 +517,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   for (const roll of turn["rolls"] as Array<Record<string, unknown>>) {
     if (typeof roll["label"] !== "string" || typeof roll["formula"] !== "string" ||
         roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
+      throw new GameMasterError("Мастер попытался подставить результат броска. Число должен генерировать защищённый сервер; ход не принят.", "GM_INVENTED_DICE_RESULT");
     }
     if (!roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
@@ -513,9 +591,9 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     "Игрок может пытаться совершать любые действия. Не запрещай их произвольно: оцени физическую возможность, механику, риски и последствия.",
     "Кампания является свободной песочницей. Не назначай персонажу квест, поручение, обязательную встречу, пророчество или сюжетную цель по собственной инициативе. Не создавай искусственную завязку, которая требует следовать одному маршруту. NPC могут иметь собственные дела и цели, а мир может развиваться независимо; игрок сам решает, с чем взаимодействовать.",
     "Если в campaign.startNarrative содержится сгенерированная стартовая ситуация, считай её исходным состоянием текущего прохождения. Не переиначивай её задним числом. Не превращай бытовую сцену в квест. Развивай только последствия действий игрока и причинно обоснованные события мира.",
-    "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
+    "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; после этого приложение выполнит случайный бросок на сервере. Не разрешай исход до получения серверного результата и никогда не подставляй число самостоятельно.",
     "ПРАВИЛО НАЗНАЧЕНИЯ ПРОВЕРОК: если персонаж активно ищет скрытые детали, подозрительных людей, слежку, засаду, скрытый проход, ловушку, следы или пытается заметить то, что не очевидно, назначь проверку Мудрости (Восприятие / Perception), если исход действительно неопределён. Для внимательного осмотра улицы в поисках подозрительных личностей это именно проверка Восприятия, а не автоматическое описание обычной улицы. Также назначай соответствующие проверки навыков/характеристик, когда успех не гарантирован и исход имеет последствия; не требуй бросок для очевидных или беспрепятственных действий.",
-    "Для проверки персонажа верни ровно один объект rolls: label ясно называет проверку и навык по-русски (например, «Мудрость (Восприятие) — поиск подозрительных личностей»), formula содержит точную формулу с числовым итоговым модификатором листа персонажа: обычный бросок «1d20 + 5», преимущество «2d20kh1 + 5», помеха «2d20kl1 + 5»; используй стандартную запись NdS для любых костей, result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Бонус бери из playerCharacterState.skillBonuses для соответствующего навыка; не вычисляй его повторно и не прибавляй владение второй раз. Если готового бонуса нет, используй известный модификатор характеристики; если и он неизвестен, задай уточнение, не выдумывай число.",
+    "Для проверки персонажа верни ровно один объект rolls: label ясно называет проверку и навык по-русски (например, «Мудрость (Восприятие) — поиск подозрительных личностей»), formula содержит точную формулу с числовым итоговым модификатором листа персонажа: обычный бросок «1d20 + 5», преимущество «2d20kh1 + 5», помеха «2d20kl1 + 5»; используй стандартную запись NdS для любых костей, result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; само число будет сгенерировано сервером после запуска броска игроком. Бонус бери из playerCharacterState.skillBonuses для соответствующего навыка; не вычисляй его повторно и не прибавляй владение второй раз. Если готового бонуса нет, используй известный модификатор характеристики; если и он неизвестен, задай уточнение, не выдумывай число.",
     "ОБЯЗАТЕЛЬНЫЙ ПРОТОКОЛ БОЕВОЙ АТАКИ: распознавай формулировки «стреляю», «атакую», «бью», «наношу удар» как попытку атаки, если контекст не говорит обратного. До результата атаки не описывай попадание/промах и не применяй урон. Сначала запроси ровно один бросок атаки: d20 (обычно 1d20 + точный attackBonus выбранной атаки из playerCharacterState.weaponAttacks; при преимуществе/помехе — 2d20kh1/kl1 с тем же бонусом). Укажи в label тип атаки, оружие и цель. До броска зафиксируй целевую КД и сохрани её в mechanics/consequences или nextAction так, чтобы она была доступна при продолжении; если КД цели неизвестна, определи её по подходящему подтверждённому статблоку D&D 2024, не выдумывай произвольное значение. Пока ожидается бросок атаки, все дельты состояния, включая HP, время, NPC, квесты, инвентарь, ресурсы, деньги, локацию и последствия, должны быть нулевыми/пустыми; environment верни без изменений. После получения результата атаки сравни итог с заранее установленной КД. При промахе заверши действие без броска урона. При попадании запроси отдельным следующим ответом ровно один бросок урона по точной формуле выбранного оружия и подтверждённых модификаторов; до результата урона не меняй HP и состояние цели. Только после результата урона примени его к цели с учётом сопротивлений, уязвимостей и иммунитетов. Не запрашивай бросок урона до подтверждённого попадания и не объединяй атаку и урон в один бросок/один pending roll.",
     "При ожидаемом броске не описывай результат проверки, не сообщай, что именно обнаружено или не обнаружено, и не продвигай время/состояние. DC определи до броска и сохраняй неизменным при продолжении; DC можно не раскрывать игроку до разрешения проверки. После фактического результата продолжи то же действие и опиши последствия по правилам D&D 2024.",
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",

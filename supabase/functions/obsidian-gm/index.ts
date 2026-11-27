@@ -1,5 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
+import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
+import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -320,6 +322,20 @@ Deno.serve(async (req: Request) => {
   let body: unknown;
   try { body = JSON.parse(rawBody); }
   catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
+
+  // Dice are rolled by the authenticated server, never guessed by a language model
+  // or generated in the player's browser.
+  if (isRecord(body) && body.operation === "ROLL_DICE") {
+    if (typeof body.formula !== "string" || !parseDiceFormula(body.formula)) {
+      return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
+    }
+    try {
+      return json({ formula: body.formula, ...rollDiceFormula(body.formula) }, 200, cors);
+    } catch {
+      return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
+    }
+  }
+
   if (isRecord(body) && body.operation === "STORE_GM_SOURCE") {
     const sourceKind = body.sourceKind;
     const title = body.title;
@@ -574,14 +590,19 @@ Deno.serve(async (req: Request) => {
   // Two bounded attempts are more reliable than three long sequential waits.
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
-  const orderedModelAttempts = selectGameMasterModelOrder({
-    isCompatibilityRequest,
-    isStoryRequest,
-    isIdentityRequest,
-    isBiographyRequest,
-    highImpactTurn,
-    isGameTurnRequest,
-  }).map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
+  const requestedModelOrder: GameMasterModelId[] = isGameTurnRequest
+    // DeepSeek and Gemini have already reviewed canon/state and rules/character;
+    // Claude performs the first synthesis pass, with the other providers as fallbacks.
+    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"]
+    : selectGameMasterModelOrder({
+      isCompatibilityRequest,
+      isStoryRequest,
+      isIdentityRequest,
+      isBiographyRequest,
+      highImpactTurn,
+      isGameTurnRequest,
+    });
+  const orderedModelAttempts = requestedModelOrder.map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
     .filter((attempt): attempt is ModelAttempt => Boolean(attempt));
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
@@ -638,6 +659,44 @@ Deno.serve(async (req: Request) => {
     { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
     { role: "user", content: inputText },
   ];
+
+  const isOpeningGameTurn = (() => {
+    if (!isGameTurnRequest) return false;
+    try {
+      const parsed = JSON.parse(inputText);
+      return isRecord(parsed) && parsed.mode === "OPENING";
+    } catch { return false; }
+  })();
+  if (isGameTurnRequest && !isOpeningGameTurn) {
+    let compactCampaignInput = inputText;
+    try { compactCampaignInput = JSON.stringify(compactAuditValue(JSON.parse(inputText))); }
+    catch { compactCampaignInput = inputText.slice(0, 36_000); }
+    const agentStartedAt = Date.now();
+    const specialistResults = await runGameTurnAgents({
+      apiKey: ROUTERAI_API_KEY,
+      campaignInput: compactCampaignInput,
+      canonContext,
+      rulesContext,
+    });
+    const agentContext = formatSpecialistAgentContext(specialistResults);
+    messages.splice(1, 0, {
+      role: "system",
+      content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
+        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
+    });
+    console.log("[obsidian-gm] specialist agents completed", {
+      elapsedMs: Date.now() - agentStartedAt,
+      agents: specialistResults.map((result) => ({
+        role: result.role,
+        model: result.model,
+        status: result.status,
+        findings: result.findings.length,
+        uncertainties: result.uncertainties.length,
+      })),
+      agentContextChars: agentContext.length,
+    });
+  }
+
   const failures: string[] = [];
   for (const [attemptIndex, attempt] of orderedModelAttempts.entries()) {
     try {
@@ -743,7 +802,7 @@ Deno.serve(async (req: Request) => {
           messages.push({
             role: "system",
             content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН ПРОГРАММНОЙ ПРОВЕРКОЙ: " + semanticFailure +
-              ". Верни исправленный JSON игрового хода. Если нужен бросок, result должен быть строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; никогда не указывай выпавшее число. При ожидаемом броске не меняй состояние, время, HP, NPC, квесты, предметы, ресурсы, деньги, локацию или последствия.",
+              ". Верни исправленный JSON игрового хода. Если нужен бросок, result должен быть строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; число генерируется защищённым сервером, никогда не угадывай его. При ожидаемом броске не меняй состояние, время, HP, NPC, квесты, предметы, ресурсы, деньги, локацию или последствия.",
           });
           continue;
         }
