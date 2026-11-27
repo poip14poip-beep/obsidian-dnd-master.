@@ -141,6 +141,12 @@ function boundGameTurnSchema(schema: JsonRecord): JsonRecord {
       result.maxLength = Number.isFinite(existing) && existing > 0
         ? Math.min(existing, requested)
         : requested;
+      // A roll is a request for the player to roll, never a result supplied by
+      // the model. Enforce this at the provider JSON-schema layer, not only
+      // after generation, so numeric/guessed outcomes cannot be emitted.
+      if (key === "result") {
+        result.enum = ["ОЖИДАЕТСЯ БРОСОК ИГРОКА"];
+      }
     }
     if (type === "array") {
       const requested = GAME_TURN_ARRAY_LIMITS[key] ?? 6;
