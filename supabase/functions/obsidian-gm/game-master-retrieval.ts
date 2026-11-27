@@ -84,7 +84,7 @@ export interface RetrievalSource {
   sha256: string;
 }
 
-export interface PreparedPlayerRoll {
+export interface PreparedRoll {
   roller: "PLAYER";
   label: string;
   formula: string;
@@ -120,7 +120,7 @@ function preparePlayerCheck(
   args: JsonRecord,
   playerCharacter: JsonRecord | null,
   alreadyPrepared: boolean,
-): { ok: true; preparedPlayerRoll: PreparedPlayerRoll } | { ok: false; error: string } {
+): { ok: true; preparedRoll: PreparedRoll } | { ok: false; error: string } {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешена только одна ожидающая проверка игрока." };
   if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" ||
       !playerCharacter.abilityScores || typeof playerCharacter.abilityScores !== "object") {
@@ -202,9 +202,9 @@ function preparePlayerCheck(
     : kind === "SAVING_THROW" ? "Спасбросок " + abilityRu[ability] : "Проверка " + abilityRu[ability];
   return {
     ok: true,
-    preparedPlayerRoll: {
+    preparedRoll: {
       roller: "PLAYER", label, formula, dc: dc as number, targetType: "DC", modifier,
-      kind: kind as PreparedPlayerRoll["kind"], reason,
+      kind: kind as PreparedRoll["kind"], reason,
     },
   };
 }
@@ -215,7 +215,7 @@ function preparePlayerAttack(
   playerCharacter: JsonRecord | null,
   retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
   alreadyPrepared: boolean,
-): { ok: true; preparedPlayerRoll: PreparedPlayerRoll; targetACSource: { sourceId: string; sha256: string; lines: string } } | { ok: false; error: string } {
+): { ok: true; preparedRoll: PreparedRoll; targetACSource: { sourceId: string; sha256: string; lines: string } } | { ok: false; error: string } {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешена только одна ожидающая проверка игрока." };
   if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" || !Array.isArray(playerCharacter.weaponAttacks)) {
     return { ok: false, error: "В подтверждённом листе нет списка оружейных атак. Не выдумывай бонус атаки." };
@@ -250,7 +250,7 @@ function preparePlayerAttack(
   const formula = modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
   return {
     ok: true,
-    preparedPlayerRoll: {
+    preparedRoll: {
       roller: "PLAYER",
       label: "Атака " + weapon + " по " + targetName,
       formula,
@@ -340,7 +340,7 @@ export interface RetrievalLoopResult {
   payload: unknown;
   toolCalls: number;
   exhausted: boolean;
-  preparedPlayerRoll: PreparedPlayerRoll | null;
+  preparedRoll: PreparedRoll | null;
 }
 
 export async function callWithEkdrasilReadTools(options: {
@@ -362,7 +362,7 @@ export async function callWithEkdrasilReadTools(options: {
   const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 3, 3));
   const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 6, 6));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
-  let preparedPlayerRoll: PreparedPlayerRoll | null = null;
+  let preparedRoll: PreparedRoll | null = null;
   const retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [];
 
   const send = async (body: JsonRecord): Promise<{ response: Response; payload: unknown }> => {
@@ -385,7 +385,7 @@ export async function callWithEkdrasilReadTools(options: {
 
   if (!options.enabled) {
     const result = await send(options.requestBody);
-    return { ...result, toolCalls: 0, exhausted: false, preparedPlayerRoll: null };
+    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null };
   }
 
   let toolCalls = 0;
@@ -401,9 +401,9 @@ export async function callWithEkdrasilReadTools(options: {
     delete toolBody.response_format;
     delete toolBody.structured_outputs;
     const result = await send(toolBody);
-    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedPlayerRoll };
+    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
-      return { ...result, toolCalls, exhausted: false, preparedPlayerRoll };
+      return { ...result, toolCalls, exhausted: false, preparedRoll };
     }
     const root = result.payload as JsonRecord;
     const choices = Array.isArray(root.choices) ? root.choices : [];
@@ -418,10 +418,10 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       const finalResult = await send(finalBody);
-      return { ...finalResult, toolCalls, exhausted: false, preparedPlayerRoll };
+      return { ...finalResult, toolCalls, exhausted: false, preparedRoll };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
-      return { ...result, toolCalls, exhausted: true, preparedPlayerRoll };
+      return { ...result, toolCalls, exhausted: true, preparedRoll };
     }
 
     messages.push(message);
@@ -432,7 +432,7 @@ export async function callWithEkdrasilReadTools(options: {
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
       const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedPlayerRoll !== null, retrievedRuleExcerpts)
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts)
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
@@ -445,9 +445,9 @@ export async function callWithEkdrasilReadTools(options: {
           }
         }
       }
-      if (toolResult && typeof toolResult === "object" && "preparedPlayerRoll" in toolResult) {
-        const prepared = (toolResult as JsonRecord).preparedPlayerRoll;
-        if (prepared && typeof prepared === "object") preparedPlayerRoll = prepared as PreparedPlayerRoll;
+      if (toolResult && typeof toolResult === "object" && "preparedRoll" in toolResult) {
+        const prepared = (toolResult as JsonRecord).preparedRoll;
+        if (prepared && typeof prepared === "object") preparedRoll = prepared as PreparedRoll;
       }
       messages.push({
         role: "tool",
