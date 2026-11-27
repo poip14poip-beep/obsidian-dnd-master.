@@ -4,6 +4,7 @@ import {
   GAME_TURN_MAX_OUTPUT_TOKENS,
   gameTurnAttemptTimeoutMs,
   selectGameMasterModelOrder,
+  measureGameTurnInput,
   selectRuleExcerpts,
   validateGameTurnSemantics,
   type ModelRoutingFlags,
@@ -151,5 +152,40 @@ describe("bounded source-attributed SRD retrieval", () => {
   it("returns no unverified matches for an empty or unrelated query", () => {
     expect(selectRuleExcerpts("A complete SRD paragraph.", [], 1000, 4)).toEqual([]);
     expect(selectRuleExcerpts("A complete SRD paragraph.", ["grapple"], 1000, 4)).toEqual([]);
+  });
+});
+
+
+describe("game-turn payload metrics", () => {
+  it("measures payload component sizes and collection counts without copying content", () => {
+    const metrics = measureGameTurnInput({
+      campaign: { campaignName: "Test" },
+      playerCharacterState: { name: "Hero" },
+      playerDossier: "verified dossier",
+      npcSimulationReference: "GM-only rules",
+      canonFacts: [{ id: "fact-1" }],
+      knownNpcs: [{ id: "npc-1" }, { id: "npc-2" }],
+      knownFactions: [{ id: "faction-1" }],
+      knownLocations: [],
+      scheduledAndDelayedEvents: [{ id: "event-1" }],
+      fullCampaignChronicle: [{ turnNumber: 1 }, { turnNumber: 2 }],
+      recentJournal: [{ turnNumber: 2 }],
+    });
+    expect(metrics.campaignChars).toBeGreaterThan(0);
+    expect(metrics.characterChars).toBeGreaterThan(0);
+    expect(metrics.dossierChars).toBe("verified dossier".length);
+    expect(metrics.npcSimulationChars).toBe("GM-only rules".length);
+    expect(metrics.canonFacts).toBe(1);
+    expect(metrics.npcCount).toBe(2);
+    expect(metrics.factionCount).toBe(1);
+    expect(metrics.locationCount).toBe(0);
+    expect(metrics.scheduledEventCount).toBe(1);
+    expect(metrics.fullChronicleEntries).toBe(2);
+    expect(metrics.recentJournalEntries).toBe(1);
+  });
+
+  it("returns zeroed metrics for invalid payloads", () => {
+    expect(measureGameTurnInput(null).npcSimulationChars).toBe(0);
+    expect(measureGameTurnInput([]).npcCount).toBe(0);
   });
 });

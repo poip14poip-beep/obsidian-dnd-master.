@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -533,9 +533,11 @@ Deno.serve(async (req: Request) => {
       ).join(String.fromCharCode(10) + String.fromCharCode(10))
     : "SRD 5.2.1: релевантные фрагменты не найдены в пределах проверенного источника; не выдумывай точные механические детали.";
   const canonSearchParts = [actionText];
+  let inputMetrics = measureGameTurnInput(null);
   if (isIdentityRequest) canonSearchParts.push("Вальдгард Элион Аэлиндор Кхар-Дорн Крейнхольм Тар-Нер Равенск Морвейн Греймарк Азра-Кал Рахимар Ша-Мер Вальдрум Скайнхейм Эйргард Морнхольд", "Том XI §44", "народ культура город происхождение");
   try {
     const parsed = JSON.parse(inputText);
+    inputMetrics = measureGameTurnInput(parsed);
     if (isRecord(parsed)) {
       const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
       const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
@@ -668,7 +670,7 @@ Deno.serve(async (req: Request) => {
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
       const attemptStartedAt = Date.now();
-      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
+      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {

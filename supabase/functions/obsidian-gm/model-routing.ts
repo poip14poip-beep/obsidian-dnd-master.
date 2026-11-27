@@ -153,3 +153,47 @@ export function selectRuleExcerpts(
   }
   return selected;
 }
+
+
+export interface GameTurnInputMetrics {
+  campaignChars: number;
+  characterChars: number;
+  dossierChars: number;
+  npcSimulationChars: number;
+  canonFacts: number;
+  npcCount: number;
+  factionCount: number;
+  locationCount: number;
+  scheduledEventCount: number;
+  fullChronicleEntries: number;
+  recentJournalEntries: number;
+}
+
+/** Counts payload components without exposing their contents in server logs. */
+export function measureGameTurnInput(value: unknown): GameTurnInputMetrics {
+  const empty: GameTurnInputMetrics = {
+    campaignChars: 0, characterChars: 0, dossierChars: 0, npcSimulationChars: 0,
+    canonFacts: 0, npcCount: 0, factionCount: 0, locationCount: 0,
+    scheduledEventCount: 0, fullChronicleEntries: 0, recentJournalEntries: 0,
+  };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return empty;
+  const input = value as Record<string, unknown>;
+  const serializedLength = (item: unknown): number => {
+    if (item === undefined || item === null) return 0;
+    try { return JSON.stringify(item).length; } catch { return 0; }
+  };
+  const count = (item: unknown): number => Array.isArray(item) ? item.length : 0;
+  return {
+    campaignChars: serializedLength(input["campaign"]),
+    characterChars: serializedLength(input["playerCharacterState"]),
+    dossierChars: serializedLength(input["playerDossier"]),
+    npcSimulationChars: serializedLength(input["npcSimulationReference"]),
+    canonFacts: count(input["canonFacts"]),
+    npcCount: count(input["knownNpcs"]),
+    factionCount: count(input["knownFactions"]),
+    locationCount: count(input["knownLocations"]),
+    scheduledEventCount: count(input["scheduledAndDelayedEvents"]),
+    fullChronicleEntries: count(input["fullCampaignChronicle"]),
+    recentJournalEntries: count(input["recentJournal"]),
+  };
+}
