@@ -526,7 +526,6 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
     verifiedRulesReference: verifiedRulesContext,
-    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
     npcSimulationReference: selectNpcSimulationContext(context.sources),
     knownNpcs: context.npcs.map((npc) => ({
       ...npc,
