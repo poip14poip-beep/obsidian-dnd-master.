@@ -679,7 +679,7 @@ Deno.serve(async (req: Request) => {
       rulesContext,
     });
     const agentContext = formatSpecialistAgentContext(specialistResults);
-    messages.push({
+    messages.splice(1, 0, {
       role: "system",
       content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
         "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
