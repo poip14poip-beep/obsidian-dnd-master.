@@ -5,7 +5,7 @@ Last updated: 2026-11-27
 ## Active code base and safety
 
 - Base: the existing `cloud-api-client` branch, not `main`.
-- Integration branch: `adopt/ekdrasil-master-cloud`.
+- Active development and publication branch: `cloud-api-client`.
 - Application remains React + TypeScript, Android-first, with the existing Supabase project `obsidian-control`.
 - No Lovable Cloud migration, second database, local model, or browser-held provider API key.
 - The production `main` branch is untouched.
@@ -23,7 +23,22 @@ Last updated: 2026-11-27
    - Current database record version: 4
 4. Character dossier and campaign state remain separate from global canon.
 
-The deployed `obsidian-gm` Edge Function is version 62. It refuses a game request if the canonical record does not match the v2.4 title, source checksum, required headings, and database version. Readiness also checks Obsidian 4.1, SRD 5.2.1, character-generation guide, and the server-side RouterAI key.
+The deployed `obsidian-gm` Edge Function is ACTIVE version 64 (JWT verification enabled). It refuses a game request if the canonical record does not match the v2.4 title, source checksum, required headings, and database version. Readiness also checks Obsidian 4.1, SRD 5.2.1, character-generation guide, and the server-side RouterAI key.
+
+## Latest runtime reliability correction — 2026-11-27
+
+The opening-scene failure was reproduced in Supabase logs. The DeepSeek request was accepted, but its 6,144-token completion budget was consumed by 5,234 reasoning tokens; the visible structured JSON was truncated (`finish_reason=length`). The application correctly refused to save the invalid turn.
+
+Deployed in `obsidian-gm` version 64:
+
+- Game turns are now classified explicitly by `operation === GAME_TURN`, rather than treating every non-biography request as a turn.
+- DeepSeek game turns request `reasoning.effort = none`, reserving the completion budget for the required state JSON.
+- Game-turn output budget increased to 8,192 tokens.
+- Ordinary turns use DeepSeek first and Gemini as bounded fallback; high-impact turns use Claude first and Gemini as fallback. A fallback is called only after an upstream error, truncation, invalid JSON or schema mismatch.
+- Provider attempts are bounded to 42 seconds for the primary and 28 seconds for the fallback, below the 95-second client request timeout.
+- Routing policy and timeout behaviour are covered by `src/domain/game-master-routing.test.ts`; GitHub CI passed tests, TypeScript and production build for commit `a742c572f0b6984d382de671689b2082e7d0e191`.
+
+This repairs the known token-truncation route; it does not replace the required authenticated Android acceptance test. A real opening scene and a complete action/save/read-back/reload cycle still need to be performed from the player's signed-in app session.
 
 ## Canon rules enforced in the model context
 
