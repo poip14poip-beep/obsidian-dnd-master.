@@ -53,7 +53,7 @@ export async function rollDiceAtServer(
 
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
