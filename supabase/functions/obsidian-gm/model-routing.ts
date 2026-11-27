@@ -155,6 +155,80 @@ export function selectRuleExcerpts(
 }
 
 
+export interface CanonExcerpt extends RuleExcerpt {
+  sectionId: string;
+  headingPath: string[];
+}
+
+/** Select whole canonical paragraphs and retain their enclosing source section. */
+export function selectCanonExcerpts(
+  content: string,
+  terms: string[],
+  maxChars: number,
+  maxItems: number,
+): CanonExcerpt[] {
+  if (!content.trim() || !terms.length || maxChars <= 0 || maxItems <= 0) return [];
+  const normalizedTerms = [...new Set(terms.map((term) => term.toLocaleLowerCase()).filter((term) => term.length > 3))];
+  if (!normalizedTerms.length) return [];
+
+  const lines = content.replace(/\\r\\n?/g, "\\n").split("\\n");
+  const headings: Array<{ level: number; title: string; line: number }> = [];
+  const ranked: CanonExcerpt[] = [];
+  let current: string[] = [];
+  let startLine = 1;
+  let currentHeadingPath: string[] = [];
+  let currentSectionId = "EKDRASIL_WORLD_BIBLE:UNSECTIONED";
+
+  const flush = (endLine: number) => {
+    const text = current.join("\\n").trim();
+    current = [];
+    if (text.length <= 60) return;
+    const lower = text.toLocaleLowerCase();
+    const score = normalizedTerms.reduce((sum, term) => sum + (lower.includes(term) ? 1 : 0), 0) +
+      (/^#{1,4}\\s/m.test(text) ? 1 : 0);
+    if (score > 0) ranked.push({
+      text, startLine, endLine, score,
+      sectionId: currentSectionId,
+      headingPath: [...currentHeadingPath],
+    });
+  };
+
+  lines.forEach((line, index) => {
+    const heading = /^(#{1,6})\\s+(.+)$/.exec(line.trim());
+    if (!line.trim()) {
+      flush(index);
+      startLine = index + 2;
+      return;
+    }
+    if (heading && current.length > 0) flush(index);
+    if (current.length === 0) startLine = index + 1;
+    if (heading) {
+      const level = heading[1]!.length;
+      while (headings.length && headings[headings.length - 1]!.level >= level) headings.pop();
+      headings.push({ level, title: heading[2]!.trim(), line: index + 1 });
+      currentHeadingPath = headings.map((item) => item.title);
+      const slug = heading[2]!.toLocaleLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 64);
+      currentSectionId = `EKDRASIL_WORLD_BIBLE:${index + 1}:${slug || "section"}`;
+    }
+    current.push(line);
+  });
+  flush(lines.length);
+
+  ranked.sort((a, b) => b.score - a.score || a.startLine - b.startLine);
+  const selected: CanonExcerpt[] = [];
+  let remaining = maxChars;
+  for (const excerpt of ranked) {
+    const attributionCost = 240 + excerpt.sectionId.length + excerpt.headingPath.join(" > ").length;
+    const cost = excerpt.text.length + attributionCost;
+    if (cost > remaining) continue;
+    selected.push(excerpt);
+    remaining -= cost;
+    if (selected.length >= maxItems || remaining <= 0) break;
+  }
+  return selected;
+}
+
+
 export interface GameTurnInputMetrics {
   campaignChars: number;
   characterChars: number;
