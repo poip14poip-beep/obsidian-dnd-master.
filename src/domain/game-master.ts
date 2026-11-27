@@ -384,7 +384,14 @@ export async function resolvePlayerAction(
   const user = {
     action: context.action, campaign: context.world, playerCharacterState: context.character,
     playerDossier: dossier?.content ?? "UNKNOWN: отдельное досье персонажа не загружено.",
-    relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, context.action),
+    relevantEkdrasilCanon: selectCanonContext(
+      context.canonFacts,
+      context.sources.filter((source) => source.type !== "WORLD_CANON" ||
+        (source.content.includes("Полная каноническая редакция 2.4") &&
+          source.content.includes("## 250. Итоговый принцип живого канона") &&
+          source.content.includes("КОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"))),
+      context.action,
+    ),
     knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations,
     recentJournal: context.journal.slice(-12),
     requirements: [
