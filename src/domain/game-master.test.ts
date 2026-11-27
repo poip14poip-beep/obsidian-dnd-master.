@@ -455,9 +455,9 @@ describe("verified SRD rules context", () => {
   it("skips an oversized rule paragraph whole and keeps the next complete rule", () => {
     const oversized = `Combat
 The Attack action weapon attack initiative attack roll rule begins. ${"Long rule detail ".repeat(1100)} LONG_RULE_TAIL_MARKER.`;
-    const complete = "Combat\\nThe Attack roll uses the stated ability modifier and proficiency bonus. COMPLETE_RULE_MARKER.";
+    const complete = "Combat — The Attack roll uses the stated ability modifier and proficiency bonus. COMPLETE_RULE_MARKER.";
     const rules = {
-      ...source("SUPPLEMENTAL", [oversized, complete].join("\\n\\n")),
+      ...source("SUPPLEMENTAL", [oversized, complete].join("\n\n")),
       title: "SRD 5.2.1",
       originLabel: "Official D&D 2024 SRD 5.2.1",
       fileName: "SRD_5.2.1.txt",
