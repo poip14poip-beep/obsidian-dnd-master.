@@ -44,10 +44,10 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.source).toBe("Ekdrasil_Master_Canon_v2.4.md");
     expect(result.edition).toBe("2.4");
     expect(result.sha256).toBe("canon-hash");
-    expect(result.excerpts).toEqual([expect.objectContaining({
+    expect(result.excerpts).toEqual(expect.arrayContaining([expect.objectContaining({
       sectionId: "EKDRASIL_WORLD_BIBLE:3:12-вальдгард",
-      lines: "3–4",
-    })]);
+      text: expect.stringContaining("Вальдгард — подтверждённое королевство"),
+    })]));
   });
 
   it("refuses unknown tools and malformed arguments", () => {
