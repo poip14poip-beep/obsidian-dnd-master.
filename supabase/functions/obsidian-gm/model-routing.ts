@@ -94,9 +94,12 @@ export function validateGameTurnSemantics(value: unknown): string | null {
   const hasNpcChanges = Array.isArray(turn["npcChanges"]) && turn["npcChanges"].length > 0;
   const hasQuestChanges = Array.isArray(turn["questChanges"]) && turn["questChanges"].length > 0;
   const hasConsequence = typeof turn["consequenceText"] === "string" && turn["consequenceText"].trim().length > 0;
+  const hasWorldOutcome = typeof turn["worldOutcome"] === "string" && turn["worldOutcome"].trim().length > 0;
+  const hasCampaignMemory = typeof turn["campaignMemory"] === "string" && turn["campaignMemory"].trim().length > 0;
+  const hasStateNotes = Array.isArray(turn["stateNotes"]) && turn["stateNotes"].length > 0;
   if (turn["timeDeltaMinutes"] !== 0 || turn["hpDelta"] !== 0 || hasArrayChanges ||
       hasCurrencyChanges || hasNpcChanges || hasQuestChanges ||
-      turn["newLocationId"] !== null || hasConsequence) {
+      turn["newLocationId"] !== null || hasConsequence || hasWorldOutcome || hasCampaignMemory || hasStateNotes) {
     return "a pending player roll must not mutate campaign or character state";
   }
   return null;
