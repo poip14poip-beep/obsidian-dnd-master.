@@ -564,7 +564,9 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       signal: AbortSignal.timeout(95_000),
     });
   } catch (error) {
-    const name = error instanceof Error ? error.name : "";
+    const name = error && typeof error === "object" && "name" in error
+      ? String((error as { name?: unknown }).name ?? "")
+      : "";
     if (name === "TimeoutError" || name === "AbortError") {
       throw new GameMasterError("Мастер отвечает дольше обычного. Запрос прерван по тайм-ауту; игровой ход не сохранён. Попробуй ещё раз.", "MODEL_REQUEST_TIMEOUT");
     }
