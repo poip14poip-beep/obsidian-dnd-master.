@@ -334,6 +334,7 @@ export interface RollRecord {
   id: string;
   label: string;
   formula: string;
+  dc?: number | null;
   result: string;
 }
 
