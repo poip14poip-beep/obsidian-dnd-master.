@@ -105,7 +105,9 @@ function GamePage() {
   const dateParts = (worldState.currentInGameDate || "").split(" · ");
   const datePart = dateParts[0] ?? "";
   const regularDateMatch = datePart.match(/^(\d{1,2})\s+(.+),\s*(\d+)\s+год$/);
-  const intercalaryDateMatch = datePart.match(/^(.+),\s*(\d+)\s+год$/);
+  const canonicalIntercalaryDateMatch = datePart.match(/^Межгодовой день (\d+),\s*(\d+)\s+год$/i);
+  const legacyIntercalaryDateMatch = datePart.match(/^(.+),\s*(\d+)\s+год$/);
+  const intercalaryDateMatch = canonicalIntercalaryDateMatch ?? legacyIntercalaryDateMatch;
   const clockMatch = dateParts.slice(1).join(" ").match(/\b([01]\d|2[0-3]):([0-5]\d)\b/);
   const displayYear = regularDateMatch?.[3] ?? intercalaryDateMatch?.[2] ?? "не установлен";
   const displayMonth = regularDateMatch?.[2] ?? (intercalaryDateMatch ? "межгодовой день" : "не установлен");
