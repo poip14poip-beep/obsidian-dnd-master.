@@ -24,7 +24,7 @@ describe("cloud mapping primitives", () => {
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
   });
 
-  it("maps source types and never upgrades attachment to verification", async () => {
+  it("maps source types and preserves explicit verification for trusted and reviewed sources", async () => {
     const sources = createInitialCollections().sources;
     sources[0]!.serverManaged = false;
     sources[0]!.contentStatus = "ATTACHED";
@@ -49,14 +49,14 @@ describe("cloud mapping primitives", () => {
 
     const mapped = await mapCloudSources(campaignId, sources);
     expect(mapped.rows[0]!.source_type).toBe("master_rules");
-    expect(mapped.rows[0]!.content_status).toBe("indexed");
+    expect(mapped.rows[0]!.content_status).toBe("verified");
     expect(mapped.rows[0]!.sha256).toBe("a".repeat(64));
     expect(mapped.rows[1]!.source_type).toBe("world_canon");
     expect(mapped.rows[1]!.content_status).toBe("metadata_only");
     expect(mapped.rows[1]!.notes).toContain("[review-status:UNREVIEWED]");
     expect(mapped.rows[1]!.notes).toContain("[context-enabled:false]");
     expect(mapped.rows.find((row) => row.source_type === "player_character")?.source_type).toBe("player_character");
-    expect(mapped.rows.every((row) => row.content_status !== ("verified" as string))).toBe(true);
+    expect(mapped.rows.find((row) => row.source_type === "other")?.content_status).toBe("verified");
     expect(mapped.rows.every((row) => !("owner_id" in row))).toBe(true);
   });
 
@@ -136,6 +136,36 @@ describe("cloud mapping primitives", () => {
     expect(mapped.knowledge[0]!.status).toBe("KNOWN");
     expect(mapped.knowledge[0]!.acquisition_reason).toContain("День 2");
     expect(mapped.npcs.every((row) => !("owner_id" in row))).toBe(true);
+  });
+
+  it("keeps manual GM-created NPCs and knowledge when no source row exists", async () => {
+    const npc: NpcRecord = {
+      id: "npc-manual",
+      name: "Случайный прохожий",
+      role: "UNKNOWN",
+      locationId: null,
+      factionId: null,
+      goals: "UNKNOWN",
+      attitudeToPlayer: "UNKNOWN",
+      certainty: "UNKNOWN",
+      sourceId: "MANUAL_GM_ENTRY",
+      locked: false,
+      knowledge: [{
+        id: "knowledge-manual",
+        factSummary: "Вышел из лавки",
+        sourceId: "MANUAL_GM_ENTRY",
+        acquisitionPath: "Личное наблюдение персонажа",
+        inGameDate: "UNKNOWN",
+        certainty: "KNOWN",
+        recordedAt: "2026-11-27T10:00:00.000Z",
+      }],
+      version: 1,
+      history: [],
+    };
+    const mapped = await mapCloudNpcs(campaignId, [npc], {}, {});
+    expect(mapped.npcs[0]?.source_id).toBeNull();
+    expect(mapped.knowledge[0]?.source_id).toBeNull();
+    expect(mapped.knowledge[0]?.acquisition_reason).toContain("Личное наблюдение");
   });
 
   it("rejects unresolved relational IDs instead of silently dropping them", async () => {
