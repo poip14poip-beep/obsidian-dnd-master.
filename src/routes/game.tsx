@@ -13,7 +13,7 @@ import {
   formatCampaignOpening,
   formatGameMasterAnswer,
 } from "@/domain/game-master-presentation";
-import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn } from "@/domain/game-master";
 import type { GameTurnEntry, TechnicalMessageEntry } from "@/domain/types";
 import { parseDiceFormula, rollDiceFormula, type RolledDie } from "@/domain/dice";
 import { useObsidianStore } from "@/store/obsidian-store";
@@ -50,6 +50,7 @@ function GamePage() {
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
+  const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
   const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -94,6 +95,15 @@ function GamePage() {
   useEffect(() => {
     if (worldState.openingScene?.trim()) setOpening(worldState.openingScene);
   }, [worldState.openingScene]);
+
+  useEffect(() => {
+    const pending = gmTurn?.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && roll.roller === "GM");
+    if (!pending || gmBusy || rollAnimating) return;
+    const key = `${nextTurnNumber}:${pending.label}:${pending.formula}`;
+    if (autoGmRollKey === key) return;
+    setAutoGmRollKey(key);
+    void handleRollPendingCheck();
+  }, [gmTurn, gmBusy, rollAnimating, autoGmRollKey, nextTurnNumber]);
 
   useEffect(() => {
     if (openingCommitStage === "CHECK") {
@@ -305,12 +315,16 @@ function GamePage() {
     await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
     let rolled: ReturnType<typeof rollDiceFormula>;
     try {
-      // The player-character's dice are rolled by the player through the visible
-      // dice control. NPC and world rolls use the GM/server path, never this handler.
-      rolled = rollDiceFormula(pending.formula);
+      if (pending.roller === "GM") {
+        const serverRoll = await rollDiceAtServer(session?.access_token ?? "", pending.formula);
+        rolled = serverRoll;
+      } else {
+        // Only the player rolls for the player character, using the visible dice control.
+        rolled = rollDiceFormula(pending.formula);
+      }
     } catch (error) {
       setRollAnimating(false);
-      setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок игрока. Ход не продолжен.");
+      setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок. Ход не продолжен.");
       return;
     }
     setRollAnimating(false);
@@ -336,7 +350,7 @@ function GamePage() {
       spatialAccounting: gmTurn.spatialAccounting,
       nextAction: gmTurn.nextAction,
     };
-    const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ИГРОКА: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
+    const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ${pending.roller === "GM" ? "МАСТЕРА ЗА NPC/СУЩЕСТВО" : "ИГРОКА ЗА ГЛАВНОГО ГЕРОЯ"}: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
     void handleResolveAction(continuedAction, true, allRolls, originalPlayerIntent || pendingAction);
@@ -538,8 +552,9 @@ function GamePage() {
                 <Button type="button" variant="outline" disabled={!clarificationAnswer.trim()} onClick={handleApplyClarification}>Передать уточнение</Button>
               </div>
             )}
-            {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (() => {
-              const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")!;
+            {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && roll.roller === "GM") && <div className="rounded border border-status-approx/40 p-3 text-sm" role="status">Мастер автоматически бросает кости за NPC или другое существо…</div>}
+            {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && roll.roller === "PLAYER") && (() => {
+              const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && roll.roller === "PLAYER")!;
               const parsed = parseDiceFormula(pending.formula);
               const sides = parsed?.terms[0]?.sides ?? 20;
               const diePoints: Record<number, string> = {
