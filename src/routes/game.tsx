@@ -1,5 +1,5 @@
 import { Link, createFileRoute } from "@tanstack/react-router";
-import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Cloud, Lock, RefreshCw, Send, ShieldCheck, Sparkles, Swords, UserRound } from "lucide-react";
+import { AlertTriangle, Backpack, BookOpen, CheckCircle2, ClipboardList, Cloud, Dices, Lock, RefreshCw, Send, ShieldCheck, Sparkles, Swords, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
@@ -45,10 +45,10 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [pendingRollResult, setPendingRollResult] = useState("");
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; die: number; modifier: number; total: number } | null>(null);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
-  const [draftChecked, setDraftChecked] = useState(false);
-  const [explicitConfirm, setExplicitConfirm] = useState(false);
+  const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [activePanel, setActivePanel] = useState<"chat" | "inventory" | "quests" | "knowledge" | "skills">("chat");
 
@@ -103,8 +103,6 @@ function GamePage() {
       if (!committed.ok) setGmError(committed.error);
       else {
         setDraftReady(false);
-        setDraftChecked(false);
-        setExplicitConfirm(false);
         toast.success("Кампания началась. Вступление записано как игровой ход №0001.");
       }
     }
@@ -113,9 +111,33 @@ function GamePage() {
   useEffect(() => {
     if (turnDraft.playerIntent.trim() || turnDraft.summary.trim() || turnDraft.gmNarration?.trim()) {
       setDraftReady(true);
-      setDraftChecked(Boolean(turnDraft.checkedAt));
     }
   }, [turnDraft.id, turnDraft.playerIntent, turnDraft.summary, turnDraft.gmNarration, turnDraft.checkedAt]);
+
+  useEffect(() => {
+    if (turnCommitStage === "CHECK") {
+      const checked = checkTurnDraft();
+      if (checked.ok) setTurnCommitStage("COMMIT");
+      else {
+        setTurnCommitStage(null);
+        setGmError(`Не удалось автоматически проверить ход: ${checked.errors.join(" ")}`);
+      }
+    } else if (turnCommitStage === "COMMIT" && turnDraft.checkedAt) {
+      const committed = commitTurnDraft(true);
+      setTurnCommitStage(null);
+      if (!committed.ok) {
+        setGmError(`Не удалось автоматически сохранить ход: ${committed.error}`);
+      } else {
+        setPlayerAction("");
+        setPendingAction("");
+        setGmTurn(null);
+        setDraftReady(false);
+        setCompletedPlayerRolls([]);
+        setRollDisplay(null);
+        toast.success(`Ход №${nextTurnNumber} автоматически записан в журнал.`);
+      }
+    }
+  }, [turnCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft, nextTurnNumber]);
 
   function makeContext(action: string, mode: "ACTION" | "OPENING") {
     return {
@@ -221,6 +243,8 @@ function GamePage() {
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
     setGmTurn(null);
+    setRollDisplay(null);
+    setCompletedPlayerRolls([]);
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
@@ -243,16 +267,18 @@ function GamePage() {
           consequenceText: result.turn.consequenceText,
           characterChanges: result.turn.characterChanges,
           npcChanges: result.turn.npcChanges,
-          rolls: result.turn.rolls.map((roll, index) => ({
-            id: `chat-roll-${Date.now().toString(36)}-${index}`,
-            label: roll.label,
-            formula: roll.formula,
-            result: roll.result,
-          })),
+          rolls: [
+            ...completedPlayerRolls,
+            ...result.turn.rolls.map((roll, index) => ({
+              id: `chat-roll-${Date.now().toString(36)}-${index}`,
+              label: roll.label,
+              formula: roll.formula,
+              result: roll.result,
+            })),
+          ],
         });
         setDraftReady(true);
-        setDraftChecked(false);
-        setExplicitConfirm(false);
+        setTurnCommitStage("CHECK");
       }
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
@@ -261,56 +287,51 @@ function GamePage() {
     }
   }
 
-  function handleSubmitPendingRoll() {
-    if (!gmTurn || !pendingRollResult.trim()) return;
-    if (!Number.isInteger(Number(pendingRollResult.trim()))) {
-      setGmError("Результат броска должен быть целым числом. Введи фактический итог с модификатором, если он применим.");
-      return;
-    }
+  function handleRollPendingCheck() {
+    if (!gmTurn || gmBusy) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const continuedAction = `${pendingAction}\n\nФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат и продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
-    setPlayerAction(continuedAction);
+    const numericBonuses = [...pending.formula.matchAll(/([+-])\\s*(\\d+)/g)]
+      .map((match) => (match[1] === "-" ? -1 : 1) * Number(match[2]));
+    const matchingSkill = character.skillBonuses?.find((skill) => {
+      const label = pending.label.toLocaleLowerCase();
+      const name = skill.name.toLocaleLowerCase();
+      return label.includes(name) || name.includes(label);
+    });
+    const modifier = numericBonuses.length
+      ? numericBonuses.reduce((sum, value) => sum + value, 0)
+      : matchingSkill?.bonus ?? 0;
+    const random = new Uint32Array(1);
+    const limit = Math.floor(0x1_0000_0000 / 20) * 20;
+    let value = 0;
+    do {
+      crypto.getRandomValues(random);
+      value = random[0]!;
+    } while (value >= limit);
+    const die = value % 20 + 1;
+    const total = die + modifier;
+    const formula = `1d20 ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)}`;
+    setRollDisplay({ label: pending.label, die, modifier, total });
+    const rollRecord = {
+      id: `player-roll-${Date.now().toString(36)}`,
+      label: pending.label,
+      formula,
+      result: `d20=${die}; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
+    };
+    setCompletedPlayerRolls((current) => [...current, rollRecord]);
+    const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
-    setPendingRollResult("");
     setGmTurn(null);
     void handleResolveAction(continuedAction);
   }
 
   function handleApplyClarification() {
     if (!gmTurn || !clarificationAnswer.trim()) return;
-    const clarifiedAction = `${pendingAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`;
+    const clarifiedAction = `${pendingAction.trim()}\\n\\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`;
     setPlayerAction(clarifiedAction);
     setClarificationAnswer("");
     setGmTurn(null);
-  }
-
-  function handleCheckDraft() {
-    setGmError(null);
-    const result = checkTurnDraft();
-    if (result.ok) {
-      setDraftChecked(true);
-      toast.success("Проверка хода пройдена. Теперь подтверди запись.");
-    } else {
-      setDraftChecked(false);
-      toast.error(result.errors.join(" "));
-    }
-  }
-
-  function handleCommit() {
-    if (!explicitConfirm || !draftChecked) return;
-    const result = commitTurnDraft(explicitConfirm);
-    if (result.ok) {
-      setPlayerAction("");
-      setPendingAction("");
-      setGmTurn(null);
-      setDraftReady(false);
-      setDraftChecked(false);
-      setExplicitConfirm(false);
-      toast.success(`Ход №${nextTurnNumber} записан в журнал; проверка целостности и read-back пройдены.`);
-    } else {
-      toast.error(result.error);
-    }
+    void handleResolveAction(clarifiedAction);
   }
 
   function renderJournalEntry(entry: GameTurnEntry | TechnicalMessageEntry) {
@@ -353,6 +374,12 @@ function GamePage() {
           <span>Температура: {temperature}</span>
           <span>Время мира: +{entry.timeDeltaMinutes} мин</span>
         </div>
+        {entry.rolls.length > 0 && (
+          <div className="rounded-lg border border-primary/25 bg-background/60 p-2 text-xs">
+            <p className="mb-1 flex items-center gap-1 font-semibold"><Dices className="h-3.5 w-3.5" />Броски</p>
+            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula} → {roll.result}</p>)}
+          </div>
+        )}
         <p className="text-right text-[10px] text-muted-foreground">HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
       </article>
     );
@@ -495,36 +522,34 @@ function GamePage() {
               </div>
             )}
             {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
-              <div className="space-y-2 rounded-lg border border-border p-3">
-                <p className="text-xs font-semibold">Требуется бросок игрока</p>
-                <p className="text-sm">{gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.label} · {gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.formula}</p>
-                <Input inputMode="numeric" value={pendingRollResult} onChange={(event) => setPendingRollResult(event.target.value)} placeholder="Введи фактический результат броска" className="touch-target mono-code" />
-                <Button type="button" variant="outline" className="w-full" disabled={!pendingRollResult.trim()} onClick={handleSubmitPendingRoll}>Передать результат мастеру</Button>
+              <div className="space-y-3 rounded-xl border border-primary/40 bg-background/70 p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <Dices className="h-5 w-5 text-primary" />
+                  Мастер назначил проверку
+                </div>
+                <p className="text-sm font-medium">{gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.label}</p>
+                <p className="text-xs text-muted-foreground">Бросок: {gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.formula}. Результат определит дальнейший исход действия.</p>
+                <Button type="button" className="w-full" disabled={gmBusy} onClick={handleRollPendingCheck}>
+                  <Dices className="mr-2 h-4 w-4" />Бросить d20
+                </Button>
               </div>
             )}
           </article>
         )}
       </section>
 
-      {draftReady && (
-        <section className="panel-surface space-y-3 border-status-verified/40 p-4">
-          <div className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-status-verified" /><h2 className="text-sm font-semibold text-foreground">Ход #{nextTurnNumber} готов к проверке</h2></div>
-          <p className="text-xs text-muted-foreground">{turnDraft.summary || "Черновик хода"} · время: +{turnDraft.timeDeltaMinutes} мин · дата после хода: {turnDraft.newInGameDate || worldState.currentInGameDate}</p>
-          {turnDraft.playerIntent && <p className="text-sm text-foreground">Действие: {turnDraft.playerIntent}</p>}
-          {turnDraft.gmNarration && !gmTurn && <div className="max-h-64 overflow-y-auto whitespace-pre-wrap rounded-lg bg-background/60 p-3 text-xs leading-relaxed">{turnDraft.gmNarration}</div>}
-          {!draftChecked ? (
-            <Button type="button" variant="secondary" className="w-full" onClick={handleCheckDraft}><ShieldCheck className="mr-2 h-4 w-4" />Проверить ход</Button>
-          ) : (
-            <div className="space-y-3 rounded-lg border border-status-verified/40 p-3">
-              <p className="text-xs text-status-verified">Проверка пройдена. Изменения ещё не записаны.</p>
-              <label className="flex items-start gap-2 text-xs text-foreground">
-                <input type="checkbox" checked={explicitConfirm} onChange={(event) => setExplicitConfirm(event.target.checked)} className="mt-0.5" />
-                Я подтверждаю запись хода и обновление состояния кампании.
-              </label>
-              <Button type="button" className="w-full" disabled={!explicitConfirm} onClick={handleCommit}>Подтвердить и сохранить ход #{nextTurnNumber}</Button>
-            </div>
-          )}
-        </section>
+      {rollDisplay && (
+        <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-card p-3 text-sm" role="status">
+          <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/40 bg-primary/10">
+            <Dices className="h-5 w-5 text-primary" />
+            <span className="mono-code text-lg font-bold">{rollDisplay.die}</span>
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold">{rollDisplay.label}</p>
+            <p className="text-xs text-muted-foreground">d20: {rollDisplay.die} · модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
+            <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
+          </div>
+        </div>
       )}
 
       {gmError && <div role="alert" className="panel-surface flex items-start gap-2 border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{gmError}</span></div>}
