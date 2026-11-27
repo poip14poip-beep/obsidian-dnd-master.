@@ -88,10 +88,17 @@ const turnSchema = {
   },
   required: ["narration", "campaignMemory", "sensoryDescription", "spatialAccounting", "mechanics", "consequences", "resourceAccounting", "nextAction", "summary", "worldOutcome", "timeDeltaMinutes", "hpDelta", "newInGameDate", "newLocationId", "consequenceText", "environment", "environmentReason", "questChanges", "rolls", "characterChanges", "npcChanges", "needsClarification", "clarificationQuestion", "stateNotes"],
 } as const;
-function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
+const LOCAL_CANON_EXCERPT_BUDGET = 10_500;
+const LOCAL_CAMPAIGN_FACT_BUDGET = 3_500;
+const NPC_SIMULATION_SECTION_IDS = new Set(["1", "2", "4", "5", "8", "10", "11", "12", "13", "14"]);
+
+/**
+ * Sends only source-grounded, relevant canon excerpts. Every selected excerpt is
+ * kept whole and retains its source ID, section ID and original line range.
+ * The full 2.4 authority remains server-side; this is an auxiliary browser copy.
+ */
+export function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
-  // The full canonical edition is server-authoritative. A browser backup may contain an older
-  // edition; never let it shadow the version-locked v2.4 excerpts added by obsidian-gm.
   const canon = sources.filter((source) => source.type === "WORLD_CANON" &&
     source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" &&
     source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
@@ -128,30 +135,54 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
         score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
     });
   }).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 24);
-  const selectedFacts = facts
+
+  const relevantExcerpts = ranked.filter((item) => item.score > 0);
+  const fallbackExcerpts = relevantExcerpts.length ? relevantExcerpts : ranked.slice(0, 6);
+  const selectedExcerpts: string[] = [];
+  let excerptBudget = LOCAL_CANON_EXCERPT_BUDGET;
+  for (const item of fallbackExcerpts) {
+    const attribution = `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}; relevance=${item.score}]\n`;
+    const block = attribution + item.text;
+    // Never cut a canon paragraph/chunk mid-sentence: skip it if the whole unit
+    // does not fit and try the next, more compact relevant source unit.
+    if (block.length > excerptBudget) continue;
+    selectedExcerpts.push(block);
+    excerptBudget -= block.length + 2;
+    if (excerptBudget <= 0) break;
+  }
+
+  const relevantFacts = facts
     .filter((fact) => fact.layer === "OBJECTIVE_TRUTH" && fact.certainty !== "UNKNOWN")
     .map((fact) => {
       const haystack = `${fact.title} ${fact.statement}`.toLocaleLowerCase();
       const score = terms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
       return { fact, score };
     })
-    .sort((a, b) => b.score - a.score || b.fact.createdAt.localeCompare(a.fact.createdAt))
-    .slice(0, 60)
-    .map(({ fact }) => `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`)
-    .join("\n");
-  const selectedExcerpts = ranked
-    .sort((a, b) => b.score - a.score || a.startLine - b.startLine)
     .filter((item) => item.score > 0)
-    .slice(0, 12);
-  const fallbackExcerpts = selectedExcerpts.length ? selectedExcerpts : ranked.slice(0, 6);
+    .sort((a, b) => b.score - a.score || b.fact.createdAt.localeCompare(a.fact.createdAt));
+  const selectedFacts: string[] = [];
+  let factBudget = LOCAL_CAMPAIGN_FACT_BUDGET;
+  for (const { fact } of relevantFacts) {
+    const line = `[${fact.certainty}] ${fact.title}: ${fact.statement} (источник: ${fact.sourceId})`;
+    if (line.length > factBudget) continue;
+    selectedFacts.push(line);
+    factBudget -= line.length + 1;
+    if (selectedFacts.length >= 25 || factBudget <= 0) break;
+  }
+
   return [
-    fallbackExcerpts.length ? fallbackExcerpts.map((item) =>
-      `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}; relevance=${item.score}]\n${item.text}`,
-    ).join("\n\n") : "Локальная копия канона не используется; полная редакция 2.4 проверяется и извлекается сервером. Не заменяй её старыми копиями и не заполняй пробелы выдуманным каноном.",
-    selectedFacts ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${selectedFacts}` : "",
+    selectedExcerpts.length ? selectedExcerpts.join("\n\n") :
+      "Локальная копия канона не используется; полная редакция 2.4 проверяется и извлекается сервером. Не заменяй её старыми копиями и не заполняй пробелы выдуманным каноном.",
+    selectedFacts.length ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ (только совпавшие с запросом):\n${selectedFacts.join("\n")}` : "",
   ].filter(Boolean).join("\n\n");
 }
-function selectNpcSimulationContext(sources: SourceDocument[]): string {
+
+/**
+ * NDP/NPL is a GM-only protocol, not a campaign ledger. Pass only the numbered
+ * normative sections; omit blank registry templates, test fixtures and appended
+ * campaign NPC records. Original source line ranges are kept for auditability.
+ */
+export function selectNpcSimulationContext(sources: SourceDocument[]): string {
   const source = sources.find((item) =>
     item.type === "SUPPLEMENTAL" &&
     item.fileName === "NPC_SIMULATION_RULES_NDP_0_3.md" &&
@@ -161,9 +192,26 @@ function selectNpcSimulationContext(sources: SourceDocument[]): string {
     item.reviewStatus === "VERIFIED" &&
     item.contextEnabled === true
   );
-  return source
-    ? `[GM-ONLY NPC SIMULATION REFERENCE: ${source.title}; sourceId=${source.id}]\\n${source.content}`
-    : "NPC_SIMULATION_REFERENCE: UNKNOWN. Use only validated NPC records and ОБСИДИАН 4.1; do not invent an NPC decision protocol.";
+  if (!source) return "NPC_SIMULATION_REFERENCE: UNKNOWN. Use only validated NPC records and ОБСИДИАН 4.1; do not invent an NPC decision protocol.";
+
+  const lines = source.content.replace(/\r\n?/g, "\n").split("\n");
+  const sectionHeaders: Array<{ index: number; id: string; heading: string }> = [];
+  lines.forEach((line, index) => {
+    const match = /^##\s+(\d+)\.\s+(.+)$/.exec(line);
+    if (match) sectionHeaders.push({ index, id: match[1]!, heading: line.trim() });
+  });
+  const selected: string[] = [];
+  for (let index = 0; index < sectionHeaders.length; index++) {
+    const current = sectionHeaders[index]!;
+    if (!NPC_SIMULATION_SECTION_IDS.has(current.id)) continue;
+    const endIndex = sectionHeaders[index + 1]?.index ?? lines.length;
+    const text = lines.slice(current.index, endIndex).join("\n").trim();
+    if (!text) continue;
+    selected.push(`[NDP/NPL SOURCE: ${source.title}; sourceId=${source.id}; section=${current.id}; lines ${current.index + 1}–${endIndex}]\n${text}`);
+  }
+  return selected.length
+    ? `[GM-ONLY NPC SIMULATION REFERENCE: ${source.title}; sourceId=${source.id}; selectedSections=${selected.length}]\n${selected.join("\n\n")}`
+    : "NPC_SIMULATION_REFERENCE: verified source has no numbered NDP/NPL sections; do not pass unfiltered ledger text to the model.";
 }
 function selectRelevantJournal(
   entries: Array<GameTurnEntry | TechnicalMessageEntry>,
