@@ -22,7 +22,13 @@ describe("game master resolver", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), model: "deepseek/deepseek-v4.1-flash", usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } });
     expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100); expect(result.model).toBe("deepseek/deepseek-v4.1-flash");
-    const [url, init] = fetcher.mock.calls[0];\n    expect(url).toBe("https://test.supabase.co/functions/v1/obsidian-gm");\n    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-jwt");\n    expect((init?.headers as Record<string, string>).apikey).toBe("sb_publishable_test");\n    const request = JSON.parse(init?.body as string);\n    expect(request.operation).toBe("GAME_TURN");\n    expect(request.model).toBe("obsidian-free");
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe("https://test.supabase.co/functions/v1/obsidian-gm");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-jwt");
+    expect((init?.headers as Record<string, string>).apikey).toBe("sb_publishable_test");
+    const request = JSON.parse(init?.body as string);
+    expect(request.operation).toBe("GAME_TURN");
+    expect(request.model).toBe("obsidian-free");
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
