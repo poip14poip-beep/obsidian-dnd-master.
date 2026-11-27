@@ -183,8 +183,8 @@ function TurnsPage() {
         setLastServerRoll(`${pending.label}: ${pending.formula} · ${result}`);
       }
       const allRolls = [...completedPendingRolls, rollRecord];
-      const rollHistory = allRolls.map((roll, index) => `${index + 1}) ${roll.label}: ${roll.formula} · ${roll.result}`).join("\\n");
-      const action = `${originalIntent}\\n\\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ: ${pending.label}; формула ${pending.formula}.\\nФАКТИЧЕСКИЕ БРОСКИ МАСТЕРА (случайно сгенерированы сервером):\\n${rollHistory}\\nПримени именно эти результаты по правилам D&D 2024; не меняй исходные проверки и не проси повторить уже выполненные броски.`;
+      const rollHistory = allRolls.map((roll, index) => `${index + 1}) ${roll.label}: ${roll.formula} · ${roll.result}`).join("\n");
+      const action = `${originalIntent}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ: ${pending.label}; формула ${pending.formula}.\nФАКТИЧЕСКИЕ БРОСКИ МАСТЕРА (случайно сгенерированы сервером):\n${rollHistory}\nПримени именно эти результаты по правилам D&D 2024; не меняй исходные проверки и не проси повторить уже выполненные броски.`;
       setPlayerAction(action);
       await handleResolveAction(action, allRolls, originalIntent, recoverTurn);
     } catch (error) {
