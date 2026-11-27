@@ -801,7 +801,7 @@ Deno.serve(async (req: Request) => {
       const choices = Array.isArray(root.choices) ? root.choices : [];
       const choice = isRecord(choices[0]) ? choices[0] : {};
       const message = isRecord(choice.message) ? choice.message : {};
-      const content = outputText(message);
+      let content = outputText(message);
       if (!content || choice.finish_reason === "length") {
         const failure = `${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`;
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: failure, responseChars: content.length });
@@ -819,6 +819,41 @@ Deno.serve(async (req: Request) => {
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
+      }
+      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+        // A pending roll is a pause in the action pipeline, not a commit.
+        // Safely discard premature model mutations; they are recalculated after the actual roll.
+        let currentEnvironment: JsonRecord = {
+          temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN",
+          visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN",
+          ambientSmells: "UNKNOWN", notes: "",
+        };
+        try {
+          const originalInput = JSON.parse(inputText);
+          const campaign = isRecord(originalInput) && isRecord(originalInput.campaign) ? originalInput.campaign : {};
+          if (isRecord(campaign.environment)) currentEnvironment = campaign.environment;
+        } catch { /* preserve explicit UNKNOWN environment when campaign input is malformed */ }
+        const previousChanges = isRecord(parsed.characterChanges) ? parsed.characterChanges : {};
+        parsed = {
+          ...parsed,
+          timeDeltaMinutes: 0,
+          hpDelta: 0,
+          newLocationId: null,
+          consequenceText: "",
+          npcChanges: [],
+          questChanges: [],
+          environment: currentEnvironment,
+          environmentReason: "Окружение не изменяется до результата броска.",
+          characterChanges: {
+            ...previousChanges,
+            inventory: [],
+            resources: [],
+            conditions: [],
+            currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+          },
+          stateNotes: [],
+        };
+        content = JSON.stringify(parsed);
       }
       if (isGameTurnRequest) {
         const semanticFailure = validateGameTurnSemantics(parsed);
