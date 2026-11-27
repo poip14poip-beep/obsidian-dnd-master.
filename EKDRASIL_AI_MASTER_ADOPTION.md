@@ -29,7 +29,7 @@ The deployed `obsidian-gm` Edge Function is ACTIVE version 65 (JWT verification 
 
 The opening-scene failure was reproduced in Supabase logs. The DeepSeek request was accepted, but its 6,144-token completion budget was consumed by 5,234 reasoning tokens; the visible structured JSON was truncated (`finish_reason=length`). The application correctly refused to save the invalid turn.
 
-Deployed in `obsidian-gm` version 64:
+Initial reliability correction deployed in v64 and retained in the active `obsidian-gm` v65:
 
 - Game turns are now classified explicitly by `operation === GAME_TURN`, rather than treating every non-biography request as a turn.
 - DeepSeek game turns request `reasoning.effort = none`, reserving the completion budget for the required state JSON.
