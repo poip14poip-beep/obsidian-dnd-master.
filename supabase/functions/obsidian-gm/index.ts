@@ -460,9 +460,23 @@ Deno.serve(async (req: Request) => {
   const canonDoc = canonSource.content;
   const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
     ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
-  const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10))
-    .map((part) => part.trim()).filter((part) => part.length > 60)
-    .map((paragraph) => ({ paragraph, haystack: paragraph.toLowerCase() }));
+  const canonParagraphs = (() => {
+    const lines = canonDoc.replace(/\\r\\n?/g, "\\n").split("\\n");
+    const paragraphs: Array<{ paragraph: string; haystack: string; startLine: number; endLine: number }> = [];
+    let current: string[] = [];
+    let startLine = 1;
+    const flush = (endLine: number) => {
+      const paragraph = current.join("\\n").trim();
+      if (paragraph.length > 60) paragraphs.push({ paragraph, haystack: paragraph.toLowerCase(), startLine, endLine });
+      current = [];
+    };
+    lines.forEach((line, index) => {
+      if (!line.trim()) { flush(index); startLine = index + 2; }
+      else { if (!current.length) startLine = index + 1; current.push(line); }
+    });
+    flush(lines.length);
+    return paragraphs;
+  })();
 
   if (!rulesDoc.trim() || !isRecord(privateSources.SRD_5_2_1) ||
       typeof privateSources.SRD_5_2_1.title !== "string" ||
@@ -536,16 +550,26 @@ Deno.serve(async (req: Request) => {
     }
   } catch { /* action text remains the safe minimum query */ }
   const canonTerms = [...new Set([...canonSearchParts.join(" ").toLowerCase().split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedCanon = canonParagraphs
-    .map(({ paragraph, haystack }) => {
+  const rankedCanonParagraphs = canonParagraphs
+    .map(({ paragraph, haystack, startLine, endLine }) => {
       const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
-      const headingBoost = /^#{1,4}\s/m.test(paragraph) ? 1 : 0;
-      return { paragraph, score: score + headingBoost };
+      const headingBoost = /^#{1,4}\\s/m.test(paragraph) ? 1 : 0;
+      return { paragraph, startLine, endLine, score: score + headingBoost };
     })
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 6 : isStoryRequest ? 5 : 18)
-    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 900) : isStoryRequest ? item.paragraph.slice(0, 700) : item.paragraph);
+    .sort((a, b) => b.score - a.score || a.startLine - b.startLine);
+  const selectedCanon: string[] = [];
+  let canonExcerptBudget = isCompatibilityRequest ? 5_500 : isStoryRequest ? 5_000 : 12_000;
+  const canonParagraphLimit = isCompatibilityRequest ? 10 : isStoryRequest ? 8 : 18;
+  for (const item of rankedCanonParagraphs) {
+    const attribution = `[CANON SOURCE: Ekdrasil_Master_Canon_v2.4.md; SHA-256=${EKDRASIL_CANON_SHA256}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\\n`;
+    const block = attribution + item.paragraph;
+    // Keep every original paragraph intact; never slice a canon rule mid-sentence.
+    if (block.length > canonExcerptBudget) continue;
+    selectedCanon.push(block);
+    canonExcerptBudget -= block.length + 2;
+    if (selectedCanon.length >= canonParagraphLimit || canonExcerptBudget <= 0) break;
+  }
   const canonAuthority = [
     "ИСТОЧНИК ИСТИНЫ: Ekdrasil_Master_Canon_v2.4.md — полная редакция 2.4, 41 том, 250 нумерованных разделов. SHA-256 исходного файла: " + EKDRASIL_CANON_SHA256 + ".",
     "СОВРЕМЕННОЕ СОСТОЯНИЕ ГЛОБАЛЬНОГО МИРА: 2000 год. Глобальная хроника заканчивается 2000 годом; события после него не предопределены и развиваются отдельно в каждой кампании либо по отдельно утверждённому сценарию.",
