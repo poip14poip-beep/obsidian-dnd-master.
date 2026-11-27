@@ -505,6 +505,7 @@ function hitClaimPatterns(name: string): RegExp[] {
       `\\b${target}\\b[^.;]{0,25}?\\breels\\s+(?:back\\s+)?from\\s+the\\s+(?:blow|hit|strike|impact)\\b`,
       "i",
     ),
+    new RegExp("(?:^|[^А-ЯЁа-яё])(?:поражает|пронзает|ударяет|ранит|рассекает|сбивает)\\s+" + target + "(?=$|[^А-ЯЁа-яё])", "i"),
   ];
 }
 
@@ -520,6 +521,7 @@ function missClaimPatterns(name: string): RegExp[] {
       `\\b(?:${MISS_PHRASES})\\s+(?:of\\s+|by\\s+|over\\s+)?(?:the|that|this|his|her|its|their)?\\s*${target}\\b`,
       "i",
     ),
+    new RegExp("(?:^|[^А-ЯЁа-яё])(?:промахивается мимо|промахнулся мимо|не достигает|не задевает)\\s+" + target + "(?=$|[^А-ЯЁа-яё])", "i"),
   ];
 }
 
@@ -539,6 +541,8 @@ function deathClaimPatterns(name: string): RegExp[] {
       "i",
     ),
     new RegExp(`\\b${target}(?:'s|s')?\\s+(?:corpse|lifeless body|dead body)\\b`, "i"),
+    new RegExp("(?:^|[^А-ЯЁа-яё])" + target + "(?:а|у|ом|е)?\\s+(?:умирает|погибает|падает замертво|лежит бездыханным|убит)(?=$|[^А-ЯЁа-яё])", "i"),
+    new RegExp("(?:^|[^А-ЯЁа-яё])(?:убивает|добивает|сражает насмерть)\\s+" + target + "(?=$|[^А-ЯЁа-яё])", "i"),
   ];
 }
 
@@ -553,13 +557,14 @@ function downedClaimPatterns(name: string): RegExp[] {
       `\\b${target}\\b[^.;]{0,25}?\\b(?:falls|drops)\\s+to\\s+0\\s+(?:hp|hit points)\\b`,
       "i",
     ),
+    new RegExp("(?:^|[^А-ЯЁа-яё])" + target + "(?:а|у|ом|е)?\\s+(?:теряет сознание|падает без сознания|обмякает и падает)(?=$|[^А-ЯЁа-яё])", "i"),
   ];
 }
 
 // A number in an explicitly mechanical frame. The lookbehind keeps "2d6 damage"
 // from reading as "6 damage", and the frame is narrow enough that "twenty gold"
 // and "the third bell" never reach the check.
-const NUMBER_CLAIM = /(?<![\dd])(\d{1,3})\s+(?:points?\s+of\s+)?(damage|healing|урона|урон|исцеления|лечения|здоровья)\b/gi;
+const NUMBER_CLAIM = /(?<![\\dd])(\\d{1,3})\\s+(?:points?\\s+of\\s+)?(damage|healing)\\b|(?<![\\dd])(\\d{1,3})\\s+(?:единиц(?:ы)?\\s+)?(урона|урон|исцеления|лечения|здоровья)(?=$|[^А-ЯЁа-яё])/gi;
 
 // Only leveled SRD spells whose casting genuinely costs a slot. Cantrips are
 // absent on purpose: casting one spends nothing, so their absence from the
