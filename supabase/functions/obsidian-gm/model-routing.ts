@@ -58,39 +58,39 @@ export function validateGameTurnSemantics(value: unknown): string | null {
     return "game turn must be an object";
   }
   const turn = value as Record<string, unknown>;
-  if (!Array.isArray(turn.rolls)) return "rolls must be an array";
-  if (turn.rolls.length > 1) return "only one player roll may be pending at a time";
-  for (const roll of turn.rolls) {
+  if (!Array.isArray(turn["rolls"])) return "rolls must be an array";
+  if (turn["rolls"].length > 1) return "only one player roll may be pending at a time";
+  for (const roll of turn["rolls"]) {
     if (!roll || typeof roll !== "object" || Array.isArray(roll)) {
       return "roll entry must be an object";
     }
     const item = roll as Record<string, unknown>;
-    if (typeof item.label !== "string" || !item.label.trim() ||
-        typeof item.formula !== "string" || !item.formula.trim()) {
+    if (typeof item["label"] !== "string" || !item["label"].trim() ||
+        typeof item["formula"] !== "string" || !item["formula"].trim()) {
       return "pending player roll requires a label and formula";
     }
-    if (item.result !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+    if (item["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       return "model attempted to supply a dice result; only the player/application may roll";
     }
   }
-  if (turn.rolls.length === 0) return null;
+  if (turn["rolls"].length === 0) return null;
 
-  const changes = turn.characterChanges && typeof turn.characterChanges === "object" && !Array.isArray(turn.characterChanges)
-    ? turn.characterChanges as Record<string, unknown> : {};
-  const currency = changes.currencyDelta && typeof changes.currencyDelta === "object" && !Array.isArray(changes.currencyDelta)
-    ? changes.currencyDelta as Record<string, unknown> : {};
+  const changes = turn["characterChanges"] && typeof turn["characterChanges"] === "object" && !Array.isArray(turn["characterChanges"])
+    ? turn["characterChanges"] as Record<string, unknown> : {};
+  const currency = changes["currencyDelta"] && typeof changes["currencyDelta"] === "object" && !Array.isArray(changes["currencyDelta"])
+    ? changes["currencyDelta"] as Record<string, unknown> : {};
   const hasArrayChanges = ["inventory", "resources", "conditions"].some((key) =>
     Array.isArray(changes[key]) && (changes[key] as unknown[]).length > 0
   );
   const hasCurrencyChanges = Object.values(currency).some((amount) =>
     typeof amount === "number" && amount !== 0
   );
-  const hasNpcChanges = Array.isArray(turn.npcChanges) && turn.npcChanges.length > 0;
-  const hasQuestChanges = Array.isArray(turn.questChanges) && turn.questChanges.length > 0;
-  const hasConsequence = typeof turn.consequenceText === "string" && turn.consequenceText.trim().length > 0;
-  if (turn.timeDeltaMinutes !== 0 || turn.hpDelta !== 0 || hasArrayChanges ||
+  const hasNpcChanges = Array.isArray(turn["npcChanges"]) && turn["npcChanges"].length > 0;
+  const hasQuestChanges = Array.isArray(turn["questChanges"]) && turn["questChanges"].length > 0;
+  const hasConsequence = typeof turn["consequenceText"] === "string" && turn["consequenceText"].trim().length > 0;
+  if (turn["timeDeltaMinutes"] !== 0 || turn["hpDelta"] !== 0 || hasArrayChanges ||
       hasCurrencyChanges || hasNpcChanges || hasQuestChanges ||
-      turn.newLocationId !== null || hasConsequence) {
+      turn["newLocationId"] !== null || hasConsequence) {
     return "a pending player roll must not mutate campaign or character state";
   }
   return null;
