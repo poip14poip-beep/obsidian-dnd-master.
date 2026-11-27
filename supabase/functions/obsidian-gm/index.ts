@@ -562,7 +562,7 @@ Deno.serve(async (req: Request) => {
   let canonExcerptBudget = isCompatibilityRequest ? 5_500 : isStoryRequest ? 5_000 : 12_000;
   const canonParagraphLimit = isCompatibilityRequest ? 10 : isStoryRequest ? 8 : 18;
   for (const item of rankedCanonParagraphs) {
-    const attribution = `[CANON SOURCE: Ekdrasil_Master_Canon_v2.4.md; SHA-256=${EKDRASIL_CANON_SHA256}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\\n`;
+    const attribution = `[CANON SOURCE: Ekdrasil_Master_Canon_v2.4.md; SHA-256=${EKDRASIL_CANON_SHA256}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\n`;
     const block = attribution + item.paragraph;
     // Keep every original paragraph intact; never slice a canon rule mid-sentence.
     if (block.length > canonExcerptBudget) continue;
