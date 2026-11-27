@@ -51,7 +51,7 @@ function GamePage() {
   const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; targetType: "DC" | "AC" | "NONE"; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; targetType?: "DC" | "AC" | "NONE"; result: string }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; targetType?: "DC" | "AC" | "NONE"; roller?: "PLAYER" | "GM"; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -156,7 +156,7 @@ function GamePage() {
     }
   }, [turnCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft, nextTurnNumber]);
 
-  function makeContext(action: string, mode: "ACTION" | "OPENING") {
+  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc?: number | null; targetType?: "DC" | "AC" | "NONE"; roller?: "PLAYER" | "GM"; result: string }> = []) {
     return {
       action,
       mode,
@@ -169,6 +169,7 @@ function GamePage() {
       locations,
       timelineEvents,
       journal: sessionLog.entries,
+      completedRolls,
     };
   }
 
@@ -268,7 +269,11 @@ function GamePage() {
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
-      const result = await resolvePlayerAction(session.access_token, makeContext(actionToResolve, "ACTION"), { model: gmModel });
+      const result = await resolvePlayerAction(
+        session.access_token,
+        makeContext(actionToResolve, "ACTION", preserveRolls ? (rollsOverride ?? completedPlayerRolls) : []),
+        { model: gmModel },
+      );
       setGmTurn(result.turn);
       const waitingForRoll = result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
       if (!result.turn.needsClarification && !waitingForRoll) {
@@ -340,6 +345,7 @@ function GamePage() {
       formula,
       dc: pending.dc,
       targetType: pending.targetType,
+      roller: pending.roller,
       result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
     const allRolls = [...completedPlayerRolls, rollRecord];
