@@ -361,6 +361,10 @@ BEGIN
     LEFT JOIN obsidian.sources s
       ON s.id = k.source_id AND s.campaign_id = p_campaign_id AND s.owner_id = k.owner_id
     WHERE k.owner_id = p_actor
+      AND k.npc_id IN (
+        SELECT own_npc.id FROM obsidian.npcs own_npc
+        WHERE own_npc.campaign_id = p_campaign_id AND own_npc.owner_id = p_actor
+      )
       AND ((n.id IS NULL) OR (k.source_id IS NOT NULL AND s.id IS NULL))
   ) OR EXISTS (
     SELECT 1 FROM obsidian.canon_facts f
