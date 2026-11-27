@@ -520,6 +520,9 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         !roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
     }
+    if (roll["dc"] !== null && (!Number.isInteger(roll["dc"]) || (roll["dc"] as number) < 1 || (roll["dc"] as number) > 40)) {
+      throw new GameMasterError("Мастер указал некорректную или незафиксированную сложность проверки.", "INVALID_DICE_DC");
+    }
     if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
         roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       throw new GameMasterError("Мастер попытался подставить результат броска или не указал, кто бросает. Число должен генерировать игрок или защищённый сервер согласно владельцу броска.", "GM_INVENTED_DICE_RESULT");
