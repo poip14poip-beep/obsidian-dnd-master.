@@ -50,6 +50,12 @@ function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(stableSerialize).join(",") + "]";
+  if (isRecord(value)) return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableSerialize(value[key])).join(",") + "}";
+  return JSON.stringify(value) ?? "undefined";
+}
+
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -990,7 +996,7 @@ Deno.serve(async (req: Request) => {
             const repairedNonNarration = isRecord(repairedParsed) ? { ...repairedParsed } : {};
             delete originalNonNarration.narration;
             delete repairedNonNarration.narration;
-            const changedNonNarration = JSON.stringify(originalNonNarration) !== JSON.stringify(repairedNonNarration);
+            const changedNonNarration = stableSerialize(originalNonNarration) !== stableSerialize(repairedNonNarration);
             const repairedContradictions = isRecord(repairedParsed) && typeof repairedParsed.narration === "string"
               ? checkNarration({ conversation: modelCall.conversation as GuardMessage[], narration: repairedParsed.narration, partyNames: partyNamesFromInput(inputText) })
               : contradictions;
