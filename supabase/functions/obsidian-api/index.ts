@@ -114,6 +114,23 @@ Deno.serve(async (req: Request) => {
         return json({ ok: true, campaign: data }, 200, cors);
       }
 
+      case "import_campaign_state": {
+        if (!hasOnlyKeys(body, ["action", "campaign_id", "state"]) ||
+            typeof body.campaign_id !== "string" || !isObject(body.state)) {
+          return json({ error: "INVALID_CAMPAIGN_IMPORT_PAYLOAD" }, 400, cors);
+        }
+        if (JSON.stringify(body.state).length > 8_000_000) {
+          return json({ error: "CAMPAIGN_IMPORT_TOO_LARGE" }, 413, cors);
+        }
+        const { data, error } = await admin.rpc("obsidian_api_import_campaign_state", {
+          p_actor: actor,
+          p_campaign_id: body.campaign_id,
+          p_state: body.state,
+        });
+        if (error) return json({ error: "CAMPAIGN_IMPORT_FAILED", detail: error.message }, 409, cors);
+        return json({ ok: true, result: data }, 200, cors);
+      }
+
       case "bootstrap": {
         if (!hasOnlyKeys(body, ["action", "campaign_id"]) ||
             typeof body.campaign_id !== "string") {
