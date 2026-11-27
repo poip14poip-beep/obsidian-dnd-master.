@@ -208,4 +208,42 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.error).toContain("подтверждённых характеристик");
   });
 
+  it("returns the server-prepared player roll from the bounded tool loop", async () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Perception", bonus: 5, basis: "WISDOM + владение" }],
+      conditions: [],
+    };
+    const first = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "check-1", type: "function",
+        function: { name: "prepare_player_check", arguments: JSON.stringify({
+          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 15,
+          advantage: "NONE", reason: "Заметить движение",
+        }) },
+      }] } }],
+    };
+    const second = { choices: [{ message: { role: "assistant", content: "Проверка подготовлена." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(second), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules,
+      canon,
+      playerCharacter: character,
+    });
+    expect(result.preparedPlayerRoll).toMatchObject({
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, modifier: 5,
+    });
+  });
+
 });
