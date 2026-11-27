@@ -1,3 +1,4 @@
+import { parseDiceFormula } from "./dice.ts";
 /**
  * Bounded, read-only retrieval loop adapted from Open Dungeon Master (MIT).
  * Upstream: https://github.com/Lebbitheplow/open-game-master
@@ -66,6 +67,41 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "prepare_npc_attack",
+      description: "Подготовить атаку существа/NPC по главному герою. Бонус атаки берётся только из найденного статблока SRD 5.2.1, AC героя — из подтверждённого листа. Требуется предварительный search_dnd_rules по существу и атаке. Бросок выполняет сервер.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          creatureName: { type: "string", minLength: 2, maxLength: 100 },
+          attackName: { type: "string", minLength: 2, maxLength: 100 },
+          advantage: { type: "string", enum: ["NONE", "ADVANTAGE", "DISADVANTAGE"] },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["creatureName", "attackName", "advantage", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "prepare_npc_damage",
+      description: "Подготовить бросок урона NPC только после подтверждённого попадания предыдущим серверным броском. Формула берётся из строки Hit статблока SRD 5.2.1. Бросок выполняет сервер.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          creatureName: { type: "string", minLength: 2, maxLength: 100 },
+          attackName: { type: "string", minLength: 2, maxLength: 100 },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["creatureName", "attackName", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_ekdrasil_canon",
       description: "Найти точные выдержки только из Ekdrasil_Master_Canon_v2.4.md. Старые редакции запрещены. Только чтение.",
       parameters: {
@@ -85,13 +121,13 @@ export interface RetrievalSource {
 }
 
 export interface PreparedRoll {
-  roller: "PLAYER";
+  roller: "PLAYER" | "GM";
   label: string;
   formula: string;
   dc: number | null;
   targetType: "DC" | "AC" | "NONE";
   modifier: number;
-  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK";
+  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "NPC_ATTACK" | "NPC_DAMAGE";
   reason: string;
 }
 
@@ -264,6 +300,137 @@ function preparePlayerAttack(
   };
 }
 
+function parseRollTotal(roll: JsonRecord): number | null {
+  if (typeof roll.result !== "string") return null;
+  const match = /(?:итог|total)\s*=\s*(-?\d+)/i.exec(roll.result);
+  return match ? Number(match[1]) : null;
+}
+
+function wasCriticalD20(roll: JsonRecord): boolean {
+  if (typeof roll.result !== "string") return false;
+  return [...roll.result.matchAll(/d20:(\d+)(?:\s*\(не учитывается\))?/gi)]
+    .some((match) => match[1] === "20" && !match[0].includes("не учитывается"));
+}
+
+function prepareNpcAttack(
+  args: JsonRecord,
+  rules: RetrievalSource,
+  playerCharacter: JsonRecord | null,
+  retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
+  alreadyPrepared: boolean,
+): { ok: true; preparedRoll: PreparedRoll; targetACSource: { sourceId: string; sha256: string; lines: string } } | { ok: false; error: string } {
+  if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
+  const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
+  const attackName = typeof args.attackName === "string" ? args.attackName.trim() : "";
+  const advantage = args.advantage;
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  const armorClass = playerCharacter?.armorClass;
+  if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" ||
+      !Number.isInteger(armorClass) || (armorClass as number) < 1 || (armorClass as number) > 40) {
+    return { ok: false, error: "Класс защиты героя не подтверждён листом персонажа. Не выдумывай AC." };
+  }
+  if (creatureName.length < 2 || attackName.length < 2 ||
+      !["NONE", "ADVANTAGE", "DISADVANTAGE"].includes(String(advantage)) ||
+      reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для атаки нужны имя существа, точное имя атаки, преимущество и причина." };
+  }
+  const creatureNeedle = creatureName.normalize("NFKC").toLocaleLowerCase();
+  const attackNeedle = attackName.normalize("NFKC").toLocaleLowerCase();
+  const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) => {
+    const text = excerpt.text.normalize("NFKC").toLocaleLowerCase();
+    return text.includes(creatureNeedle) && text.includes(attackNeedle) &&
+      /(?:attack roll|to hit)/i.test(excerpt.text);
+  });
+  if (!sourceExcerpt) {
+    return { ok: false, error: "Атака существа не подтверждена найденным статблоком SRD 5.2.1. Не придумывай бонус атаки." };
+  }
+  const bonusMatch = /(?:attack roll|to hit)\s*[:=]?\s*([+-]\d+)|([+-]\d+)\s*to hit/i.exec(sourceExcerpt.text);
+  const attackBonus = bonusMatch ? Number(bonusMatch[1] ?? bonusMatch[2]) : NaN;
+  if (!Number.isInteger(attackBonus) || attackBonus < -10 || attackBonus > 30) {
+    return { ok: false, error: "В выдержке SRD не найден однозначный бонус этой атаки." };
+  }
+  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
+  const formula = attackBonus === 0 ? dice : dice + (attackBonus > 0 ? "+" : "") + String(attackBonus);
+  return {
+    ok: true,
+    preparedRoll: {
+      roller: "GM",
+      label: "Атака " + creatureName + " (" + attackName + ")",
+      formula,
+      dc: armorClass as number,
+      targetType: "AC",
+      modifier: attackBonus,
+      kind: "NPC_ATTACK",
+      reason,
+    },
+    targetACSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
+  };
+}
+
+function prepareNpcDamage(
+  args: JsonRecord,
+  rules: RetrievalSource,
+  completedRolls: JsonRecord[],
+  retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
+  alreadyPrepared: boolean,
+): { ok: true; preparedRoll: PreparedRoll; damageSource: { sourceId: string; sha256: string; lines: string }; critical: boolean } | { ok: false; error: string } {
+  if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
+  const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
+  const attackName = typeof args.attackName === "string" ? args.attackName.trim() : "";
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  if (creatureName.length < 2 || attackName.length < 2 || reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для урона нужны имя существа, точное имя атаки и причина." };
+  }
+  const expectedLabel = "Атака " + creatureName + " (" + attackName + ")";
+  const priorAttack = [...completedRolls].reverse().find((roll) =>
+    roll.roller === "GM" && roll.targetType === "AC" && roll.label === expectedLabel,
+  );
+  if (!priorAttack || !Number.isInteger(priorAttack.dc)) {
+    return { ok: false, error: "Нет завершённого серверного броска атаки этой цели. Урон пока не разрешён." };
+  }
+  const total = parseRollTotal(priorAttack);
+  if (total === null || total < Number(priorAttack.dc)) {
+    return { ok: false, error: "Предыдущая атака не попала или её результат неизвестен. Бросок урона запрещён." };
+  }
+  const creatureNeedle = creatureName.normalize("NFKC").toLocaleLowerCase();
+  const attackNeedle = attackName.normalize("NFKC").toLocaleLowerCase();
+  const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) => {
+    const text = excerpt.text.normalize("NFKC").toLocaleLowerCase();
+    return text.includes(creatureNeedle) && text.includes(attackNeedle) && /hit\s*:/i.test(excerpt.text);
+  });
+  if (!sourceExcerpt) {
+    return { ok: false, error: "Строка Hit для этой атаки не найдена в статблоке SRD 5.2.1. Не выдумывай урон." };
+  }
+  const damageMatch = /hit\s*:\s*\d+\s*\(([^)]+)\)/i.exec(sourceExcerpt.text);
+  if (!damageMatch) return { ok: false, error: "Не удалось однозначно извлечь формулу урона из строки Hit." };
+  let formula = damageMatch[1]!.replace(/\s+/g, "");
+  const parsed = parseDiceFormula(formula);
+  if (!parsed) return { ok: false, error: "Формула урона из статблока не поддерживается серверным генератором." };
+  const critical = wasCriticalD20(priorAttack);
+  if (critical) {
+    formula = formula.replace(/(\d*)d(\d+)/gi, (_match, count: string, sides: string) =>
+      String((Number(count || 1) * 2)) + "d" + sides,
+    );
+  }
+  const verified = parseDiceFormula(formula);
+  if (!verified) return { ok: false, error: "Формула критического урона некорректна." };
+  return {
+    ok: true,
+    preparedRoll: {
+      roller: "GM",
+      label: "Урон " + creatureName + " (" + attackName + ")",
+      formula,
+      dc: null,
+      targetType: "NONE",
+      modifier: verified.modifier,
+      kind: "NPC_DAMAGE",
+      reason,
+    },
+    damageSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
+    critical,
+  };
+}
+
 export function executeEkdrasilReadTool(
   name: string,
   rawArguments: string,
@@ -272,6 +439,7 @@ export function executeEkdrasilReadTool(
   playerCharacter: JsonRecord | null = null,
   alreadyPrepared = false,
   retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [],
+  completedRolls: JsonRecord[] = [],
 ): JsonRecord {
   let args: unknown;
   try { args = JSON.parse(rawArguments || "{}"); }
@@ -284,6 +452,12 @@ export function executeEkdrasilReadTool(
   }
   if (name === "prepare_player_attack") {
     return preparePlayerAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
+  }
+  if (name === "prepare_npc_attack") {
+    return prepareNpcAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
+  }
+  if (name === "prepare_npc_damage") {
+    return prepareNpcDamage(args as JsonRecord, rules, completedRolls, retrievedRuleExcerpts, alreadyPrepared);
   }
 
   const query = (args as JsonRecord).query;
