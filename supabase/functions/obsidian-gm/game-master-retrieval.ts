@@ -69,9 +69,10 @@ export interface PreparedPlayerRoll {
   roller: "PLAYER";
   label: string;
   formula: string;
-  dc: number;
+  dc: number | null;
+  targetType: "DC" | "AC" | "NONE";
   modifier: number;
-  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW";
+  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK";
   reason: string;
 }
 
@@ -183,7 +184,7 @@ function preparePlayerCheck(
   return {
     ok: true,
     preparedPlayerRoll: {
-      roller: "PLAYER", label, formula, dc: dc as number, modifier,
+      roller: "PLAYER", label, formula, dc: dc as number, targetType: "DC", modifier,
       kind: kind as PreparedPlayerRoll["kind"], reason,
     },
   };
