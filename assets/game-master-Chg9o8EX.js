@@ -1,4 +1,4 @@
-import{a as e}from"./utils-CkQZwjCa.js";import{l as t}from"./index-DC1nCwZc.js";function n(e,t){return(e??``).replace(/\\n/g,`
+import{a as e}from"./utils-CkQZwjCa.js";import{l as t}from"./index-BcReiib6.js";function n(e,t){return(e??``).replace(/\\n/g,`
 `).trim()||t}function r(e){let t=n(e,``),r={Зрение:`окружающая сцена видна естественно и достаточно чётко`,Слух:`слышен обычный фон окружающего места`,Осязание:`одежда касается кожи, опора под ногами ощущается`,Обоняние:`ощущается естественный фон окружающей среды`,Вкус:`нейтральный вкус во рту`,Терморецепция:`ощущается температура окружающего воздуха`,"Вестибулярный аппарат":`равновесие устойчивое`,Проприоцепция:`положение тела и конечностей ощущается естественно`,Интероцепция:`дыхание и внутреннее состояние без заметных отклонений`},i=t.split(`
 `).map(e=>e.trim()).filter(Boolean);return Object.entries(r).map(([e,t])=>i.find(t=>t.toLocaleLowerCase().startsWith(e.toLocaleLowerCase()+`:`))??`${e}: ${t}`).join(`
 `)}function i(e,t,i,a,o=1){return[`ХОД #${String(o).padStart(4,`0`)}`,``,`СЕНСОРНЫЙ ВОД`,r(e.sensoryDescription),``,`ТЕКУЩАЯ СЦЕНА`,n(e.narration,`Сцена пока не описана.`)].join(`
