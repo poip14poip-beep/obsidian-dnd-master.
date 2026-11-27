@@ -131,11 +131,9 @@ function PlayPage() {
   }
 
   async function handleStartCampaign() {
-    if (startInFlightRef.current || startBusy || startPending) return;
-    startInFlightRef.current = true;
-    setStartBusy(true);
-    setStartError(null);
-    if (locked) return;
+    if (startInFlightRef.current || startBusy || startPending || locked) return;
+    // Validate before acquiring the in-flight lock. Early validation returns
+    // must never leave the start button permanently busy.
     if (!verifiedCoreSourcesReady) {
       setStartError(serverReadiness === "CHECKING" ? "Автоматическая проверка сервера ещё выполняется. Подожди несколько секунд." : serverReadinessError ?? "Автоматическая проверка серверных источников не пройдена. Обнови страницу или войди заново.");
       return;
@@ -144,6 +142,9 @@ function PlayPage() {
       setStartError("Лист персонажа ещё не готов. Для случайной заготовки сначала требуется завершить характеристики, классовые особенности, навыки, атаки и снаряжение.");
       return;
     }
+    startInFlightRef.current = true;
+    setStartBusy(true);
+    setStartError(null);
     try {
       const generated = generateRandomStart(character.hpMax ?? 0, undefined, {
         ...(character.background ? { background: character.background } : {}),
