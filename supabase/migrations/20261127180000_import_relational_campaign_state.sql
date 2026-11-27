@@ -355,6 +355,15 @@ BEGIN
       AND ((n.source_id IS NOT NULL AND s.id IS NULL)
         OR (n.current_location_id IS NOT NULL AND l.id IS NULL))
   ) OR EXISTS (
+    SELECT 1 FROM obsidian.npcs n
+    WHERE n.campaign_id = p_campaign_id AND n.owner_id = p_actor
+      AND nullif(n.npc_state->>'faction_id', '') IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM obsidian.factions f
+        WHERE f.id = (n.npc_state->>'faction_id')::uuid
+          AND f.campaign_id = p_campaign_id AND f.owner_id = p_actor
+      )
+  ) OR EXISTS (
     SELECT 1 FROM obsidian.npc_knowledge k
     LEFT JOIN obsidian.npcs n
       ON n.id = k.npc_id AND n.campaign_id = p_campaign_id AND n.owner_id = k.owner_id
