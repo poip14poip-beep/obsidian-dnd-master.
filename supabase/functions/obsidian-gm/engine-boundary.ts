@@ -564,7 +564,7 @@ function downedClaimPatterns(name: string): RegExp[] {
 // A number in an explicitly mechanical frame. The lookbehind keeps "2d6 damage"
 // from reading as "6 damage", and the frame is narrow enough that "twenty gold"
 // and "the third bell" never reach the check.
-const NUMBER_CLAIM = /(?<![\\dd])(\\d{1,3})\\s+(?:points?\\s+of\\s+)?(damage|healing)\\b|(?<![\\dd])(\\d{1,3})\\s+(?:единиц(?:ы)?\\s+)?(урона|урон|исцеления|лечения|здоровья)(?=$|[^А-ЯЁа-яё])/gi;
+const NUMBER_CLAIM = /(?<![\\dd])(\\d{1,3})\\s+(?:(?:points?\\s+of\\s+)?(damage|healing)\\b|(?:единиц(?:ы)?\\s+)?(урона|урон|исцеления|лечения|здоровья)(?=$|[^А-ЯЁа-яё]))/gi;
 
 // Only leveled SRD spells whose casting genuinely costs a slot. Cantrips are
 // absent on purpose: casting one spends nothing, so their absence from the
@@ -771,7 +771,7 @@ export function findNarrationContradictions(
         if (!allowed.has(stated)) {
           add({
             kind: "number",
-            detail: `the narration states ${stated} ${match[2].toLowerCase()}, which no roll this turn produced`,
+            detail: `the narration states ${stated} ${(match[2] ?? match[3]).toLowerCase()}, which no roll this turn produced`,
             clause,
           });
         }
