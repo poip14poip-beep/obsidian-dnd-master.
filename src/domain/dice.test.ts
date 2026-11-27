@@ -9,7 +9,7 @@ describe("D&D dice formulas", () => {
     ["1d8+1d6+3", 2, 8, 3],
     ["d100", 1, 100, 0],
     ["4d6kh1", 4, 6, 0],
-  ])("parses %s", (formula, diceCount, firstSides, modifier) => {
+  ] as const)("parses %s", (formula, diceCount, firstSides, modifier) => {
     const parsed = parseDiceFormula(formula);
     expect(parsed).not.toBeNull();
     expect(parsed!.totalDice).toBe(diceCount);
