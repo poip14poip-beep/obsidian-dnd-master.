@@ -65,6 +65,31 @@ Do not transplant the upstream 5e 2014 rules catalog as the source of truth. Map
 7. Connect D&D 2024 rules tools; add recovery/idempotency and tests before enabling the new master in the play screen.
 8. Run an end-to-end acceptance campaign with a disposable test campaign before changing the default game flow.
 
+## Implementation log — 27 November 2026
+
+### Upstream source audit
+- Primary project: [Lebbitheplow/open-game-master](https://github.com/Lebbitheplow/open-game-master), formerly named Open Dungeon Master.
+- MIT-licensed fork inspected during the initial selection: [mfarme/lorekeeper](https://github.com/mfarme/lorekeeper).
+- The upstream project is a complete application with a large server-side engine, but it is built around Next.js, local SQLite, and its own persistence model. Its D&D rules content identifies itself as SRD 5.1. Therefore, copying the whole app or its 2014 rules catalog into this React/Supabase project would violate the agreed architecture and rules authority. We are porting reusable orchestration patterns, not replacing the application.
+- Upstream MIT notice is retained at `licenses/OPEN_GAME_MASTER_MIT.txt`.
+
+### Implemented in the Ekdrasil branch
+- `supabase/functions/obsidian-gm/upstream-adoption.ts`: adapted engine-boundary contract. The model is not the authority for rolls or state mutations.
+- `supabase/functions/obsidian-gm/game-master-retrieval.ts`: bounded server-side tool loop adapted from upstream tool-driven orchestration. It exposes only two read-only tools: `search_dnd_rules` against the protected D&D 2024 / SRD 5.2.1 source and `search_ekdrasil_canon` against the verified Ekdrasil 2.4 source.
+- Tool calls are bounded to three rounds and six total calls per model attempt; each call returns at most three short source excerpts. No tool can modify campaign state, the character sheet, NPCs, dice, or persistence.
+- `supabase/functions/obsidian-gm/game-master-retrieval.test.ts`: tests exact source authority, rejection of unknown tools and malformed arguments, and the model -> tool -> model loop.
+- The retrieval loop is enabled only for GAME_TURN. Character-generation and compatibility operations retain their existing request formats and timeout budgets.
+
+### Still required before this can be called a ready autonomous master
+1. Port deterministic D&D 2024 mechanics as server-side tools, using the existing SRD 5.2.1 source and existing app state model. Do not import SRD 5.1 mechanics as authoritative.
+2. Implement the agreed roll ownership: player rolls for their character; server RNG for NPCs/opponents. Persist pending player rolls and resume the same turn after the result.
+3. Add a single bounded turn coordinator with tool execution, result validation, player confirmation, re-verification, and atomic commit. Read-only retrieval tools are not a substitute for this.
+4. Port retry/idempotency and interrupted-turn recovery without duplicate rolls or mutations.
+5. Adapt NPC agency and multi-layer memory to Obsidian 4.1, canon 2.4, campaign events, character knowledge, and per-NPC knowledge.
+6. Add tests and run CI/build, then perform a disposable end-to-end campaign on Android before enabling the new engine by default.
+
+Current status: **PARTIAL INTEGRATION — NOT READY FOR PLAYER TESTING AS A COMPLETE MASTER.** Existing app, saved campaigns, Supabase project, and the original canon source remain unchanged.
+
 ## Acceptance gates
 
 - A model/tool/server failure leaves the turn visibly uncommitted; retry resumes the same turn safely.
