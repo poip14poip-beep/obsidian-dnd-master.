@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, type GameMasterModelId } from "./model-routing.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -16,7 +17,7 @@ const ALLOWED_ORIGINS = new Set([
 ]);
 
 type JsonRecord = Record<string, unknown>;
-type ModelAttempt = { id: string; format: "schema" | "json" };
+type ModelAttempt = { id: GameMasterModelId; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
   // Cost-efficient default for ordinary narration and low-risk turns.
   { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
@@ -561,25 +562,21 @@ Deno.serve(async (req: Request) => {
       "Релевантные фрагменты по запросу не найдены. Не выдумывай сведения о мире; используй UNKNOWN и не заменяй отсутствие фрагмента вымышленным фактом.";
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
-  const isGameTurnRequest = !isCompatibilityRequest && !isBiographyRequest;
+  const isGameTurnRequest = requestBody.operation === "GAME_TURN";
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
-  const orderedModelAttempts = isCompatibilityRequest
-    // Keep the audit inside the mobile request window; DeepSeek first, Claude fallback.
-    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
-    : isStoryRequest
-      // Keep a fast primary and an independent fallback; avoid the slow narrative route.
-      ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
-      : isIdentityRequest || isBiographyRequest
-        ? [MODEL_ATTEMPTS[0]!]
-        : highImpactTurn
-        ? [MODEL_ATTEMPTS[1]!]
-        : isGameTurnRequest
-          ? [MODEL_ATTEMPTS[0]!]
-          : MODEL_ATTEMPTS;
+  const orderedModelAttempts = selectGameMasterModelOrder({
+    isCompatibilityRequest,
+    isStoryRequest,
+    isIdentityRequest,
+    isBiographyRequest,
+    highImpactTurn,
+    isGameTurnRequest,
+  }).map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
+    .filter((attempt): attempt is ModelAttempt => Boolean(attempt));
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
@@ -636,13 +633,13 @@ Deno.serve(async (req: Request) => {
     { role: "user", content: inputText },
   ];
   const failures: string[] = [];
-  for (const attempt of orderedModelAttempts) {
+  for (const [attemptIndex, attempt] of orderedModelAttempts.entries()) {
     try {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
       const attemptStartedAt = Date.now();
-      console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
+      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
         headers: {
@@ -660,12 +657,12 @@ Deno.serve(async (req: Request) => {
           // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
           // Game turns have a large structured schema; cap generation to avoid
           // spending the entire mobile request window on oversized responses.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? 6144 : 8192,
-          // DeepSeek V4.1 Flash defaults to high thinking; low effort avoids spending the whole output budget on hidden reasoning.
-          ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: "low" } } : {}),
+          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
+          // Reasoning tokens share max_tokens with the JSON payload. Opening and action turns need the budget for validated state.
+          ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
         }),
         // Game turns use bounded output and low DeepSeek reasoning effort to finish inside the mobile request window.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 82_000 : 18_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
