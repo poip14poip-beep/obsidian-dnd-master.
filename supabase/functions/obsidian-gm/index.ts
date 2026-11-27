@@ -595,13 +595,20 @@ Deno.serve(async (req: Request) => {
       const message = isRecord(choice.message) ? choice.message : {};
       const content = outputText(message);
       if (!content || choice.finish_reason === "length") {
-        failures.push(`${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`);
+        const failure = `${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`;
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: failure, responseChars: content.length });
+        failures.push(failure);
         continue;
       }
       let parsed: unknown;
       try { parsed = JSON.parse(content); }
-      catch { failures.push(`${attempt.id}: invalid JSON`); continue; }
+      catch {
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "invalid JSON", responseChars: content.length });
+        failures.push(`${attempt.id}: invalid JSON`);
+        continue;
+      }
       if (!validateSchema(parsed, schema)) {
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
       }

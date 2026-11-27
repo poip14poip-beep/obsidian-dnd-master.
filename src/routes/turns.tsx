@@ -9,7 +9,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
@@ -71,6 +71,8 @@ function TurnsPage() {
   const [apiKey, setApiKey] = useState("");
   const [playerAction, setPlayerAction] = useState("");
   const [gmBusy, setGmBusy] = useState(false);
+  // React state updates after the event; this synchronous guard blocks rapid duplicate submissions.
+  const gmRequestInFlight = useRef(false);
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [gmModel, setGmModel] = useState("gpt-4.1-mini");
@@ -85,6 +87,7 @@ function TurnsPage() {
   const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
 
   async function handleResolveAction(actionOverride?: string) {
+    if (gmRequestInFlight.current) return;
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim()) {
       setGmError("Опиши действие персонажа перед отправкой мастеру.");
@@ -96,6 +99,7 @@ function TurnsPage() {
       setGmError("Сначала завершите обязательную подготовку кампании.");
       return;
     }
+    gmRequestInFlight.current = true;
     setGmBusy(true);
     try {
       const result = await resolvePlayerAction(apiKey, {
@@ -134,6 +138,7 @@ function TurnsPage() {
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
     } finally {
+      gmRequestInFlight.current = false;
       setGmBusy(false);
     }
   }
