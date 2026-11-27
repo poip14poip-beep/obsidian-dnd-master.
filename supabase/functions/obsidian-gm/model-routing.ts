@@ -108,7 +108,7 @@ type SearchableExcerpt = RuleExcerpt & { headingPath?: string[] };
 
 function tokenizeSearchText(value: string): string[] {
   return value.normalize("NFKC").toLocaleLowerCase()
-    .match(/[\\p{L}\\p{N}]{2,}/gu) ?? [];
+    .match(/[\p{L}\p{N}]{2,}/gu) ?? [];
 }
 
 /** BM25-style ranking with rare-term, phrase and canon-heading boosts. */
