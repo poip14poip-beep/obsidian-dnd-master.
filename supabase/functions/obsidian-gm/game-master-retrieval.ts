@@ -104,8 +104,13 @@ export async function callWithEkdrasilReadTools(options: {
     ? [...options.requestBody.messages] as JsonRecord[]
     : [];
   const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 3, 3));
+  const deadline = Date.now() + (options.timeoutMs ?? 82_000);
   let toolCalls = 0;
   for (let round = 0; ; round += 1) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 1_000) {
+      return { response: new Response(JSON.stringify({ error: { message: "Tool loop time budget exhausted." } }), { status: 504 }), payload: null, toolCalls, exhausted: true };
+    }
     const body: JsonRecord = { ...options.requestBody, messages };
     if (options.enabled) {
       delete body.response_format;
@@ -117,7 +122,7 @@ export async function callWithEkdrasilReadTools(options: {
       method: "POST",
       headers: options.headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(options.timeoutMs ?? 82_000),
+      signal: AbortSignal.timeout(Math.min(remainingMs, 82_000)),
     });
     const payload = await response.clone().json().catch(() => null) as unknown;
     if (!response.ok || !options.enabled) return { response, payload, toolCalls, exhausted: false };
