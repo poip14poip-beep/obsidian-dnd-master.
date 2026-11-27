@@ -633,7 +633,7 @@ function GamePage() {
             <p className="text-xs text-muted-foreground">Модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
             {rollDisplay.dc !== null && <p className="text-xs font-semibold">DC {rollDisplay.dc} · {rollDisplay.success ? "УСПЕХ" : "ПРОВАЛ"}</p>}
-            <p className="text-xs text-muted-foreground">Серверный результат передан мастеру без изменений.</p>
+            <p className="text-xs text-muted-foreground">Результат броска передан мастеру без изменений.</p>
           </div>
         </div>
       )}
