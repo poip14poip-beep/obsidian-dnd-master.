@@ -4,6 +4,7 @@ import {
   GAME_TURN_MAX_OUTPUT_TOKENS,
   gameTurnAttemptTimeoutMs,
   selectGameMasterModelOrder,
+  selectRuleExcerpts,
   validateGameTurnSemantics,
   type ModelRoutingFlags,
 } from "../../supabase/functions/obsidian-gm/model-routing";
@@ -110,5 +111,45 @@ describe("game-turn semantic validation", () => {
       rolls: [],
       timeDeltaMinutes: 5,
     })).toBeNull();
+  });
+});
+
+
+describe("bounded source-attributed SRD retrieval", () => {
+  it("returns whole relevant paragraphs with original line ranges", () => {
+    const source = [
+      "# Combat",
+      "",
+      "The Attack action lets you make one attack roll.",
+      "",
+      "## Unrelated",
+      "This paragraph discusses weather and travel.",
+      "",
+      "## Ability Checks",
+      "An ability check uses a d20 test and the relevant modifier.",
+    ].join("\n");
+    const result = selectRuleExcerpts(source, ["attack", "ability check"], 10_000, 12);
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ startLine: 3, endLine: 3 });
+    expect(result[0]?.text).toBe("The Attack action lets you make one attack roll.");
+    expect(result[1]?.text).toContain("An ability check uses a d20 test");
+  });
+
+  it("skips a paragraph that cannot fit whole and continues to a smaller relevant rule", () => {
+    const source = [
+      "## Oversized",
+      "attack " + "detail ".repeat(100),
+      "",
+      "## Compact",
+      "The Attack action is available.",
+    ].join("\n");
+    const result = selectRuleExcerpts(source, ["attack"], 300, 4);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.text).toBe("## Compact\nThe Attack action is available.");
+  });
+
+  it("returns no unverified matches for an empty or unrelated query", () => {
+    expect(selectRuleExcerpts("A complete SRD paragraph.", [], 1000, 4)).toEqual([]);
+    expect(selectRuleExcerpts("A complete SRD paragraph.", ["grapple"], 1000, 4)).toEqual([]);
   });
 });

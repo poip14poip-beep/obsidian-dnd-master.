@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -442,9 +442,10 @@ Deno.serve(async (req: Request) => {
   // Skip its split/scoring work to stay below the Edge CPU limit.
   // Compatibility audits are strictly about Ekdrasil lore; do not load or rank SRD rules.
   const needsRulesContext = !isStoryRequest && !isAppearanceRequest && !isIdentityRequest && !isOriginsRequest && !isCompatibilityRequest;
-  const ruleParagraphs = needsRulesContext
-    ? rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80)
-    : [];
+  // Keep the full source in storage, but do not split and rescore 1.4 MB into
+  // an unbounded prompt on every turn. The bounded selector below preserves
+  // whole paragraphs and source line ranges.
+  const ruleParagraphs = needsRulesContext ? rulesDoc : "";
   const canonSource = privateSources.EKDRASIL_WORLD_BIBLE;
   if (!isEkdrasilCanonV24(canonSource)) {
     console.error("[obsidian-gm] canonical source version rejected", {
@@ -517,16 +518,20 @@ Deno.serve(async (req: Request) => {
     "spellcasting", "spells", "magic items", "languages", "hit points", "armor class"
   );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedRules = ruleParagraphs
-    .map((paragraph) => ({ paragraph, haystack: paragraph.toLowerCase() }))
-    .map(({ paragraph, haystack }) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, isCompatibilityRequest ? 8 : 12)
-    .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 1100) : item.paragraph);
+  const selectedRules = selectRuleExcerpts(
+    ruleParagraphs,
+    ruleTerms,
+    isCompatibilityRequest ? 9_000 : 14_000,
+    isCompatibilityRequest ? 8 : 12,
+  );
+  const rulesSourceSha = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.sha256 === "string"
+    ? privateSources.SRD_5_2_1.sha256 : "UNKNOWN";
   const rulesContext = selectedRules.length
-    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
-    : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
+    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) +
+      selectedRules.map((item) =>
+        `[RULE SOURCE: D&D 2024 SRD 5.2.1; sourceId=SRD_5_2_1; SHA-256=${rulesSourceSha}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\\n${item.text}`
+      ).join(String.fromCharCode(10) + String.fromCharCode(10))
+    : "SRD 5.2.1: релевантные фрагменты не найдены в пределах проверенного источника; не выдумывай точные механические детали.";
   const canonSearchParts = [actionText];
   if (isIdentityRequest) canonSearchParts.push("Вальдгард Элион Аэлиндор Кхар-Дорн Крейнхольм Тар-Нер Равенск Морвейн Греймарк Азра-Кал Рахимар Ша-Мер Вальдрум Скайнхейм Эйргард Морнхольд", "Том XI §44", "народ культура город происхождение");
   try {

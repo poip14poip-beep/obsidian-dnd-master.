@@ -95,3 +95,61 @@ export function validateGameTurnSemantics(value: unknown): string | null {
   }
   return null;
 }
+
+
+export interface RuleExcerpt {
+  text: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+}
+
+/**
+ * Selects whole, source-attributed SRD paragraphs within a strict character
+ * budget. The full SRD remains stored unchanged; this only bounds one request.
+ */
+export function selectRuleExcerpts(
+  content: string,
+  terms: string[],
+  maxChars: number,
+  maxItems: number,
+): RuleExcerpt[] {
+  if (!content.trim() || !terms.length || maxChars <= 0 || maxItems <= 0) return [];
+  const normalizedTerms = [...new Set(terms.map((term) => term.toLocaleLowerCase()).filter((term) => term.length > 3))];
+  if (!normalizedTerms.length) return [];
+  const lines = content.replace(/\r\n?/g, "\n").split("\n");
+  const ranked: RuleExcerpt[] = [];
+  let current: string[] = [];
+  let startLine = 1;
+  const flush = (endLine: number) => {
+    const text = current.join("\n").trim();
+    current = [];
+    if (!text) return;
+    const lower = text.toLocaleLowerCase();
+    const score = normalizedTerms.reduce((sum, term) => sum + (lower.includes(term) ? 1 : 0), 0);
+    if (score > 0) ranked.push({ text, startLine, endLine, score });
+  };
+  lines.forEach((line, index) => {
+    if (!line.trim()) {
+      flush(index);
+      startLine = index + 2;
+    } else {
+      if (current.length === 0) startLine = index + 1;
+      current.push(line);
+    }
+  });
+  flush(lines.length);
+
+  ranked.sort((a, b) => b.score - a.score || a.startLine - b.startLine);
+  const selected: RuleExcerpt[] = [];
+  let remaining = maxChars;
+  for (const excerpt of ranked) {
+    // Reserve space for the source ID, checksum and line attribution added by the caller.
+    const cost = excerpt.text.length + 140;
+    if (cost > remaining) continue;
+    selected.push(excerpt);
+    remaining -= cost;
+    if (selected.length >= maxItems || remaining <= 0) break;
+  }
+  return selected;
+}
