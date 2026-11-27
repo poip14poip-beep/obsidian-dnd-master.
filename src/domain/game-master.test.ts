@@ -452,6 +452,36 @@ describe("verified SRD rules context", () => {
     expect(result).toContain("The Attack action");
     expect(result).not.toContain("Unrelated introductory page");
   });
+  it("skips an oversized rule paragraph whole and keeps the next complete rule", () => {
+    const oversized = `Combat
+The Attack action weapon attack initiative attack roll rule begins. ${"Long rule detail ".repeat(1100)} LONG_RULE_TAIL_MARKER.`;
+    const complete = "Combat\\nThe Attack roll uses the stated ability modifier and proficiency bonus. COMPLETE_RULE_MARKER.";
+    const rules = {
+      ...source("SUPPLEMENTAL", [oversized, complete].join("\\n\\n")),
+      title: "SRD 5.2.1",
+      originLabel: "Official D&D 2024 SRD 5.2.1",
+      fileName: "SRD_5.2.1.txt",
+    };
+    const result = selectRulesContext([...context.sources, rules], "Лия атакует мечом");
+    expect(result).toContain("COMPLETE_RULE_MARKER");
+    expect(result).not.toContain("LONG_RULE_TAIL_MARKER");
+    expect(result).not.toContain("excerpt truncated");
+  });
+
+  it("reports rule uncertainty rather than returning a cut fragment when no whole passage fits", () => {
+    const oversized = `Combat
+The Attack action weapon attack initiative attack roll begins. ${"Unbroken rule text ".repeat(1200)} END_OF_RULE_MARKER.`;
+    const rules = {
+      ...source("SUPPLEMENTAL", oversized),
+      title: "SRD 5.2.1",
+      originLabel: "Official D&D 2024 SRD 5.2.1",
+      fileName: "SRD_5.2.1.txt",
+    };
+    const result = selectRulesContext([...context.sources, rules], "Лия атакует мечом");
+    expect(result).toContain("RULE UNCERTAINTY");
+    expect(result).not.toContain("END_OF_RULE_MARKER");
+  });
+
   it("does not use an unreviewed SRD source", () => {
     const rules = {
       ...source("SUPPLEMENTAL", "Combat\\nThe Attack action lets you make one attack."),
