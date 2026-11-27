@@ -23,7 +23,7 @@ Last updated: 2026-11-27
    - Current database record version: 4
 4. Character dossier and campaign state remain separate from global canon.
 
-The deployed `obsidian-gm` Edge Function is ACTIVE version 64 (JWT verification enabled). It refuses a game request if the canonical record does not match the v2.4 title, source checksum, required headings, and database version. Readiness also checks Obsidian 4.1, SRD 5.2.1, character-generation guide, and the server-side RouterAI key.
+The deployed `obsidian-gm` Edge Function is ACTIVE version 65 (JWT verification enabled). It refuses a game request if the canonical record does not match the v2.4 title, source checksum, required headings, and database version. Readiness also checks Obsidian 4.1, SRD 5.2.1, character-generation guide, and the server-side RouterAI key.
 
 ## Latest runtime reliability correction — 2026-11-27
 
@@ -39,6 +39,18 @@ Deployed in `obsidian-gm` version 64:
 - Routing policy and timeout behaviour are covered by `src/domain/game-master-routing.test.ts`; GitHub CI passed tests, TypeScript and production build for commit `a742c572f0b6984d382de671689b2082e7d0e191`.
 
 This repairs the known token-truncation route; it does not replace the required authenticated Android acceptance test. A real opening scene and a complete action/save/read-back/reload cycle still need to be performed from the player's signed-in app session.
+
+## Context selection correction — 2026-11-27
+
+Validated with CI and deployed in Edge Function v65:
+
+- Browser-side canon retrieval now sends complete source chunks only, capped at 10,500 characters of canon excerpts plus 3,500 characters of matching campaign facts. It preserves edition identity, source ID, section ID and original line ranges; it skips a whole chunk rather than cutting a paragraph.
+- Server-side retrieval from the canonical v2.4 source preserves original paragraph line ranges and has a 12,000-character excerpt budget for ordinary game turns (lower budgets for story/compatibility requests). The complete canonical file remains intact in private storage and the source hash is still checked before every model request.
+- NDP/NPL retrieval passes normative sections 1, 2, 4, 5, 8 and 10–14 only. Empty registry templates, reference links, test fixtures and appended campaign NPC records are not sent as simulation rules. Every selected section includes source ID and source-line provenance.
+- Regression coverage verifies the old canon is excluded, relevant excerpts remain whole and attributed, campaign facts are relevance-filtered, and NPC campaign records/test fixtures do not leak into the rules context.
+
+CI passed for commit `9a76fba81042e0c7ea7a58a10ffdb9876d2770f1` (`bun run test`, `bunx tsc --noEmit`, `bun run build`). GitHub Pages and Supabase static-host publication both succeeded. These tests do not substitute for the player's authenticated Android end-to-end acceptance test.
+
 
 ## Canon rules enforced in the model context
 
