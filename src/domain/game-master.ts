@@ -80,12 +80,28 @@ export async function rollDiceAtServer(
       !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total)) {
     throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
   }
-  const result = payload as DiceRollResult;
+  const result = payload as DiceRollResult & { formula?: unknown };
   const parsed = parseDiceFormula(formula)!;
-  if (result.dice.length !== parsed.totalDice ||
-      result.dice.some((die) => !die || !Number.isInteger(die.value) || !Number.isInteger(die.sides) ||
-        typeof die.kept !== "boolean" || die.value < 1 || die.value > die.sides) ||
-      result.modifier !== parsed.modifier ||
+  let offset = 0;
+  let diceMatch = result.dice.length === parsed.totalDice &&
+    result.dice.every((die) => die && Number.isInteger(die.value) && Number.isInteger(die.sides) &&
+      typeof die.kept === "boolean" && die.value >= 1 && die.value <= die.sides);
+  for (const term of parsed.terms) {
+    const group = result.dice.slice(offset, offset + term.count);
+    if (group.length !== term.count || group.some((die) => die.sides !== term.sides)) {
+      diceMatch = false;
+      break;
+    }
+    const kept = group.filter((die) => die.kept);
+    if (term.keep === null ? kept.length !== term.count : kept.length !== 1 ||
+        (term.keep === "highest" && kept[0]?.value !== Math.max(...group.map((die) => die.value))) ||
+        (term.keep === "lowest" && kept[0]?.value !== Math.min(...group.map((die) => die.value)))) {
+      diceMatch = false;
+      break;
+    }
+    offset += term.count;
+  }
+  if (result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
       result.total !== result.dice.reduce((sum, die) => sum + (die.kept ? die.value : 0), 0) + result.modifier) {
     throw new GameMasterError("Результат броска не соответствует исходной формуле. Ход не продолжен.", "DICE_RESULT_MISMATCH");
   }
