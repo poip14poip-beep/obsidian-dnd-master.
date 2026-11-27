@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
+import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -320,6 +321,20 @@ Deno.serve(async (req: Request) => {
   let body: unknown;
   try { body = JSON.parse(rawBody); }
   catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
+
+  // Dice are rolled by the authenticated server, never guessed by a language model
+  // or generated in the player's browser.
+  if (isRecord(body) && body.operation === "ROLL_DICE") {
+    if (typeof body.formula !== "string" || !parseDiceFormula(body.formula)) {
+      return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
+    }
+    try {
+      return json({ formula: body.formula, ...rollDiceFormula(body.formula) }, 200, cors);
+    } catch {
+      return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
+    }
+  }
+
   if (isRecord(body) && body.operation === "STORE_GM_SOURCE") {
     const sourceKind = body.sourceKind;
     const title = body.title;
