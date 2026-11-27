@@ -28,7 +28,7 @@ describe("Ekdrasil read-only game-master tools", () => {
       choices: [{ message: { role: "assistant", tool_calls: [{ id: "call-1", type: "function", function: { name: "search_ekdrasil_canon", arguments: JSON.stringify({ query: "Vahlgard" }) } }] } }],
     };
     const second = { choices: [{ message: { role: "assistant", content: "I have enough source material." } }] };
-    const third = { choices: [{ message: { role: "assistant", content: "{\\"narration\\":\\"final narration\\"}" } }] };
+    const third = { choices: [{ message: { role: "assistant", content: JSON.stringify({ narration: "final narration" }) } }] };
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(second), { status: 200 }))
@@ -60,7 +60,7 @@ describe("Ekdrasil read-only game-master tools", () => {
   });
   it("always makes a final schema-constrained call even when no retrieval is needed", async () => {
     const first = { choices: [{ message: { role: "assistant", content: "No lookup needed." } }] };
-    const final = { choices: [{ message: { role: "assistant", content: "{\\"ok\\":true}" } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
