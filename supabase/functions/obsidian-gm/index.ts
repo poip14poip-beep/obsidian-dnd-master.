@@ -687,8 +687,7 @@ Deno.serve(async (req: Request) => {
     canonContext
   ] : [
     masterPrompt,
-    ENGINE_BOUNDARY_RULES,
-    ...(isGameTurnRequest ? [ENGINE_BOUNDARY_CHECK] : []),
+    ...(isGameTurnRequest ? [ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK] : []),
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     instructionText,
