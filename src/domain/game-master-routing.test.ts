@@ -164,7 +164,7 @@ describe("bounded source-attributed canon retrieval", () => {
       "",
       `Эйргард — подтверждённый регион Экдрасиля. Полный канонический фрагмент ${index + 1}.`,
       "",
-    ].join("\\n")).join("\\n");
+    ].join("\n")).join("\n");
     const result = selectCanonExcerpts(content, ["Эйргард"], 12_000, 12);
     expect(result).toHaveLength(12);
     expect(result[0]).toMatchObject({
@@ -184,7 +184,7 @@ describe("bounded source-attributed canon retrieval", () => {
       "## Compact region",
       "",
       "Эйргард — короткий, целый и подтверждённый фрагмент канона.",
-    ].join("\\n");
+    ].join("\n");
     const result = selectCanonExcerpts(content, ["Эйргард"], 500, 4);
     expect(result).toHaveLength(1);
     expect(result[0]?.text).toContain("короткий, целый");
@@ -192,7 +192,7 @@ describe("bounded source-attributed canon retrieval", () => {
   });
 
   it("does not fabricate a canon match for unrelated terms", () => {
-    expect(selectCanonExcerpts("## Эйргард\\n\\nПодтверждённый текст канона.", ["несуществующий термин"], 1000, 4)).toEqual([]);
+    expect(selectCanonExcerpts("## Эйргард\n\nПодтверждённый текст канона.", ["несуществующий термин"], 1000, 4)).toEqual([]);
   });
 });
 
