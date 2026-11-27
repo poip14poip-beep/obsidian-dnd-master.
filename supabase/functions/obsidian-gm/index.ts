@@ -634,8 +634,16 @@ Deno.serve(async (req: Request) => {
       "Не создавай новые города, страны, организации, исторические события или NPC. Сведения о происхождении должны соответствовать переданным подтверждённым данным.",
     ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
+  const systemMessage = Array.isArray(serverInstructions)
+    ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10))
+    : serverInstructions;
   const messages = [
-    { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
+    {
+      role: "system",
+      content: systemMessage + (isGameTurnRequest
+        ? "\\n\\nДля точной проверки можешь вызывать только два read-only инструмента: search_dnd_rules и search_ekdrasil_canon. Они возвращают ограниченные выдержки из уже проверенных источников D&D 2024/SRD 5.2.1 и канона Экдрасиля 2.4. Инструменты ничего не меняют в кампании, персонаже, бросках или сохранении. Не используй старые редакции канона или SRD 5.1."
+        : ""),
+    },
     { role: "user", content: inputText },
   ];
   const failures: string[] = [];
@@ -674,6 +682,7 @@ Deno.serve(async (req: Request) => {
         ruleParagraphs,
         canonParagraphs,
         maxToolRounds: 3,
+        timeoutMs: isGameTurnRequest ? 82_000 : isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000,
       });
       const upstream = modelCall.response;
       console.log("[obsidian-gm] model response received", {
