@@ -550,7 +550,7 @@ function downedClaimPatterns(name: string): RegExp[] {
   const target = namePattern(name);
   return [
     new RegExp(
-      `\\b${target}\\b[^.;]{0,25}?\\b(?:falls|drops|collapses|slumps)\\s+unconscious|теряет сознание|падает без сознания\\b`,
+      `\\b${target}\\b[^.;]{0,25}?\\b(?:falls|drops|collapses|slumps)\\s+unconscious\\b`,
       "i",
     ),
     new RegExp(
