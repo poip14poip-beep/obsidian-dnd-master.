@@ -856,6 +856,7 @@ Deno.serve(async (req: Request) => {
           playerRolls[0]?.label === prepared.label &&
           playerRolls[0]?.formula === prepared.formula &&
           playerRolls[0]?.dc === prepared.dc &&
+          playerRolls[0]?.targetType === prepared.targetType &&
           playerRolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
         const invalidPlayerRoll = prepared !== null ? !matchesPrepared : playerRolls.length > 0;
         if (invalidPlayerRoll) {
@@ -866,7 +867,7 @@ Deno.serve(async (req: Request) => {
           failures.push(attempt.id + ": " + reason);
           messages.push({
             role: "system",
-            content: "ОТКЛОНЕНО: проверка главного героя должна быть подготовлена инструментом prepare_player_check. Используй точные label, formula и DC, возвращённые инструментом, и result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонус и не меняй DC.",
+            content: "ОТКЛОНЕНО: проверка главного героя должна быть подготовлена инструментом prepare_player_check. Используй точные label, formula, targetType и DC/AC, возвращённые инструментом, и result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонус и не меняй DC.",
           });
           continue;
         }
