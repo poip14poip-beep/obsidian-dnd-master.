@@ -198,16 +198,16 @@ export function executeEkdrasilReadTool(
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
   }
+  if (name === "prepare_player_check") {
+    return preparePlayerCheck(args as JsonRecord, playerCharacter, alreadyPrepared);
+  }
+
   const query = (args as JsonRecord).query;
   if (typeof query !== "string" || query.trim().length < 3 || query.length > 180) {
     return { ok: false, error: "Поле query должно содержать от 3 до 180 символов." };
   }
   const terms = queryTerms(query.trim());
   if (!terms.length) return { ok: false, error: "Запрос не содержит поисковых терминов." };
-
-  if (name === "prepare_player_check") {
-    return preparePlayerCheck(args as JsonRecord, playerCharacter, alreadyPrepared);
-  }
 
   if (name === "search_dnd_rules") {
     const excerpts = selectRuleExcerpts(rules.content, terms, 9_000, 3);
@@ -256,6 +256,7 @@ export interface RetrievalLoopResult {
   payload: unknown;
   toolCalls: number;
   exhausted: boolean;
+  preparedPlayerRoll: PreparedPlayerRoll | null;
 }
 
 export async function callWithEkdrasilReadTools(options: {
@@ -266,6 +267,7 @@ export async function callWithEkdrasilReadTools(options: {
   enabled: boolean;
   rules: RetrievalSource;
   canon: RetrievalSource;
+  playerCharacter?: JsonRecord | null;
   maxToolRounds?: number;
   maxToolCalls?: number;
   timeoutMs?: number;
@@ -276,6 +278,7 @@ export async function callWithEkdrasilReadTools(options: {
   const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 3, 3));
   const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 6, 6));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
+  let preparedPlayerRoll: PreparedPlayerRoll | null = null;
 
   const send = async (body: JsonRecord): Promise<{ response: Response; payload: unknown }> => {
     const remaining = deadline - Date.now();
@@ -297,7 +300,7 @@ export async function callWithEkdrasilReadTools(options: {
 
   if (!options.enabled) {
     const result = await send(options.requestBody);
-    return { ...result, toolCalls: 0, exhausted: false };
+    return { ...result, toolCalls: 0, exhausted: false, preparedPlayerRoll: null };
   }
 
   let toolCalls = 0;
@@ -313,7 +316,7 @@ export async function callWithEkdrasilReadTools(options: {
     delete toolBody.response_format;
     delete toolBody.structured_outputs;
     const result = await send(toolBody);
-    if (!result.response.ok) return { ...result, toolCalls, exhausted: false };
+    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedPlayerRoll };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
       return { ...result, toolCalls, exhausted: false };
     }
@@ -330,10 +333,10 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       const finalResult = await send(finalBody);
-      return { ...finalResult, toolCalls, exhausted: false };
+      return { ...finalResult, toolCalls, exhausted: false, preparedPlayerRoll };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
-      return { ...result, toolCalls, exhausted: true };
+      return { ...result, toolCalls, exhausted: true, preparedPlayerRoll };
     }
 
     messages.push(message);
@@ -344,8 +347,12 @@ export async function callWithEkdrasilReadTools(options: {
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
       const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon)
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedPlayerRoll !== null)
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
+      if (toolResult && typeof toolResult === "object" && "preparedPlayerRoll" in toolResult) {
+        const prepared = (toolResult as JsonRecord).preparedPlayerRoll;
+        if (prepared && typeof prepared === "object") preparedPlayerRoll = prepared as PreparedPlayerRoll;
+      }
       messages.push({
         role: "tool",
         tool_call_id: id || "invalid-tool-call",
