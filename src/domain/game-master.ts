@@ -161,9 +161,9 @@ function selectNpcSimulationContext(sources: SourceDocument[]): string {
 function selectRelevantJournal(
   entries: Array<GameTurnEntry | TechnicalMessageEntry>,
   action: string,
-  historicalLimit = 8,
+  historicalLimit = 4,
 ): Array<GameTurnEntry | TechnicalMessageEntry> {
-  const recent = entries.slice(-12);
+  const recent = entries.slice(-8);
   const recentIds = new Set(recent.map((entry) => entry.id));
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
   if (!terms.length) return recent;
@@ -495,9 +495,9 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
         // long prose; older matching turns remain retrievable via recentJournal.
         // Keep all 150 chronological anchors, but trim each to a compact index.
         // Detailed recent and query-matched entries remain available in recentJournal.
-        summary: entry.summary.slice(0, 40),
-        playerIntent: entry.playerIntent.slice(0, 32),
-        worldOutcome: entry.worldOutcome.slice(0, 50),
+        summary: entry.summary.slice(0, 22),
+        playerIntent: entry.playerIntent.slice(0, 18),
+        worldOutcome: entry.worldOutcome.slice(0, 24),
       })),
     recentJournal: selectRelevantJournal(context.journal, context.action).map((entry) => {
       if (entry.entryType === "TECHNICAL_NOTE") {
@@ -505,11 +505,11 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       }
       return {
         ...entry,
-        summary: entry.summary.slice(0, 180),
-        playerIntent: entry.playerIntent.slice(0, 240),
-        worldOutcome: entry.worldOutcome.slice(0, 360),
-        gmNarration: entry.gmNarration?.slice(0, 1_200),
-        campaignMemory: entry.campaignMemory?.slice(0, 600),
+        summary: entry.summary.slice(0, 100),
+        playerIntent: entry.playerIntent.slice(0, 120),
+        worldOutcome: entry.worldOutcome.slice(0, 180),
+        gmNarration: entry.gmNarration?.slice(0, 300),
+        campaignMemory: entry.campaignMemory?.slice(0, 180),
       };
     }),
     requirements: [
