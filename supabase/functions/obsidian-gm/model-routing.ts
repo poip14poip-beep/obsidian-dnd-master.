@@ -70,8 +70,10 @@ export function validateGameTurnSemantics(value: unknown): string | null {
         typeof item["formula"] !== "string" || !item["formula"].trim()) {
       return "pending roll requires a valid roller, label and formula";
     }
-    if (item["dc"] !== null && (!Number.isInteger(item["dc"]) || (item["dc"] as number) < 1 || (item["dc"] as number) > 40)) {
-      return "roll DC must be null or a fixed integer from 1 to 40";
+    if (!["DC", "AC", "NONE"].includes(String(item["targetType"])) ||
+        (item["targetType"] === "NONE" ? item["dc"] !== null :
+          !Number.isInteger(item["dc"]) || (item["dc"] as number) < 1 || (item["dc"] as number) > 40)) {
+      return "roll target type must be DC, AC or NONE, with a fixed target number when required";
     }
     if (item["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       return "model attempted to supply a dice result; only the authenticated server may roll";
