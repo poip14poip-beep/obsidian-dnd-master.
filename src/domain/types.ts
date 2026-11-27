@@ -336,6 +336,7 @@ export interface RollRecord {
   formula: string;
   dc?: number | null;
   targetType?: "DC" | "AC" | "NONE";
+  roller?: "PLAYER" | "GM";
   result: string;
 }
 
