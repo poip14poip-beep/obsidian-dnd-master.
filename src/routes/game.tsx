@@ -15,6 +15,7 @@ import {
 } from "@/domain/game-master-presentation";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import type { GameTurnEntry, TechnicalMessageEntry } from "@/domain/types";
+import { parseDiceFormula, rollDiceFormula, type RolledDie } from "@/domain/dice";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/game")({
@@ -27,35 +28,6 @@ export const Route = createFileRoute("/game")({
   component: GamePage,
 });
 
-function rollDie(sides: number): number {
-  if (!Number.isInteger(sides) || sides < 2 || sides > 1000) throw new Error("Недопустимый тип кости.");
-  const random = new Uint32Array(1);
-  const range = 0x1_0000_0000;
-  const limit = Math.floor(range / sides) * sides;
-  let value = 0;
-  do {
-    crypto.getRandomValues(random);
-    value = random[0]!;
-  } while (value >= limit);
-  return value % sides + 1;
-}
-
-function parseDiceFormula(formula: string): { count: number; sides: number; keep: "highest" | "lowest" | null; modifier: number } | null {
-  const match = formula.match(/(\d*)d(\d+)(kh1|kl1)?/i);
-  if (!match || match.index === undefined) return null;
-  const count = Number(match[1] || 1);
-  const sides = Number(match[2]);
-  if (!Number.isInteger(count) || count < 1 || count > 20 || !Number.isInteger(sides) || sides < 2 || sides > 1000) return null;
-  const tail = formula.slice(match.index + match[0].length);
-  const bonuses = [...tail.matchAll(/([+-])\s*(\d+)/g)]
-    .map((item) => (item[1] === "-" ? -1 : 1) * Number(item[2]));
-  return {
-    count,
-    sides,
-    keep: match[3]?.toLowerCase() === "kh1" ? "highest" : match[3]?.toLowerCase() === "kl1" ? "lowest" : null,
-    modifier: bonuses.reduce((sum, value) => sum + value, 0),
-  };
-}
 
 function GamePage() {
   const {
@@ -75,7 +47,7 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: number[]; sides: number; modifier: number; total: number } | null>(null);
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number } | null>(null);
   const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -325,37 +297,39 @@ function GamePage() {
     if (!gmTurn || gmBusy) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const parsed = parseDiceFormula(pending.formula);
-    if (!parsed) {
-      setGmError(`Мастер запросил неподдерживаемую формулу броска: ${pending.formula}. Ход не продолжен.`);
+    let rolled: ReturnType<typeof rollDiceFormula>;
+    try {
+      rolled = rollDiceFormula(pending.formula);
+    } catch {
+      setGmError(`Мастер запросил неподдерживаемую формулу броска: ${pending.formula}. Ход не продолжен; результат не подменён.`);
       return;
     }
-    const matchingSkill = character.skillBonuses?.find((skill) => {
-      const label = pending.label.toLocaleLowerCase();
-      const name = skill.name.toLocaleLowerCase();
-      return label.includes(name) || name.includes(label);
-    });
-    const modifier = parsed.modifier !== 0
-      ? parsed.modifier
-      : parsed.sides === 20 ? matchingSkill?.bonus ?? 0 : 0;
-    const dice = Array.from({ length: parsed.count }, () => rollDie(parsed.sides));
-    let rolledValue = dice.reduce((sum, value) => sum + value, 0);
-    if (parsed.keep === "highest") rolledValue = Math.max(...dice);
-    if (parsed.keep === "lowest") rolledValue = Math.min(...dice);
-    const total = rolledValue + modifier;
+
     const formula = pending.formula;
-    setRollDisplay({ label: pending.label, dice, sides: parsed.sides, modifier, total });
+    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total });
     const rollRecord = {
       id: `player-roll-${Date.now().toString(36)}`,
       label: pending.label,
       formula,
-      result: `кости=[${dice.join(", ")}]; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
+      result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
-    setCompletedPlayerRolls((current) => [...current, rollRecord]);
-    const continuedAction = `${pendingAction}\n\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; формула ${formula}; выпали значения [${dice.join(", ")}]; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
+    const allRolls = [...completedPlayerRolls, rollRecord];
+    setCompletedPlayerRolls(allRolls);
+
+    // Carry the original check decision back to the GM. In particular, DC and
+    // the exact mechanics must remain the same after the player has rolled.
+    const checkContext = {
+      label: pending.label,
+      formula,
+      mechanics: gmTurn.mechanics,
+      consequences: gmTurn.consequences,
+      spatialAccounting: gmTurn.spatialAccounting,
+      nextAction: gmTurn.nextAction,
+    };
+    const continuedAction = `${pendingAction}\\n\\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\\nФАКТИЧЕСКИЙ БРОСОК ИГРОКА: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction, true, [...completedPlayerRolls, rollRecord]);
+    void handleResolveAction(continuedAction, true, allRolls);
   }
 
   function handleApplyClarification() {
@@ -554,37 +528,69 @@ function GamePage() {
                 <Button type="button" variant="outline" disabled={!clarificationAnswer.trim()} onClick={handleApplyClarification}>Передать уточнение</Button>
               </div>
             )}
-            {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
-              <div className="space-y-3 rounded-xl border border-primary/40 bg-background/70 p-4">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <Dices className="h-5 w-5 text-primary" />
-                  Мастер назначил проверку
+            {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (() => {
+              const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")!;
+              const parsed = parseDiceFormula(pending.formula);
+              const sides = parsed?.terms[0]?.sides ?? 20;
+              const diePoints: Record<number, string> = {
+                4: "50,8 91,82 9,82",
+                6: "18,18 82,18 82,82 18,82",
+                8: "50,6 94,50 50,94 6,50",
+                10: "50,5 91,32 75,84 25,84 9,32",
+                12: "50,5 89,27 89,73 50,95 11,73 11,27",
+                20: "50,5 88,25 95,68 50,95 5,68 12,25",
+                100: "50,5 91,32 75,84 25,84 9,32",
+              };
+              return (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="pending-roll-title">
+                  <div className="w-full max-w-sm space-y-5 rounded-2xl border border-primary/40 bg-card p-5 shadow-2xl">
+                    <div className="flex items-center justify-center gap-2 text-base font-bold" id="pending-roll-title">
+                      <Dices className="h-5 w-5 text-primary" />Мастер назначил проверку
+                    </div>
+                    <div className="space-y-1 text-center">
+                      <p className="text-lg font-semibold">{pending.label}</p>
+                      <p className="text-sm text-muted-foreground">Формула броска: <span className="mono-code font-semibold">{pending.formula}</span></p>
+                      <p className="text-xs text-muted-foreground">Исход действия будет определён после твоего броска.</p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={gmBusy || !parsed}
+                      onClick={handleRollPendingCheck}
+                      className="group mx-auto flex w-full flex-col items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-4 transition hover:border-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      aria-label={`Бросить кость d${sides}`}
+                    >
+                      <svg viewBox="0 0 100 100" className="h-28 w-28 drop-shadow-lg transition-transform duration-200 group-hover:scale-105 group-active:rotate-12" role="img" aria-label={`Кость d${sides}`}>
+                        <polygon points={diePoints[sides] ?? diePoints[20]!} fill="currentColor" className="text-primary/20" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
+                        <path d="M50 5 L50 50 L12 25 M50 50 L88 25 M50 50 L95 68 M50 50 L50 95 M50 50 L5 68" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary/60" />
+                        <text x="50" y="58" textAnchor="middle" fontSize="25" fontWeight="800" fill="currentColor">{sides === 100 ? "00" : sides}</text>
+                      </svg>
+                      <span className="text-sm font-semibold">Нажми на кубик, чтобы бросить</span>
+                      <span className="text-xs text-muted-foreground">{parsed ? `${parsed.totalDice} кость(и) · модификатор ${parsed.modifier >= 0 ? "+" : ""}${parsed.modifier}` : "Формула не поддерживается — ход остановлен"}</span>
+                    </button>
+                    <p className="text-center text-[11px] text-muted-foreground">Результат генерируется приложением и передаётся мастеру без изменений.</p>
+                  </div>
                 </div>
-                <p className="text-sm font-medium">{gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.label}</p>
-                <p className="text-xs text-muted-foreground">Бросок: {gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.formula}. Результат определит дальнейший исход действия.</p>
-                <Button type="button" className="w-full" disabled={gmBusy} onClick={handleRollPendingCheck}>
-                  <Dices className="mr-2 h-4 w-4" />Бросить кубики
-                </Button>
-              </div>
-            )}
+              );
+            })()}
           </article>
         )}
       </section>
 
       {rollDisplay && (
-        <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-card p-3 text-sm" role="status">
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-card p-3 text-sm" role="status" aria-live="polite">
           <div className="flex shrink-0 flex-wrap items-center gap-1">
             {rollDisplay.dice.map((die, index) => (
-              <div key={index} className="flex h-12 w-12 flex-col items-center justify-center rounded-xl border border-primary/40 bg-primary/10">
-                <Dices className="h-4 w-4 text-primary" />
-                <span className="mono-code text-base font-bold">{die}</span>
+              <div key={index} className={`flex h-12 w-12 flex-col items-center justify-center rounded-xl border ${die.kept ? "border-primary/50 bg-primary/10" : "border-border bg-muted opacity-50"}`}>
+                <span className="text-[9px] text-muted-foreground">d{die.sides}</span>
+                <span className="mono-code text-base font-bold">{die.value}</span>
               </div>
             ))}
           </div>
           <div className="min-w-0">
             <p className="font-semibold">{rollDisplay.label}</p>
-            <p className="text-xs text-muted-foreground">d{rollDisplay.sides} · модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
+            <p className="text-xs text-muted-foreground">Модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
+            <p className="text-xs text-muted-foreground">Результат передан мастеру без изменений.</p>
           </div>
         </div>
       )}
