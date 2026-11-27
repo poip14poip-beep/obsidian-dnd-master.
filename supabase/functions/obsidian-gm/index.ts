@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
 import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
+import { callWithEkdrasilReadTools } from "./game-master-retrieval.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -733,36 +734,51 @@ Deno.serve(async (req: Request) => {
         : { type: "json_object" };
       const attemptStartedAt = Date.now();
       console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
-      const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
-          "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
-          "X-Title": "Obsidian D&D Master",
-        },
-        body: JSON.stringify({
-          model: attempt.id,
-          messages,
-          response_format: responseFormat,
-          structured_outputs: true,
-          temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
-          // Game turns have a large structured schema; cap generation to avoid
-          // spending the entire mobile request window on oversized responses.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
-          // Reasoning tokens share max_tokens with the JSON payload. Opening and action turns need the budget for validated state.
-          ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
-        }),
-        // Game turns use bounded output and low DeepSeek reasoning effort to finish inside the mobile request window.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000),
+      const requestHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
+        "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
+        "X-Title": "Obsidian D&D Master",
+      };
+      const modelRequestBody: JsonRecord = {
+        model: attempt.id,
+        messages,
+        response_format: responseFormat,
+        structured_outputs: true,
+        temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
+        max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
+        ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
+      };
+      const modelCall = await callWithEkdrasilReadTools({
+        fetcher: fetch,
+        url: "https://routerai.ru/api/v1/chat/completions",
+        headers: requestHeaders,
+        requestBody: modelRequestBody,
+        enabled: isGameTurnRequest,
+        rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
+        canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
+        maxToolRounds: 3,
+        maxToolCalls: 6,
+        timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
       });
-      console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
+      const upstream = modelCall.response;
+      console.log("[obsidian-gm] model response received", {
+        model: attempt.id,
+        status: upstream.status,
+        retrievalToolCalls: modelCall.toolCalls,
+        retrievalLoopExhausted: modelCall.exhausted,
+      });
+      if (modelCall.exhausted) {
+        failures.push(`${attempt.id}: retrieval tool-call limit exceeded`);
+        continue;
+      }
       const raw = await upstream.text();
       console.log("[obsidian-gm] model response body received", { model: attempt.id, elapsedMs: Date.now() - attemptStartedAt, responseChars: raw.length });
-      let payload: unknown;
-      try { payload = JSON.parse(raw); }
-      catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      let payload: unknown = modelCall.payload;
+      if (payload === null) {
+        try { payload = JSON.parse(raw); }
+        catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      }
 
       if (!upstream.ok) {
         const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
