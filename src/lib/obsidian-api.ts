@@ -1,4 +1,5 @@
 import type { BackupEnvelope } from "@/domain/types";
+import type { CloudCampaignStateMapping } from "@/domain/cloud-mappers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { getSupabaseAuthClient } from "@/lib/supabase-auth";
@@ -158,6 +159,29 @@ export async function createCloudCampaign(
     };
   }
   return callObsidianApi({ action: "create_campaign", title: title.trim(), settings });
+}
+
+export async function importCloudCampaignState(
+  campaignId: string,
+  state: CloudCampaignStateMapping,
+): Promise<ObsidianApiResult<{ result: Record<string, unknown> }>> {
+  if (!isUuid(campaignId.trim())) {
+    return {
+      ok: false,
+      error: { code: "INVALID_CAMPAIGN_ID", message: "Укажи корректный UUID облачной кампании." },
+    };
+  }
+  if (JSON.stringify(state).length > 8_000_000) {
+    return {
+      ok: false,
+      error: { code: "CAMPAIGN_IMPORT_TOO_LARGE", message: "Полное состояние кампании превышает допустимый размер импорта." },
+    };
+  }
+  return callObsidianApi({
+    action: "import_campaign_state",
+    campaign_id: campaignId.trim(),
+    state: state as unknown as Record<string, unknown>,
+  });
 }
 
 export async function loadCloudCampaign(
