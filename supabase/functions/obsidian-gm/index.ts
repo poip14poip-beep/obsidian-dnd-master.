@@ -362,6 +362,7 @@ Deno.serve(async (req: Request) => {
       typeof rules.title === "string" && rules.title.includes("5.2.1") &&
       Number(rules.version) >= 2;
     checks.EKDRASIL_WORLD_BIBLE = isEkdrasilCanonV24(data.EKDRASIL_WORLD_BIBLE);
+    checks.ROUTERAI_API_KEY = Boolean(ROUTERAI_API_KEY);
     const canon = isRecord(data.EKDRASIL_WORLD_BIBLE) ? data.EKDRASIL_WORLD_BIBLE : {};
     const ready = Object.values(checks).every(Boolean);
     return json({
