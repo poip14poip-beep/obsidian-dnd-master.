@@ -13,9 +13,9 @@ import {
   formatCampaignOpening,
   formatGameMasterAnswer,
 } from "@/domain/game-master-presentation";
-import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import type { GameTurnEntry, TechnicalMessageEntry } from "@/domain/types";
-import { parseDiceFormula, type RolledDie } from "@/domain/dice";
+import { parseDiceFormula, rollDiceFormula, type RolledDie } from "@/domain/dice";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/game")({
@@ -303,12 +303,14 @@ function GamePage() {
     if (!pending) return;
     setRollAnimating(true);
     await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
-    let rolled: Awaited<ReturnType<typeof rollDiceAtServer>>;
+    let rolled: ReturnType<typeof rollDiceFormula>;
     try {
-      rolled = await rollDiceAtServer(session?.access_token ?? "", pending.formula);
+      // The player-character's dice are rolled by the player through the visible
+      // dice control. NPC and world rolls use the GM/server path, never this handler.
+      rolled = rollDiceFormula(pending.formula);
     } catch (error) {
       setRollAnimating(false);
-      setGmError(error instanceof Error ? error.message : "Не удалось выполнить серверный бросок. Ход не продолжен.");
+      setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок игрока. Ход не продолжен.");
       return;
     }
     setRollAnimating(false);
@@ -334,7 +336,7 @@ function GamePage() {
       spatialAccounting: gmTurn.spatialAccounting,
       nextAction: gmTurn.nextAction,
     };
-    const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК МАСТЕРА (серверная случайность): ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
+    const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ИГРОКА: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
     void handleResolveAction(continuedAction, true, allRolls, originalPlayerIntent || pendingAction);
@@ -558,7 +560,7 @@ function GamePage() {
                     <div className="space-y-1 text-center">
                       <p className="text-lg font-semibold">{pending.label}</p>
                       <p className="text-sm text-muted-foreground">Формула броска: <span className="mono-code font-semibold">{pending.formula}</span></p>
-                      <p className="text-xs text-muted-foreground">Исход действия будет определён после случайного броска мастера.</p>
+                      <p className="text-xs text-muted-foreground">Исход действия будет определён после твоего броска.</p>
                     </div>
                     <button
                       type="button"
@@ -579,10 +581,10 @@ function GamePage() {
                           </div>
                         ))}
                       </div>
-                      <span className="text-sm font-semibold">{rollAnimating ? "Кубик бросается…" : "Нажми на кубик, чтобы мастер бросил"}</span>
+                      <span className="text-sm font-semibold">{rollAnimating ? "Кубик бросается…" : "Нажми на кубик, чтобы бросить самому"}</span>
                       <span className="text-xs text-muted-foreground">{parsed ? `${parsed.totalDice} кость(и) · модификатор ${parsed.modifier >= 0 ? "+" : ""}${parsed.modifier}` : "Формула не поддерживается — ход остановлен"}</span>
                     </button>
-                    <p className="text-center text-[11px] text-muted-foreground">Результат генерируется защищённым сервером и передаётся мастеру без изменений.</p>
+                    <p className="text-center text-[11px] text-muted-foreground">Твой бросок генерируется приложением и передаётся мастеру без изменений.</p>
                   </div>
                 </div>
               );
