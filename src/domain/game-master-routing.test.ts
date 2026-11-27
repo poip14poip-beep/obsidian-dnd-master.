@@ -6,6 +6,7 @@ import {
   selectGameMasterModelOrder,
   measureGameTurnInput,
   selectRuleExcerpts,
+  selectCanonExcerpts,
   validateGameTurnSemantics,
   type ModelRoutingFlags,
 } from "../../supabase/functions/obsidian-gm/model-routing";
@@ -152,6 +153,46 @@ describe("bounded source-attributed SRD retrieval", () => {
   it("returns no unverified matches for an empty or unrelated query", () => {
     expect(selectRuleExcerpts("A complete SRD paragraph.", [], 1000, 4)).toEqual([]);
     expect(selectRuleExcerpts("A complete SRD paragraph.", ["grapple"], 1000, 4)).toEqual([]);
+  });
+});
+
+
+describe("bounded source-attributed canon retrieval", () => {
+  it("keeps section IDs, heading paths and original line ranges for at most twelve whole paragraphs", () => {
+    const content = Array.from({ length: 30 }, (_, index) => [
+      `## Region ${index + 1}`,
+      "",
+      `Эйргард — подтверждённый регион Экдрасиля. Полный канонический фрагмент ${index + 1}.`,
+      "",
+    ].join("\\n")).join("\\n");
+    const result = selectCanonExcerpts(content, ["Эйргард"], 12_000, 12);
+    expect(result).toHaveLength(12);
+    expect(result[0]).toMatchObject({
+      startLine: 3,
+      sectionId: "EKDRASIL_WORLD_BIBLE:1:region-1",
+      headingPath: ["Region 1"],
+    });
+    expect(result[11]?.sectionId).toBe("EKDRASIL_WORLD_BIBLE:45:region-12");
+  });
+
+  it("skips an oversized canon paragraph whole and keeps a smaller complete section", () => {
+    const content = [
+      "## Oversized region",
+      "",
+      "Эйргард — " + "подтверждённая подробность ".repeat(300),
+      "",
+      "## Compact region",
+      "",
+      "Эйргард — короткий, целый и подтверждённый фрагмент канона.",
+    ].join("\\n");
+    const result = selectCanonExcerpts(content, ["Эйргард"], 500, 4);
+    expect(result).toHaveLength(1);
+    expect(result[0]?.text).toContain("короткий, целый");
+    expect(result[0]?.sectionId).toContain("compact-region");
+  });
+
+  it("does not fabricate a canon match for unrelated terms", () => {
+    expect(selectCanonExcerpts("## Эйргард\\n\\nПодтверждённый текст канона.", ["несуществующий термин"], 1000, 4)).toEqual([]);
   });
 });
 
