@@ -829,11 +829,11 @@ export function checkNarration(input: {
 export function buildCorrectionPrompt(contradictions: readonly Contradiction[]): string {
   const lines = contradictions
     .slice(0, 6)
-    .map((entry) => `- ${entry.detail}. You wrote: "${entry.clause}"`)
+    .map((entry) => `- ${entry.detail}. В тексте написано: «${entry.clause}»`)
     .join("\n");
-  return `[System] Your narration contradicts what the dice and tools actually resolved this turn. The tool results are the truth; the prose is what is wrong.
+  return `[СИСТЕМНАЯ КОРРЕКЦИЯ] Твоё повествование противоречит фактам, которые сервер уже разрешил бросками и инструментами. Результаты инструментов — истина; исправить нужно только текст.
 ${lines}
-Rewrite the whole narration so it matches the real results exactly. Keep everything else: the same scene, the same length, the same voice, the same closing beat. Change only what contradicts the results. Do not call any tool, do not mention this correction, and reply with the corrected narration only.`;
+Перепиши поле narration так, чтобы оно точно соответствовало фактическим результатам. Сохрани сцену, стиль, длину и эмоциональную подачу. Меняй только противоречащие фактам утверждения. Не вызывай инструменты, не упоминай проверку и верни полный исправленный JSON игрового хода по исходной схеме.`;
 }
 
 // ---------------------------------------------------------------------------
