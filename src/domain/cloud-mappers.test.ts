@@ -195,7 +195,7 @@ describe("cloud mapping primitives", () => {
       confirmedAt: "2026-11-27T10:00:00.000Z",
     };
     collections.player_character_state.name = "Лия";
-    collections.player_character_state.sourceDossierId = collections.sources[3]!.id;
+    collections.player_character_state.sourceDossierId = "GENERATED_RANDOM";
     collections.sources[3]!.contentStatus = "ATTACHED";
     collections.sources[3]!.reviewStatus = "VERIFIED";
     collections.sources[3]!.contextEnabled = true;
@@ -235,6 +235,7 @@ describe("cloud mapping primitives", () => {
     expect(mapped.campaign.status).toBe("active");
     expect(mapped.campaign.current_location_id).toBe(mapped.locations[0]?.id);
     expect(mapped.player_character_state.verified_at).toBe("2026-11-27T10:00:00.000Z");
+    expect(mapped.sources.find((row) => row.title === "Персонаж, созданный генератором ОБСИДИАН")?.content_status).toBe("verified");
     expect(mapped.factions[0]?.faction_state).toMatchObject({ goals: "Порядок", standing: "Нейтральное" });
     expect(mapped.locations[0]?.geography).toMatchObject({ region: "Север", place_name: "Рыночная площадь" });
     expect(mapped.npcs[0]?.npc_state).toMatchObject({ faction_id: mapped.factions[0]?.id, resources: "Форма и оружие" });
