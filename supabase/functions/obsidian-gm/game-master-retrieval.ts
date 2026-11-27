@@ -154,13 +154,16 @@ function preparePlayerCheck(
         : Number.isInteger(playerCharacter.classLevel ?? playerCharacter.level)
           ? Math.ceil(Number(playerCharacter.classLevel ?? playerCharacter.level) / 4) + 1
           : null;
-      if (basisAbility === ability || basisAbility === null) {
+      if (basisAbility === null) {
+        return { ok: false, error: "Неизвестна базовая характеристика владения навыком в листе персонажа." };
+      }
+      if (basisAbility === ability) {
         if (!Number.isInteger(entry.bonus)) return { ok: false, error: "Бонус навыка в листе повреждён или неизвестен." };
         modifier = Number(entry.bonus);
       } else if (proficient && proficiency !== null) {
         modifier += proficiency * (expertise ? 2 : 1);
-      } else if (proficient) {
-        return { ok: false, error: "Неизвестен бонус мастерства для нестандартной проверки навыка." };
+      } else {
+        return { ok: false, error: "Неизвестно владение или бонус мастерства для нестандартной проверки навыка." };
       }
     }
     if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
