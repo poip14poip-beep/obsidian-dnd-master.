@@ -852,7 +852,7 @@ Deno.serve(async (req: Request) => {
       if (isGameTurnRequest && isRecord(parsed)) {
         const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
         const playerRolls = rolls.filter((roll) => roll.roller === "PLAYER");
-        const prepared = modelCall.preparedPlayerRoll;
+        const prepared = modelCall.preparedRoll;
         const matchesPrepared = prepared !== null && playerRolls.length === 1 &&
           playerRolls[0]?.label === prepared.label &&
           playerRolls[0]?.formula === prepared.formula &&
