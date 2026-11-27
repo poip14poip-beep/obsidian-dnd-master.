@@ -54,7 +54,7 @@ function PlayPage() {
     character.baseSavingThrowBonuses && character.skillBonuses?.length &&
     character.weaponAttacks?.length && character.classFeaturesByLevel?.length
   );
-  const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
+  const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC"] as const : ["GOVERNING_DOC", "PLAYER_DOSSIER"] as const;
   const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
     sources.some((source) =>
       source.type === type && source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
@@ -83,7 +83,7 @@ function PlayPage() {
     setStartError(null);
     if (locked || startPending) return;
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском прикрепи оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля, а для загруженного персонажа отдельно подтверди его проверку и доступ мастера.");
+      setStartError("Перед запуском прикрепи оригинал ОБСИДИАН 4.1; канон Экдрасиля 2.4 уже подключён и проверяется на сервере. Для загруженного персонажа отдельно подтверди его проверку и доступ мастера.");
       return;
     }
     if (!characterReady) {

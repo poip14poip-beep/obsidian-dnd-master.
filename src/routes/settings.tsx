@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { buildCampaignStateMarkdown, buildPlayerCharacterStateMarkdown, buildSessionLogMarkdown } from "@/domain/save-files";
+import { getSupabaseAuthClient } from "@/lib/supabase-auth";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -30,6 +31,8 @@ export const Route = createFileRoute("/settings")({
   component: SettingsPage,
 });
 
+type MasterReadiness = { ready: boolean; checks: Record<string, boolean>; canon?: { edition: string; sourceVersion: number | null; sha256: string | null } };
+
 function SettingsPage() {
   const {
     sources,
@@ -48,6 +51,9 @@ function SettingsPage() {
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
   const [importError, setImportError] = useState<string | null>(null);
+  const [masterCheckBusy, setMasterCheckBusy] = useState(false);
+  const [masterReadiness, setMasterReadiness] = useState<MasterReadiness | null>(null);
+  const [masterCheckError, setMasterCheckError] = useState<string | null>(null);
 
   useEffect(() => {
     setCampaignName(worldState.campaignName);
@@ -56,6 +62,41 @@ function SettingsPage() {
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
   }, [worldState]);
+
+  async function handleCheckMaster() {
+    setMasterCheckBusy(true);
+    setMasterCheckError(null);
+    setMasterReadiness(null);
+    try {
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!envResult.ok || !client) throw new Error(envResult.ok ? "Клиент Supabase не готов." : envResult.error);
+      const { data, error } = await client.auth.getSession();
+      if (error || !data.session?.access_token) throw new Error("Войди в приложение, чтобы проверить серверного мастера.");
+      const response = await fetch(envResult.config.url.replace(/\/+$/, "") + "/functions/v1/obsidian-gm", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + data.session.access_token,
+          apikey: envResult.config.publishableKey,
+        },
+        body: JSON.stringify({ operation: "CHECK_SERVER_READINESS" }),
+      });
+      const payload = await response.json().catch(() => null) as MasterReadiness | { error?: { message?: string } } | null;
+      if (!payload || typeof payload !== "object" || !("ready" in payload)) {
+        throw new Error(payload && "error" in payload ? payload.error?.message ?? "Сервер не вернул статус мастера." : "Сервер не вернул статус мастера.");
+      }
+      const readiness = payload as MasterReadiness;
+      setMasterReadiness(readiness);
+      if (readiness.ready) toast.success("Источники ИИ-мастера проверены. Сервер готов к тестовому ходу.");
+      else toast.error("Мастер пока не готов. Проверь отмеченные источники и ключ провайдера.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось проверить ИИ-мастера.";
+      setMasterCheckError(message);
+      toast.error(message);
+    } finally {
+      setMasterCheckBusy(false);
+    }
+  }
 
   function handleSaveParams() {
     const res = updateCampaignParameters({
@@ -180,6 +221,41 @@ function SettingsPage() {
 
       <section className="panel-surface space-y-3 p-4">
         <div>
+          <h2 className="text-base font-semibold text-foreground">Проверка ИИ-мастера Экдрасиля</h2>
+          <p className="text-xs text-muted-foreground">Проверяет серверные источники ОБСИДИАН 4.1, D&D 2024 / SRD 5.2.1, канон 2.4 и доступность настроенного провайдера. Это проверка конфигурации; реальный ответ проверяется тестовым действием на странице «Ходы и журнал».</p>
+        </div>
+        <Button type="button" variant="secondary" className="touch-target w-full" disabled={masterCheckBusy} onClick={handleCheckMaster}>
+          {masterCheckBusy ? "Проверяю сервер…" : "Проверить готовность мастера"}
+        </Button>
+        {masterCheckError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-xs text-status-danger">{masterCheckError}</div>}
+        {masterReadiness && (
+          <div className="space-y-2 rounded border border-border bg-background/50 p-3">
+            <p className={masterReadiness.ready ? "text-xs font-semibold text-status-verified" : "text-xs font-semibold text-status-danger"}>
+              {masterReadiness.ready ? "СЕРВЕР ГОТОВ К ТЕСТОВОМУ ХОДУ" : "ТРЕБУЕТСЯ НАСТРОЙКА"}
+            </p>
+            <div className="grid grid-cols-1 gap-1.5">
+              {Object.entries(masterReadiness.checks).map(([key, ok]) => (
+                <div key={key} className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-foreground">{({
+                    OBSIDIAN_MASTER_PROMPT: "ОБСИДИАН 4.1",
+                    SRD_5_2_1: "D&D 2024 / SRD 5.2.1",
+                    EKDRASIL_WORLD_BIBLE: "Экдрасиль 2.4",
+                    CHARACTER_GENERATION_GUIDE: "Методика персонажей",
+                    ROUTERAI_API_KEY: "Серверный ключ модели",
+                  } as Record<string, string>)[key] ?? key}</span>
+                  <span className={ok ? "text-status-verified" : "text-status-danger"}>{ok ? "ГОТОВО" : "НЕ ГОТОВО"}</span>
+                </div>
+              ))}
+            </div>
+            {masterReadiness.canon && <p className="mono-code break-all text-[10px] text-muted-foreground">Канон {masterReadiness.canon.edition} · запись v{masterReadiness.canon.sourceVersion ?? "?"} · SHA-256 {masterReadiness.canon.sha256 ?? "не определён"}</p>}
+          </div>
+        )}
+      </section>
+
+
+
+      <section className="panel-surface space-y-3 p-4">
+        <div>
           <h2 className="text-sm font-semibold text-foreground">Файлы непрерывности кампании</h2>
           <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа.</p>
         </div>
@@ -216,7 +292,7 @@ function SettingsPage() {
               Открыть источники
             </Link>
           </div>
-          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье Лии или другого персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">ОБСИДИАН 4.1 прикрепляется в приложении. Полная редакция Экдрасиля 2.4 хранится в закрытой серверной базе и проверяется отдельно; не подключай старую локальную редакцию вместо неё. Досье персонажа остаётся отдельным источником.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
             {sources.slice(0, 3).map((src) => (
               <li key={src.id}>
                 • <strong className="text-foreground">{src.title}</strong> ({src.targetPartition}) —{" "}
@@ -230,7 +306,7 @@ function SettingsPage() {
               disabled={s.confirmed}
               onCheckedChange={(v) => toggleStep("sourcesConfirmed", v === true)}
             />
-            <span>Подтверждаю роли и разделение источников (ОБСИДИАН 4.1 / Хроника / Досье)</span>
+            <span>Подтверждаю роли и разделение источников (ОБСИДИАН 4.1 / серверный канон 2.4 / Досье)</span>
           </label>
         </div>
 

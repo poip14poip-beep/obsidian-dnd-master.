@@ -7,7 +7,7 @@ const source = (type: SourceDocument["type"], content: string): SourceDocument =
 });
 const context: GameMasterContext = {
   action: "Осмотреть дверь",
-  sources: [source("GOVERNING_DOC", "Полный промт ОБСИДИАН 4.1"), source("WORLD_CANON", "# Регион\nКаменная дверь у старого города."), source("PLAYER_DOSSIER", "Досье игрока")],
+  sources: [source("GOVERNING_DOC", "Полный промт ОБСИДИАН 4.1"), source("WORLD_CANON", "# ЭКДРАСИЛЬ\n\n## Полная каноническая редакция 2.4\n\n## 250. Итоговый принцип живого канона\n\nКаменная дверь у старого города.\n\nКОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"), source("PLAYER_DOSSIER", "Досье игрока")],
   world: { schemaVersion: 1, stateVersion: 1, campaignName: "Тест", ruleset: "D&D 2024", calendarSystem: "UNKNOWN", startInGameDate: "UNKNOWN", currentInGameDate: "UNKNOWN", elapsedMinutes: 0, startLocationName: "UNKNOWN", currentLocationId: null, setup: { sourcesConfirmed: false, parametersConfirmed: false, startPointConfirmed: false, characterConfirmed: false, noAutoImportAcknowledged: false, confirmed: false, confirmedAt: null }, routes: [], consequences: [], updatedAt: "2026-01-01T00:00:00Z" },
   character: { schemaVersion: 1, stateVersion: 1, sourceDossierId: "dossier", name: "Лия", nameCertainty: "KNOWN", speciesAndClass: "Человек / Воин", level: 20, hpCurrent: 100, hpMax: 100, hpTemp: 0, armorClass: 18, statsCertainty: "KNOWN", currentLocationLabel: "UNKNOWN", conditions: [], resources: [], inventory: [], notes: "", updatedAt: "2026-01-01T00:00:00Z" },
   canonFacts: [], npcs: [], factions: [], locations: [], journal: [],
@@ -15,31 +15,48 @@ const context: GameMasterContext = {
 const validTurn = { narration: "Перед тобой дверь.", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, newLocationKey: null, consequenceText: "", rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, worldChanges: { facts: [], npcUpdates: [], npcKnowledgeAdditions: [], newLocations: [], newNpcs: [], factionUpdates: [], newFactions: [], delayedEvents: [] }, needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 describe("game master resolver", () => {
   it("requires the governing source before a model request", async () => {
-    await expect(resolvePlayerAction("sk-test", { ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch }))
+    await expect(resolvePlayerAction({ ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_MISSING" });
   });
   it("sends source-grounded context and parses a structured turn", async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
-    const result = await resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch });
-    expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
-    const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
-    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), model: "deepseek/deepseek-v4.1-flash", usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
+    const result = await resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } });
+    expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100); expect(result.model).toBe("deepseek/deepseek-v4.1-flash");
+    const [url, init] = fetcher.mock.calls[0];
+    expect(url).toBe("https://test.supabase.co/functions/v1/obsidian-gm");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-jwt");
+    expect((init?.headers as Record<string, string>).apikey).toBe("sb_publishable_test");
+    const request = JSON.parse(init?.body as string);
+    expect(request.operation).toBe("GAME_TURN");
+    expect(request.model).toBe("obsidian-free");
+    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toMatch(/строки \d+–\d+/);
     expect(request.input).toContain("Досье игрока");
+  });
+  it("ignores stale local world canon and relies on the server-locked v2.4 source", async () => {
+    const staleSources = context.sources.map((item) => item.type === "WORLD_CANON"
+      ? { ...item, content: "# Хроника Экдрасиля — редакция 2.0\\nСТАРЫЙ ФАКТ, который нельзя передавать мастеру." }
+      : item);
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction({ ...context, sources: staleSources }, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } });
+    const [, init] = fetcher.mock.calls[0];
+    const request = JSON.parse(init?.body as string);
+    expect(request.input).not.toContain("СТАРЫЙ ФАКТ");
+    expect(request.instructions).toContain("Каноническая редакция 2.4");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "INVALID_TURN" });
   });
   it("rejects model-invented dice results", async () => {
     const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "MODEL_API_ERROR" });
   });
 });
