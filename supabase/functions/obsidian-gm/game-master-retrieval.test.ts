@@ -313,4 +313,51 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.error).toContain("AC цели не подтверждён");
   });
 
+  it("requires a prior SRD statblock lookup before preparing an attack against AC", async () => {
+    const rulesWithMonster = {
+      ...rules,
+      content: "# Goblin\n\nGoblin\nArmor Class 15 (leather armor, shield)\nHit Points 7 (2d6)\n",
+    };
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const search = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "search-1", type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "Goblin Armor Class" }) },
+      }] } }],
+    };
+    const attack = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "attack-1", type: "function",
+        function: { name: "prepare_player_attack", arguments: JSON.stringify({
+          weapon: "Longsword", targetName: "Goblin", targetAC: 15,
+          advantage: "NONE", reason: "Атаковать гоблина",
+        }) },
+      }] } }],
+    };
+    const enough = { choices: [{ message: { role: "assistant", content: "Атака подготовлена." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(search), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(attack), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(enough), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules: rulesWithMonster,
+      canon,
+      playerCharacter: character,
+    });
+    expect(result.preparedPlayerRoll).toMatchObject({
+      roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+5",
+      dc: 15, targetType: "AC", kind: "WEAPON_ATTACK",
+    });
+  });
+
 });
