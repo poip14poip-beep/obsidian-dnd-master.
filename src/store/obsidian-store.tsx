@@ -10,6 +10,7 @@ import {
 
 import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
 import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
+import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
   buildBackupEnvelope,
   computeChecksum,
@@ -984,7 +985,7 @@ export function ObsidianStoreProvider({
       stateVersion: previousWorld.stateVersion + 1,
       campaignName: previousWorld.campaignName || "Экдрасиль — свободная кампания",
       calendarSystem: previousWorld.calendarSystem === "UNKNOWN"
-        ? "Технический календарь мастера Экдрасиля 1.0: 365 дней, 12 месяцев по 30 дней и 5 межсезонных дней; условная система приложения, не канон Хроники"
+        ? `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`
         : previousWorld.calendarSystem,
       startInGameDate: input.date,
       currentInGameDate: input.date,
@@ -1372,11 +1373,18 @@ export function ObsidianStoreProvider({
       const nextWorldVersion = ws.stateVersion + 1;
       const nextCharacterVersion = pc.stateVersion + 1;
       const nextElapsedMinutes = ws.elapsedMinutes + activeDraft.timeDeltaMinutes;
+      const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(ws.calendarSystem);
       const isTechnicalCalendar = /технический календарь мастера экдрасиля 1\.0|technical calendar 1\.0/i.test(ws.calendarSystem);
+      const calculatedEkdrasilDate = isEkdrasilCalendar
+        ? advanceEkdrasilDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
+        : null;
       const calculatedTechnicalDate = isTechnicalCalendar
         ? advanceTechnicalDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
         : null;
-      const nextDate = calculatedTechnicalDate ?? (activeDraft.newInGameDate.trim() || ws.currentInGameDate);
+      if (isEkdrasilCalendar && !calculatedEkdrasilDate) {
+        return { ok: false, error: "Не удалось рассчитать дату по каноническому календарю Экдрасиля 2.4. Ход не сохранён; проверьте стартовую дату.", report: lastIntegrityReport };
+      }
+      const nextDate = calculatedEkdrasilDate ?? calculatedTechnicalDate ?? (activeDraft.newInGameDate.trim() || ws.currentInGameDate);
       const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;
       const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);
       const nextNpcs = [...collections.npcs];

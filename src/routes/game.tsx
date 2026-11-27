@@ -108,8 +108,8 @@ function GamePage() {
   const intercalaryDateMatch = datePart.match(/^(.+),\s*(\d+)\s+год$/);
   const clockMatch = dateParts.slice(1).join(" ").match(/\b([01]\d|2[0-3]):([0-5]\d)\b/);
   const displayYear = regularDateMatch?.[3] ?? intercalaryDateMatch?.[2] ?? "не установлен";
-  const displayMonth = regularDateMatch?.[2] ?? (intercalaryDateMatch ? "межсезонный день" : "не установлен");
-  const displayDay = regularDateMatch?.[1] ?? intercalaryDateMatch?.[1] ?? "не установлен";
+  const displayMonth = regularDateMatch?.[2] ?? (intercalaryDateMatch ? "межгодовой день" : "не установлен");
+  const displayDay = regularDateMatch?.[1] ?? (canonicalIntercalaryDateMatch ? canonicalIntercalaryDateMatch[1] : legacyIntercalaryDateMatch?.[1]) ?? "не установлен";
   const displayTemperature = worldState.environment?.temperatureC == null ? "не установлена" : String(worldState.environment.temperatureC) + " °C" + (worldState.environment.temperatureCertainty === "APPROXIMATE" ? " · примерно" : "");
   const formattedGmAnswer = gmTurn
     ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber)

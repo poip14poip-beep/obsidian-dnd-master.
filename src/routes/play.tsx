@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
+import { EKDRASIL_CALENDAR_NAME } from "@/domain/ekdrasil-calendar";
 import { generateRandomCharacter, type RandomCharacterProfile, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { extractDocxText } from "@/domain/docx-text";
@@ -206,7 +207,7 @@ function PlayPage() {
     const result = confirmCampaignSetup({
       campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
       calendarSystem: worldState.calendarSystem === "UNKNOWN"
-        ? "Технический календарь мастера Экдрасиля 1.0: 365 дней, 12 месяцев по 30 дней и 5 межсезонных дней; условная система приложения, не канон Хроники"
+        ? `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`
         : worldState.calendarSystem,
       startInGameDate: worldState.startInGameDate,
       startLocationName: worldState.startLocationName,

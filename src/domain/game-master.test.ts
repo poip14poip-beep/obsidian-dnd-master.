@@ -412,3 +412,22 @@ describe("verified SRD rules context", () => {
     expect(selectRulesContext([...context.sources, rules], "Лия атакует")).toContain("UNKNOWN");
   });
 });
+
+
+describe("canonical calendar validation in game master", () => {
+  it("requires the model to preserve the current canonical date until the app commits elapsed time", async () => {
+    const date = "30 Морн, 2000 год · 23:30 · Календарь Экдрасиля 2.4";
+    const calendarContext = {
+      ...context,
+      world: { ...context.world, calendarSystem: "Календарь Экдрасиля 2.4", currentInGameDate: date },
+    };
+    const valid = { ...validTurn, timeDeltaMinutes: 15, newInGameDate: date };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(valid) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", calendarContext, testOptions(fetcher as unknown as typeof fetch))).resolves.toBeDefined();
+
+    const invalid = { ...valid, newInGameDate: "Межгодовой день 1, 2000 год · 00:15 · Календарь Экдрасиля 2.4" };
+    const invalidFetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalid) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", calendarContext, testOptions(invalidFetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "CALENDAR_DELTA_MISMATCH" });
+  });
+});

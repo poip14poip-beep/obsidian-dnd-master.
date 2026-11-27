@@ -1,6 +1,7 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
+import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -598,7 +599,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       "В summary/worldOutcome записывай только произошедшее, не предположения.",
       "Если бросок ожидается, timeDeltaMinutes и hpDelta равны 0, worldOutcome сообщает, что исход ожидает броска.",
       "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
-      "Для Технического календаря мастера Экдрасиля 1.0 не вычисляй новую календарную дату самостоятельно и не выдумывай время. Верни newInGameDate равной текущей дате из world.currentInGameDate; приложение само передвинет дату на полные 24-часовые периоды по world.elapsedMinutes с начала кампании. Один календарный день этой технической системы равен 1440 минутам, отсчёт ведётся от начала кампании, поскольку стартовый час неизвестен.",
+      "Для Календаря Экдрасиля 2.4 используй только канонические месяцы, межгодовые дни и шестой день каждого четвёртого года. Не вычисляй новую дату самостоятельно: верни newInGameDate равной текущей дате из world.currentInGameDate. Приложение само передвинет календарь по суммарному world.elapsedMinutes от начала кампании. Для старых кампаний с Техническим календарём 1.0 сохраняй их прежний формат.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
       "npcSimulationReference — GM-only протокол принятия решений и ведения NPC, а не источник фактов мира. Следуй ему для устойчивых целей, временного состояния, планов, задач, знаний и ресурсов. Не копируй шаблонные примеры как факты текущего NPC; текущие записи knownNpcs имеют приоритет как состояние.",
       "Поля goals, attitudeToPlayer, knowledge, resources и внутренние планы в knownNpcs могут содержать GM-only сведения. Используй их только для симуляции поведения NPC. Не раскрывай их персонажа, пока она не получила соответствующую информацию через установленный внутриигровой канал. Знание NPC не является знанием персонажа игрока.",
@@ -644,7 +645,14 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   let turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
-  if (context.mode !== "OPENING" && /technical calendar 1\.0/i.test(context.world.calendarSystem)) {
+  const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(context.world.calendarSystem);
+  if (context.mode !== "OPENING" && isEkdrasilCalendar) {
+    const before = parseEkdrasilDateTime(context.world.currentInGameDate);
+    const after = parseEkdrasilDateTime(turn.newInGameDate);
+    if (before === null || after === null || after !== before) {
+      throw new GameMasterError("Для календаря Экдрасиля 2.4 мастер должен вернуть текущую дату без самостоятельного продвижения; приложение рассчитает её при сохранении хода.", "CALENDAR_DELTA_MISMATCH");
+    }
+  } else if (context.mode !== "OPENING" && /technical calendar 1\.0/i.test(context.world.calendarSystem)) {
     const before = parseTechnicalDateTime(context.world.currentInGameDate);
     const after = parseTechnicalDateTime(turn.newInGameDate);
     if (before !== null && (after === null || after - before !== turn.timeDeltaMinutes)) {
@@ -652,7 +660,10 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     }
   }
   if (context.mode === "OPENING") {
-    if (/technical calendar 1\.0/i.test(context.world.calendarSystem) &&
+    if (isEkdrasilCalendar && advanceEkdrasilDateByElapsedMinutes(turn.newInGameDate, 0) === null) {
+      throw new GameMasterError("Мастер не установил корректную дату и время начала кампании по каноническому календарю Экдрасиля 2.4. Вступительная сцена не сохранена.", "OPENING_DATE_MISSING");
+    }
+    if (!isEkdrasilCalendar && /technical calendar 1\.0/i.test(context.world.calendarSystem) &&
       advanceTechnicalDateByElapsedMinutes(turn.newInGameDate, 0) === null) {
       throw new GameMasterError("Мастер не установил корректную дату и время начала кампании по техническому календарю. Вступительная сцена не сохранена.", "OPENING_DATE_MISSING");
     }

@@ -32,11 +32,11 @@ describe("generateRandomStart", () => {
     }
   });
 
-  it("uses the technical calendar with a generated clock and no invented quest", () => {
+  it("uses the canonical Ekdrasil calendar with a generated clock and no invented quest", () => {
     const result = generateRandomStart(184, () => 0);
     expect(result.date).toContain("2000 год");
     expect(result.date).toContain("00:00");
-    expect(result.date).toContain("Технический календарь мастера 1.0");
+    expect(result.date).toContain("Календарь Экдрасиля 2.4");
     expect(result.narrative).toContain("не задание");
     expect(result.inventory).toEqual([]);
     expect(result.characterPatch.hpMax).toBeUndefined();

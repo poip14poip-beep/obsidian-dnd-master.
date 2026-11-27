@@ -1,5 +1,5 @@
 import type { InventoryItem, LocationRecord, PlayerCharacterState } from "./types";
-import { resolveTechnicalDate } from "./technical-calendar";
+import { ekdrasilDaysInYear, resolveEkdrasilDate } from "./ekdrasil-calendar";
 
 export interface CanonStartCity { name: string; region: string; continent: string; population: number; }
 export interface RandomStartResult {
@@ -150,8 +150,9 @@ export function generateRandomStart(
   const city = CITIES[cityIndex]!;
   const scene = SCENES[sceneIndex]!;
   const sceneText = scene.text(city.name);
-  const technicalDate = resolveTechnicalDate(index(365) + 1, 2000, index(24), index(60));
-  const date = technicalDate.formatted;
+  const startYear = 2000;
+  const calendarDate = resolveEkdrasilDate(index(ekdrasilDaysInYear(startYear)) + 1, startYear, index(24), index(60));
+  const date = calendarDate.formatted;
   const background = options.generateStartingSupplies ? resolveBackground(options.background) : null;
   const retainedInventory = weightedRetained(options.retainedInventory ?? [], index);
   const generatedConsumables = options.generateStartingSupplies
@@ -168,7 +169,7 @@ export function generateRandomStart(
       ? `Случайный стартовый капитал: ${currency.gp} зм, ${currency.sp} см, ${currency.cp} мм.`
       : "Денежный баланс сохранён без изменения.",
     `Место: ${city.name}, ${city.region}, ${city.continent}. В Хронике это один из шестнадцати главных городов; население — ${city.population.toLocaleString("ru-RU")}.`,
-    `Дата и время: ${date}. Сезон: ${technicalDate.season ?? "межсезонные дни"}. Используется технический календарь приложения, а не каноническое летоисчисление Хроники. Предыдущий маршрут персонажа и причина прибытия сюда UNKNOWN; они не додумываются.`,
+    `Дата и время: ${date}. Сезон: ${calendarDate.season ?? "межгодовой период"}. Используется канонический календарь Экдрасиля 2.4. Предыдущий маршрут персонажа и причина прибытия сюда UNKNOWN; они не додумываются.`,
     sceneText,
     `Здоровье: ${profile.label}, ${hpCurrent}/${hpMaximum} HP. ${profile.description}`,
     "Это бытовая стартовая ситуация, а не задание: нет заказчика, обязательной встречи, квеста или скрытого требования следовать сюжету. Игрок свободен действовать как хочет.",
