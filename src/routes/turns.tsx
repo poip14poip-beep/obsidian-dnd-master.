@@ -240,7 +240,7 @@ function TurnsPage() {
         <div className="flex items-center justify-between gap-2">
           <div>
             <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
-            <p className="text-xs text-muted-foreground">Модель получает полный ОБСИДИАН 4.1, актуальное состояние и релевантные фрагменты Экдрасиля.</p>
+            <p className="text-xs text-muted-foreground">Серверный мастер получает ОБСИДИАН 4.1, D&D 2024 / SRD 5.2.1, канон Экдрасиля 2.4 и актуальное состояние кампании.</p>
           </div>
           <span className="mono-code rounded border border-primary/30 px-2 py-1 text-[10px] text-primary">AI GM</span>
         </div>
