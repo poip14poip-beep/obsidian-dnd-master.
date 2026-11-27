@@ -27,7 +27,7 @@ describe("Ekdrasil read-only game-master tools", () => {
     const first = {
       choices: [{ message: { role: "assistant", tool_calls: [{ id: "call-1", type: "function", function: { name: "search_ekdrasil_canon", arguments: JSON.stringify({ query: "Vahlgard" }) } }] } }],
     };
-    const second = { choices: [{ message: { role: "assistant", content: "{\\"ok\\":true}" } }] };
+    const second = { choices: [{ message: { role: "assistant", content: "final narration" } }] };
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(second), { status: 200 }));
