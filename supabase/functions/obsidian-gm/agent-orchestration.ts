@@ -116,7 +116,7 @@ export async function runGameTurnAgents(args: {
       role: "CANON_AND_CAMPAIGN",
       model: "deepseek/deepseek-v4.1-flash",
       apiKey: args.apiKey,
-      fetcher: args.fetcher,
+      ...(args.fetcher ? { fetcher: args.fetcher } : {}),
       system: [
         "Ты специализированный аналитик канона Экдрасиля 2.4 и непрерывности конкретной кампании.",
         "Проверь действие игрока и текущее состояние только по переданным фрагментам канона и данным кампании.",
