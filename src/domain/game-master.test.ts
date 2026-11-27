@@ -15,31 +15,31 @@ const context: GameMasterContext = {
 const validTurn = { narration: "Перед тобой дверь.", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, newLocationKey: null, consequenceText: "", rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, worldChanges: { facts: [], npcUpdates: [], npcKnowledgeAdditions: [], newLocations: [], newNpcs: [], factionUpdates: [], newFactions: [], delayedEvents: [] }, needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 describe("game master resolver", () => {
   it("requires the governing source before a model request", async () => {
-    await expect(resolvePlayerAction("sk-test", { ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch }))
+    await expect(resolvePlayerAction({ ...context, sources: [] }, { fetcher: vi.fn() as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "GOVERNING_SOURCE_MISSING" });
   });
   it("sends source-grounded context and parses a structured turn", async () => {
-    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
-    const result = await resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch });
-    expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100);
-    const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), model: "deepseek/deepseek-v4.1-flash", usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
+    const result = await resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } });
+    expect(result.turn.narration).toContain("дверь"); expect(result.usage?.input_tokens).toBe(100); expect(result.model).toBe("deepseek/deepseek-v4.1-flash");
+    const [url, init] = fetcher.mock.calls[0];\n    expect(url).toBe("https://test.supabase.co/functions/v1/obsidian-gm");\n    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer test-jwt");\n    expect((init?.headers as Record<string, string>).apikey).toBe("sb_publishable_test");\n    const request = JSON.parse(init?.body as string);\n    expect(request.operation).toBe("GAME_TURN");\n    expect(request.model).toBe("obsidian-free");
     expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
     expect(request.input).toContain("Досье игрока");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "INVALID_TURN" });
   });
   it("rejects model-invented dice results", async () => {
     const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));
-    await expect(resolvePlayerAction("sk-test", context, { fetcher: fetcher as unknown as typeof fetch }))
+    await expect(resolvePlayerAction(context, { fetcher: fetcher as unknown as typeof fetch, credentials: { url: "https://test.supabase.co", publishableKey: "sb_publishable_test", accessToken: "test-jwt" } }))
       .rejects.toMatchObject({ code: "MODEL_API_ERROR" });
   });
 });
