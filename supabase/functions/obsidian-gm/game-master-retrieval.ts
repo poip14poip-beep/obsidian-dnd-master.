@@ -363,6 +363,7 @@ export async function callWithEkdrasilReadTools(options: {
   const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 6, 6));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedPlayerRoll: PreparedPlayerRoll | null = null;
+  const retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [];
 
   const send = async (body: JsonRecord): Promise<{ response: Response; payload: unknown }> => {
     const remaining = deadline - Date.now();
@@ -431,8 +432,19 @@ export async function callWithEkdrasilReadTools(options: {
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
       const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedPlayerRoll !== null)
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedPlayerRoll !== null, retrievedRuleExcerpts)
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
+      if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
+          (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
+        for (const rawExcerpt of (toolResult as JsonRecord).excerpts as unknown[]) {
+          if (rawExcerpt && typeof rawExcerpt === "object") {
+            const excerpt = rawExcerpt as JsonRecord;
+            if (typeof excerpt.text === "string" && typeof excerpt.lines === "string") {
+              retrievedRuleExcerpts.push({ text: excerpt.text, lines: excerpt.lines });
+            }
+          }
+        }
+      }
       if (toolResult && typeof toolResult === "object" && "preparedPlayerRoll" in toolResult) {
         const prepared = (toolResult as JsonRecord).preparedPlayerRoll;
         if (prepared && typeof prepared === "object") preparedPlayerRoll = prepared as PreparedPlayerRoll;
