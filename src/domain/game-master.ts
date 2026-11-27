@@ -15,7 +15,7 @@ export interface GameMasterTurn {
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
-  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; result: string }>;
+  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; result: string }>;
   npcChanges: NpcTurnChange[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -119,8 +119,8 @@ const turnSchema = {
     newLocationId: { type: ["string", "null"] },
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       roller: { type: "string", enum: ["PLAYER", "GM"] }, label: { type: "string" }, formula: { type: "string" },
-      dc: { type: ["integer", "null"] }, result: { type: "string" },
-    }, required: ["roller", "label", "formula", "dc", "result"] } },
+      dc: { type: ["integer", "null"] }, targetType: { type: "string", enum: ["DC", "AC", "NONE"] }, result: { type: "string" },
+    }, required: ["roller", "label", "formula", "dc", "targetType", "result"] } },
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
       role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
@@ -520,8 +520,10 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         !roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
     }
-    if (roll["dc"] !== null && (!Number.isInteger(roll["dc"]) || (roll["dc"] as number) < 1 || (roll["dc"] as number) > 40)) {
-      throw new GameMasterError("Мастер указал некорректную или незафиксированную сложность проверки.", "INVALID_DICE_DC");
+    if (!["DC", "AC", "NONE"].includes(String(roll["targetType"])) ||
+        (roll["targetType"] === "NONE" ? roll["dc"] !== null :
+          !Number.isInteger(roll["dc"]) || (roll["dc"] as number) < 1 || (roll["dc"] as number) > 40)) {
+      throw new GameMasterError("Мастер указал некорректную или незафиксированную DC/AC проверки.", "INVALID_DICE_DC");
     }
     if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
         roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
