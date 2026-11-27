@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, type GameMasterModelId } from "./model-routing.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, selectGameMasterModelOrder, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -750,6 +750,21 @@ Deno.serve(async (req: Request) => {
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
+      }
+      if (isGameTurnRequest) {
+        const semanticFailure = validateGameTurnSemantics(parsed);
+        if (semanticFailure) {
+          console.warn("[obsidian-gm] game-turn semantics rejected", { model: attempt.id, reason: semanticFailure });
+          failures.push(`${attempt.id}: ${semanticFailure}`);
+          // Give the next provider an explicit correction rather than repeating
+          // the same structurally-valid but game-rule-invalid response.
+          messages.push({
+            role: "system",
+            content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН ПРОГРАММНОЙ ПРОВЕРКОЙ: " + semanticFailure +
+              ". Верни исправленный JSON игрового хода. Если нужен бросок, result должен быть строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; никогда не указывай выпавшее число. При ожидаемом броске не меняй состояние, время, HP, NPC, квесты, предметы, ресурсы, деньги, локацию или последствия.",
+          });
+          continue;
+        }
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       return json({

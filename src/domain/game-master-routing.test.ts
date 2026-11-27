@@ -4,6 +4,7 @@ import {
   GAME_TURN_MAX_OUTPUT_TOKENS,
   gameTurnAttemptTimeoutMs,
   selectGameMasterModelOrder,
+  validateGameTurnSemantics,
   type ModelRoutingFlags,
 } from "../../supabase/functions/obsidian-gm/model-routing";
 
@@ -54,5 +55,60 @@ describe("Obsidian GM model routing", () => {
     expect(gameTurnAttemptTimeoutMs(0)).toBe(42_000);
     expect(gameTurnAttemptTimeoutMs(1)).toBe(28_000);
     expect(gameTurnAttemptTimeoutMs(2)).toBe(28_000);
+  });
+});
+
+
+describe("game-turn semantic validation", () => {
+  const pending = {
+    narration: "Персонаж замечает движение.",
+    timeDeltaMinutes: 0,
+    hpDelta: 0,
+    newLocationId: null,
+    consequenceText: "",
+    needsClarification: false,
+    questChanges: [],
+    npcChanges: [],
+    characterChanges: {
+      inventory: [], resources: [], conditions: [],
+      currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+    },
+    rolls: [{ label: "Мудрость (Восприятие)", formula: "1d20 + 3", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+  };
+
+  it("accepts a pending roll without resolving its outcome", () => {
+    expect(validateGameTurnSemantics(pending)).toBeNull();
+  });
+
+  it("rejects a model-invented numeric dice result", () => {
+    expect(validateGameTurnSemantics({
+      ...pending,
+      rolls: [{ ...pending.rolls[0], result: "17" }],
+    })).toContain("only the player/application may roll");
+  });
+
+  it("rejects multiple simultaneous pending rolls", () => {
+    expect(validateGameTurnSemantics({
+      ...pending,
+      rolls: [...pending.rolls, ...pending.rolls],
+    })).toContain("only one player roll");
+  });
+
+  it("rejects state changes while waiting for the player roll", () => {
+    expect(validateGameTurnSemantics({
+      ...pending,
+      characterChanges: {
+        ...pending.characterChanges,
+        inventory: [{ action: "ADD", name: "Ключ", quantity: 1 }],
+      },
+    })).toContain("must not mutate");
+  });
+
+  it("allows an ordinary turn with no pending roll", () => {
+    expect(validateGameTurnSemantics({
+      ...pending,
+      rolls: [],
+      timeDeltaMinutes: 5,
+    })).toBeNull();
   });
 });
