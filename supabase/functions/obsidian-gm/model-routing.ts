@@ -70,7 +70,7 @@ export function validateGameTurnSemantics(value: unknown): string | null {
       return "pending player roll requires a label and formula";
     }
     if (item["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      return "model attempted to supply a dice result; only the player/application may roll";
+      return "model attempted to supply a dice result; only the authenticated server may roll";
     }
   }
   if (turn["rolls"].length === 0) return null;
