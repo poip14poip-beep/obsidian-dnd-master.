@@ -202,7 +202,7 @@ describe("game master resolver", () => {
       : item);
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
     await resolvePlayerAction("test-user-jwt", { ...context, sources: staleSources }, testOptions(fetcher as unknown as typeof fetch));
-    const request = JSON.parse(fetcher.mock.calls[0][1].body as string);
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     const input = JSON.parse(request.input);
     expect(input.relevantEkdrasilCanon).not.toContain("СТАРЫЙ ФАКТ");
     expect(input.relevantEkdrasilCanon).toContain("сервером");
