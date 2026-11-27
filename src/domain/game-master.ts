@@ -2,6 +2,7 @@ import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
+import { parseDiceFormula } from "./dice";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -434,6 +435,9 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     if (typeof roll["label"] !== "string" || typeof roll["formula"] !== "string" ||
         roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       throw new GameMasterError("Мастер попытался подставить результат броска. Все игровые броски выполняет игрок; ход не принят.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (!roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
+      throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
     }
   }
   const rolls = turn["rolls"] as Array<Record<string, unknown>>;
