@@ -57,11 +57,11 @@ describe("game master resolver", () => {
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     const sent = JSON.parse(request.input);
     const compacted = sent.recentJournal[0];
-    expect(compacted.summary).toHaveLength(180);
-    expect(compacted.playerIntent).toHaveLength(240);
-    expect(compacted.worldOutcome).toHaveLength(360);
-    expect(compacted.gmNarration).toHaveLength(1_200);
-    expect(compacted.campaignMemory).toHaveLength(600);
+    expect(compacted.summary).toHaveLength(100);
+    expect(compacted.playerIntent).toHaveLength(120);
+    expect(compacted.worldOutcome).toHaveLength(180);
+    expect(compacted.gmNarration).toHaveLength(300);
+    expect(compacted.campaignMemory).toHaveLength(180);
     expect(compacted.questChanges).toEqual(journalEntry.questChanges);
     expect(compacted.npcChanges).toEqual(journalEntry.npcChanges);
     expect(compacted.characterChanges).toEqual(journalEntry.characterChanges);
@@ -82,9 +82,9 @@ describe("game master resolver", () => {
     expect(sent.fullCampaignChronicle).toHaveLength(150);
     expect(sent.fullCampaignChronicle[0].turnNumber).toBe(31);
     expect(sent.fullCampaignChronicle[149].turnNumber).toBe(180);
-    expect(sent.fullCampaignChronicle[0].summary).toHaveLength(40);
-    expect(sent.fullCampaignChronicle[0].playerIntent).toHaveLength(32);
-    expect(sent.fullCampaignChronicle[0].worldOutcome).toHaveLength(50);
+    expect(sent.fullCampaignChronicle[0].summary).toHaveLength(22);
+    expect(sent.fullCampaignChronicle[0].playerIntent).toHaveLength(18);
+    expect(sent.fullCampaignChronicle[0].worldOutcome).toHaveLength(24);
     expect(journal).toHaveLength(180);
   });
 
