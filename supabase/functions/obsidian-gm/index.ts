@@ -373,7 +373,7 @@ Deno.serve(async (req: Request) => {
         sourceVersion: typeof canon.version === "number" ? canon.version : null,
         sha256: typeof canon.sha256 === "string" ? canon.sha256 : null,
       },
-    }, ready ? 200 : 503, cors);
+    }, 200, cors);
   }
 
   const isCompatibilityRequest = isRecord(body) && body.operation === "VALIDATE_CHARACTER_COMPATIBILITY";
