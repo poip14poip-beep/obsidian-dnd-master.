@@ -27,6 +27,26 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "prepare_player_check",
+      description: "Подготовить проверку главного героя по его фактическому листу. Сервер сам вычисляет бонус и формулу; игрок затем бросает кубик в интерфейсе. Вызывай до описания исхода. Не используй для атак, урона или бросков NPC.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { type: "string", enum: ["ABILITY_CHECK", "SKILL_CHECK", "SAVING_THROW"] },
+          ability: { type: "string", enum: ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma", "сила", "ловкость", "телосложение", "интеллект", "мудрость", "харизма"] },
+          skill: { type: ["string", "null"], maxLength: 80 },
+          dc: { type: "integer", minimum: 1, maximum: 40 },
+          advantage: { type: "string", enum: ["NONE", "ADVANTAGE", "DISADVANTAGE"] },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["kind", "ability", "skill", "dc", "advantage", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_ekdrasil_canon",
       description: "Найти точные выдержки только из Ekdrasil_Master_Canon_v2.4.md. Старые редакции запрещены. Только чтение.",
       parameters: {
@@ -45,9 +65,123 @@ export interface RetrievalSource {
   sha256: string;
 }
 
+export interface PreparedPlayerRoll {
+  roller: "PLAYER";
+  label: string;
+  formula: string;
+  dc: number;
+  modifier: number;
+  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW";
+  reason: string;
+}
+
 function queryTerms(query: string): string[] {
   return [...new Set(query.normalize("NFKC").toLocaleLowerCase()
     .split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2))].slice(0, 24);
+}
+
+function normalizeAbility(value: string): "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma" | null {
+  const aliases: Record<string, "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma"> = {
+    strength: "strength", str: "strength", "сила": "strength",
+    dexterity: "dexterity", dex: "dexterity", "ловкость": "dexterity",
+    constitution: "constitution", con: "constitution", "телосложение": "constitution",
+    intelligence: "intelligence", int: "intelligence", "интеллект": "intelligence",
+    wisdom: "wisdom", wis: "wisdom", "мудрость": "wisdom",
+    charisma: "charisma", cha: "charisma", "харизма": "charisma",
+  };
+  return aliases[value.normalize("NFKC").trim().toLocaleLowerCase()] ?? null;
+}
+
+function modifierForScore(score: number): number {
+  return Math.floor((score - 10) / 2);
+}
+
+function preparePlayerCheck(
+  args: JsonRecord,
+  playerCharacter: JsonRecord | null,
+  alreadyPrepared: boolean,
+): { ok: true; preparedPlayerRoll: PreparedPlayerRoll } | { ok: false; error: string } {
+  if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешена только одна ожидающая проверка игрока." };
+  if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" ||
+      !playerCharacter.abilityScores || typeof playerCharacter.abilityScores !== "object") {
+    return { ok: false, error: "Лист персонажа не содержит подтверждённых характеристик. Не выдумывай бонус; запроси уточнение." };
+  }
+  const kind = args.kind;
+  const ability = typeof args.ability === "string" ? normalizeAbility(args.ability) : null;
+  const skill = typeof args.skill === "string" && args.skill.trim() ? args.skill.trim() : null;
+  const dc = args.dc;
+  const advantage = args.advantage;
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  if (!ability || !["ABILITY_CHECK", "SKILL_CHECK", "SAVING_THROW"].includes(String(kind)) ||
+      !Number.isInteger(dc) || (dc as number) < 1 || (dc as number) > 40 ||
+      !["NONE", "ADVANTAGE", "DISADVANTAGE"].includes(String(advantage)) || reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Некорректные параметры проверки. Нужны тип, характеристика, DC 1–40, преимущество и причина." };
+  }
+  if ((kind === "SKILL_CHECK") !== Boolean(skill)) {
+    return { ok: false, error: "Для SKILL_CHECK укажи точное имя навыка; для остальных видов skill должен быть null." };
+  }
+
+  const scores = playerCharacter.abilityScores as JsonRecord;
+  const score = scores[ability];
+  if (!Number.isInteger(score) || (score as number) < 1 || (score as number) > 30) {
+    return { ok: false, error: "В листе отсутствует подтверждённая характеристика " + ability + "." };
+  }
+  let modifier = modifierForScore(score as number);
+  const exhaustion = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
+  const exhaustionMatch = /(?:exhaustion|истощение)\s*([1-6])/i.exec(exhaustion);
+  if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
+
+  if (kind === "SAVING_THROW") {
+    const saves = playerCharacter.savingThrowBonuses;
+    if (!saves || typeof saves !== "object" || !Number.isInteger((saves as JsonRecord)[ability])) {
+      return { ok: false, error: "В листе нет подтверждённого бонуса спасброска " + ability + "." };
+    }
+    modifier = Number((saves as JsonRecord)[ability]);
+    if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
+  } else if (kind === "SKILL_CHECK") {
+    const entries = Array.isArray(playerCharacter.skillBonuses) ? playerCharacter.skillBonuses : [];
+    const normalizedSkill = skill!.normalize("NFKC").trim().toLocaleLowerCase();
+    const entry = entries.find((item) => item && typeof item === "object" &&
+      typeof (item as JsonRecord).name === "string" &&
+      ((item as JsonRecord).name as string).normalize("NFKC").trim().toLocaleLowerCase() === normalizedSkill) as JsonRecord | undefined;
+    if (entry) {
+      const basis = typeof entry.basis === "string" ? entry.basis.toLocaleLowerCase() : "";
+      const basisAbility = normalizeAbility(basis.split(/[\s+]+/)[0] ?? "");
+      const expertise = /эксперт|expertise/i.test(basis);
+      const proficient = /влад|proficien/i.test(basis) || expertise;
+      const proficiency = Number.isInteger(playerCharacter.proficiencyBonus)
+        ? Number(playerCharacter.proficiencyBonus)
+        : Number.isInteger(playerCharacter.classLevel ?? playerCharacter.level)
+          ? Math.ceil(Number(playerCharacter.classLevel ?? playerCharacter.level) / 4) + 1
+          : null;
+      if (basisAbility === ability || basisAbility === null) {
+        if (!Number.isInteger(entry.bonus)) return { ok: false, error: "Бонус навыка в листе повреждён или неизвестен." };
+        modifier = Number(entry.bonus);
+      } else if (proficient && proficiency !== null) {
+        modifier += proficiency * (expertise ? 2 : 1);
+      } else if (proficient) {
+        return { ok: false, error: "Неизвестен бонус мастерства для нестандартной проверки навыка." };
+      }
+    }
+    if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
+  }
+
+  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
+  const formula = modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
+  const abilityRu: Record<string, string> = {
+    strength: "Сила", dexterity: "Ловкость", constitution: "Телосложение",
+    intelligence: "Интеллект", wisdom: "Мудрость", charisma: "Харизма",
+  };
+  const label = kind === "SKILL_CHECK"
+    ? abilityRu[ability] + " (" + skill + ")"
+    : kind === "SAVING_THROW" ? "Спасбросок " + abilityRu[ability] : "Проверка " + abilityRu[ability];
+  return {
+    ok: true,
+    preparedPlayerRoll: {
+      roller: "PLAYER", label, formula, dc: dc as number, modifier,
+      kind: kind as PreparedPlayerRoll["kind"], reason,
+    },
+  };
 }
 
 export function executeEkdrasilReadTool(
@@ -55,6 +189,8 @@ export function executeEkdrasilReadTool(
   rawArguments: string,
   rules: RetrievalSource,
   canon: RetrievalSource,
+  playerCharacter: JsonRecord | null = null,
+  alreadyPrepared = false,
 ): JsonRecord {
   let args: unknown;
   try { args = JSON.parse(rawArguments || "{}"); }
@@ -68,6 +204,10 @@ export function executeEkdrasilReadTool(
   }
   const terms = queryTerms(query.trim());
   if (!terms.length) return { ok: false, error: "Запрос не содержит поисковых терминов." };
+
+  if (name === "prepare_player_check") {
+    return preparePlayerCheck(args as JsonRecord, playerCharacter, alreadyPrepared);
+  }
 
   if (name === "search_dnd_rules") {
     const excerpts = selectRuleExcerpts(rules.content, terms, 9_000, 3);
