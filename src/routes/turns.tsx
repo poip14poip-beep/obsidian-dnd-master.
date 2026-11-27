@@ -14,7 +14,7 @@ import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
-import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn } from "@/domain/game-master";
 import { formatGameMasterAnswer } from "@/domain/game-master-presentation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -77,7 +77,11 @@ function TurnsPage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [pendingRollResult, setPendingRollResult] = useState("");
+  const [rollBusy, setRollBusy] = useState(false);
+  const [pendingServerRoll, setPendingServerRoll] = useState<{ label: string; formula: string; result: string } | null>(null);
+  const [completedPendingRolls, setCompletedPendingRolls] = useState<Array<{ label: string; formula: string; result: string }>>([]);
+  const [originalPendingIntent, setOriginalPendingIntent] = useState("");
+  const [lastServerRoll, setLastServerRoll] = useState<string | null>(null);
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
@@ -86,7 +90,12 @@ function TurnsPage() {
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
 
-  async function handleResolveAction(actionOverride?: string) {
+  async function handleResolveAction(
+    actionOverride?: string,
+    rollsOverride: Array<{ label: string; formula: string; result: string }> = completedPendingRolls,
+    originalIntentOverride?: string,
+    recoverTurn?: GameMasterTurn,
+  ) {
     if (gmRequestInFlight.current) return;
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim()) {
@@ -94,6 +103,12 @@ function TurnsPage() {
       return;
     }
     setGmError(null);
+    if (!actionOverride) {
+      setOriginalPendingIntent(actionToResolve.trim());
+      setCompletedPendingRolls([]);
+      setPendingServerRoll(null);
+      setLastServerRoll(null);
+    }
     setGmTurn(null);
     if (!worldState.setup.confirmed) {
       setGmError("Сначала завершите обязательную подготовку кампании.");
@@ -118,7 +133,7 @@ function TurnsPage() {
       if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         updateTurnDraft({
           summary: result.turn.summary,
-          playerIntent: actionToResolve.trim(),
+          playerIntent: (originalIntentOverride ?? (actionOverride ? originalPendingIntent || actionToResolve : actionToResolve)).trim(),
           worldOutcome: result.turn.worldOutcome,
           gmNarration: result.turn.narration,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
@@ -128,33 +143,56 @@ function TurnsPage() {
           consequenceText: result.turn.consequenceText,
           characterChanges: result.turn.characterChanges,
           npcChanges: result.turn.npcChanges,
-          rolls: result.turn.rolls.map((roll, index) => ({
+          rolls: [...rollsOverride, ...result.turn.rolls].map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
           })),
         });
         setExplicitConfirm(false);
+        setCompletedPendingRolls([]);
+        setOriginalPendingIntent("");
+        setPendingServerRoll(null);
+      } else {
+        setCompletedPendingRolls(rollsOverride);
+        if (result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) setPendingServerRoll(null);
       }
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
+      if (recoverTurn) setGmTurn(recoverTurn);
     } finally {
       gmRequestInFlight.current = false;
       setGmBusy(false);
     }
   }
 
-  function handleSubmitPendingRoll() {
-    if (!gmTurn || !pendingRollResult.trim()) return;
-    if (!Number.isInteger(Number(pendingRollResult.trim()))) {
-      setGmError("Результат броска должен быть целым числом. Введи итог с модификатором, если он применим.");
-      return;
-    }
+  async function handleSubmitPendingRoll() {
+    if (!gmTurn || gmBusy || rollBusy || gmRequestInFlight.current) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
-    setPlayerAction(action);
-    setPendingRollResult("");
-    void handleResolveAction(action);
+    const recoverTurn = gmTurn;
+    const originalIntent = originalPendingIntent || playerAction.trim();
+    setRollBusy(true);
+    setGmError(null);
+    try {
+      let rollRecord = pendingServerRoll;
+      if (!rollRecord) {
+        const rolled = await rollDiceAtServer(session?.access_token ?? "", pending.formula);
+        const result = `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`;
+        rollRecord = { label: pending.label, formula: pending.formula, result };
+        setPendingServerRoll(rollRecord);
+        setLastServerRoll(`${pending.label}: ${pending.formula} · ${result}`);
+      }
+      const allRolls = [...completedPendingRolls, rollRecord];
+      const rollHistory = allRolls.map((roll, index) => `${index + 1}) ${roll.label}: ${roll.formula} · ${roll.result}`).join("\\n");
+      const action = `${originalIntent}\\n\\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ: ${pending.label}; формула ${pending.formula}.\\nФАКТИЧЕСКИЕ БРОСКИ МАСТЕРА (случайно сгенерированы сервером):\\n${rollHistory}\\nПримени именно эти результаты по правилам D&D 2024; не меняй исходные проверки и не проси повторить уже выполненные броски.`;
+      setPlayerAction(action);
+      await handleResolveAction(action, allRolls, originalIntent, recoverTurn);
+    } catch (error) {
+      setGmError(error instanceof Error ? error.message : "Не удалось выполнить серверный бросок.");
+      setGmTurn(recoverTurn);
+    } finally {
+      setRollBusy(false);
+    }
   }
   function handleApplyClarification() {
     if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
@@ -300,14 +338,14 @@ function TurnsPage() {
                 <Button type="button" variant="outline" className="touch-target" disabled={!clarificationAnswer.trim()} onClick={handleApplyClarification}>Ответить и продолжить</Button>
               </div>
             )}
+            {lastServerRoll && <div className="rounded border border-status-verified/40 p-3 text-xs"><p className="font-semibold text-status-verified">Результат серверного броска мастера</p><p>{lastServerRoll}</p></div>}
             {gmTurn.rolls.length > 0 && (
               <div className="space-y-1 rounded border border-border p-3">
                 <p className="text-xs font-semibold">Проверки и броски</p>
                 {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
                 {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
-                  <p className="text-xs text-status-approx">Бросок выполняешь ты физически или любым своим кубиком. Введи итоговое значение с модификатором, если он применим. Мастер не бросает за тебя.</p>
-                  <Input type="number" step="1" value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
-                  <Button type="button" className="touch-target w-full" disabled={!pendingRollResult.trim() || gmBusy} onClick={handleSubmitPendingRoll}>Передать результат и продолжить разрешение</Button>
+                  <p className="text-xs text-status-approx">Мастер назначил проверку. Нажми кнопку — сервер случайно бросит нужные кости, покажет каждый результат и модификатор, затем мастер продолжит действие.</p>
+                  <Button type="button" className="touch-target w-full" disabled={rollBusy || gmBusy} onClick={handleSubmitPendingRoll}>{rollBusy ? "Мастер бросает кости…" : pendingServerRoll ? "Передать уже выполненный бросок" : "Бросить кости мастера и продолжить"}</Button>
                 </div>}
               </div>
             )}
