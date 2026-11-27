@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { resolvePlayerAction, selectRulesContext, type GameMasterContext } from "./game-master";
+import { resolvePlayerAction, selectRulesContext, selectCanonContext, selectNpcSimulationContext, type GameMasterContext } from "./game-master";
 import type { SourceDocument } from "./types";
 const source = (type: SourceDocument["type"], content: string): SourceDocument => ({
   id: type, title: type, type, ...(type === "GOVERNING_DOC" ? { serverManaged: true } : {}), targetPartition: type === "GOVERNING_DOC" ? "SYSTEM_RULES" : type === "PLAYER_DOSSIER" ? "PLAYER_CHARACTER_STATE" : "CAMPAIGN_STATE",
@@ -14,6 +14,120 @@ const context: GameMasterContext = {
 };
 const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", environment: { temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "" }, environmentReason: "Без изменений.", questChanges: [], rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 const testOptions = (fetcher: typeof fetch) => ({ fetcher, supabaseUrl: "https://test.supabase.co", publishableKey: "sb_publishable_test" });
+
+
+describe("source-grounded context selection", () => {
+  it("keeps the full v2.4 authority marker and whole, attributed canon excerpts within budget", () => {
+    const longParagraphs = Array.from({ length: 30 }, (_, index) =>
+      `## Место ${index + 1}\nФрагмент ${index + 1}: Эйргард — подтверждённый регион. ${"Описание города и северной области. ".repeat(28)}`
+    ).join("\n\n");
+    const canon = source("WORLD_CANON", [
+      "# ЭКДРАСИЛЬ",
+      "",
+      "## Полная каноническая редакция 2.4",
+      "",
+      longParagraphs,
+      "",
+      "## 250. Итоговый принцип живого канона",
+      "",
+      "Канон развивается только по утверждённому порядку.",
+      "",
+      "КОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4",
+    ].join("\n"));
+    const legacy = source("WORLD_CANON", "# ЭКДРАСИЛЬ\n\n## Полная летопись v2\n\nСтарая редакция.");
+    const relevantFact = {
+      id: "fact-1", title: "Эйргард", statement: "Подтверждённое место начала сцены.",
+      rationale: "Тест", layer: "OBJECTIVE_TRUTH", subjectNpcId: null, certainty: "KNOWN",
+      sourceId: "campaign", acquisitionPath: "Подтверждённое состояние", inGameDate: "2000",
+      scope: "CAMPAIGN", locked: false, createdAt: "2026-01-01", version: 1, history: [],
+    } as const;
+    const unrelatedFact = {
+      ...relevantFact, id: "fact-2", title: "Южный порт", statement: "Нерелевантная запись.",
+      createdAt: "2026-01-02",
+    } as const;
+    const result = selectCanonContext(
+      [relevantFact, unrelatedFact] as never,
+      [legacy, canon],
+      "Сцена в Эйргарде",
+    );
+    expect(result).toContain("Полная каноническая редакция 2.4");
+    expect(result).toContain("sourceId=WORLD_CANON");
+    expect(result).toContain("строки");
+    expect(result).toContain("Эйргард");
+    expect(result).not.toContain("старая редакция");
+    expect(result).not.toContain("Нерелевантная запись");
+    expect(result.length).toBeLessThanOrEqual(14_500);
+  });
+
+  it("passes normative NDP/NPL sections but excludes blank templates, test fixtures and campaign NPC records", () => {
+    const reference = [
+      "# NPC LEDGER — protocol source",
+      "## Назначение и статус",
+      "Campaign-specific status must not be sent.",
+      "## 1. Правила ведения реестра",
+      "Use persistent NPC identifiers and source provenance.",
+      "## 2. Проверка идентичности",
+      "Detect duplicates without silently merging people.",
+      "## 3. Шаблон карточки",
+      "EMPTY TEMPLATE ONLY.",
+      "## 4. Протокол автономного хода NPC",
+      "Run only on meaningful event/time triggers.",
+      "## 5. Жизненный цикл",
+      "Preserve dead and missing NPC records.",
+      "## 6. Реестр NPC",
+      "EMPTY REGISTRY.",
+      "## 7. Журнал дубликатов",
+      "EMPTY DUPLICATE JOURNAL.",
+      "## 8. Контроль согласованности",
+      "Validate knowledge provenance and causality.",
+      "## 9. Связанные файлы",
+      "REFERENCE FILE LINKS.",
+      "## 10. NDP 0.3 — модель решений NPC",
+      "Choose actions from motives, values, risks and uncertainty.",
+      "## 11. NPL 0.3 — жизненный цикл планов",
+      "Preserve goals, versions, tasks, feasible steps and resources.",
+      "## 12. История и закрытие версий",
+      "Keep prior versions and their outcomes.",
+      "## 13. Проверка согласованности NDP/NPL",
+      "Never mark a plan blocked while a feasible task remains.",
+      "## 14. Приоритет и применение",
+      "This protocol does not override D&D rules or world canon.",
+      "## 15. Проверочные сценарии",
+      "Test fixture NPC-TEST must not enter a real campaign.",
+      "## Реестр NPC кампании",
+      "NPC-0001 — пример из другой кампании; не использовать.",
+    ].join("\n");
+    const npcSource = {
+      ...source("SUPPLEMENTAL", reference),
+      title: "NPC Simulation Rules — NDP 0.3",
+      fileName: "NPC_SIMULATION_RULES_NDP_0_3.md",
+      playerVisible: false,
+    };
+    const result = selectNpcSimulationContext([npcSource]);
+    expect(result).toContain("NDP 0.3");
+    expect(result).toContain("NPL 0.3");
+    expect(result).toContain("FEASIBLE"); // section 13's planning consistency rule
+    expect(result).toContain("sourceId=SUPPLEMENTAL");
+    expect(result).not.toContain("EMPTY TEMPLATE");
+    expect(result).not.toContain("EMPTY REGISTRY");
+    expect(result).not.toContain("Test fixture NPC-TEST");
+    expect(result).not.toContain("NPC-0001");
+    expect(result).not.toContain("Campaign-specific status");
+  });
+
+  it("does not send an unverified or player-visible NPC rules source", () => {
+    const reference = "## 10. NDP 0.3\\nDo not leak internal NPC decisions.";
+    const npcSource = {
+      ...source("SUPPLEMENTAL", reference),
+      fileName: "NPC_SIMULATION_RULES_NDP_0_3.md",
+      playerVisible: true,
+    };
+    expect(selectNpcSimulationContext([npcSource])).toContain("UNKNOWN");
+    expect(selectNpcSimulationContext([{
+      ...npcSource, playerVisible: false, reviewStatus: "UNVERIFIED",
+    }])).toContain("UNKNOWN");
+  });
+});
 
 describe("game master resolver", () => {
   it("requires a real authenticated session before sending a request", async () => {
