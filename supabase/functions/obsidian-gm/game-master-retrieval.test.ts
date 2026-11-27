@@ -58,4 +58,28 @@ describe("Ekdrasil read-only game-master tools", () => {
     expect(finalBody.response_format).toEqual({ type: "json_schema", json_schema: { name: "turn", strict: true, schema: { type: "object" } } });
     expect(finalBody.structured_outputs).toBe(true);
   });
+  it("always makes a final schema-constrained call even when no retrieval is needed", async () => {
+    const first = { choices: [{ message: { role: "assistant", content: "No lookup needed." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: "{\\"ok\\":true}" } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const schema = { type: "json_schema", json_schema: { name: "turn", strict: true, schema: { type: "object" } } };
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [{ role: "user", content: "Simple action" }], response_format: schema, structured_outputs: true },
+      enabled: true,
+      ruleParagraphs: rules,
+      canonParagraphs: canon,
+    });
+    expect(result.toolCalls).toBe(0);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    const finalBody = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body ?? "{}"));
+    expect(finalBody.response_format).toEqual(schema);
+    expect(finalBody.tools).toBeUndefined();
+    expect(result.payload).toEqual(final);
+  });
+
 });
