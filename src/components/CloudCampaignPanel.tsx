@@ -45,7 +45,7 @@ export function CloudCampaignPanel({
   const [relationalReady, setRelationalReady] = useState(false);
   const [latest, setLatest] = useState<ObsidianCloudSnapshot | null>(null);
   const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
-  const [busy, setBusy] = useState<"create" | "load" | "save" | "restore" | null>(null);
+  const [busy, setBusy] = useState<"create" | "load" | "save" | "restore" | "import" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -231,7 +231,7 @@ export function CloudCampaignPanel({
     }
   }
 
-  function handleRestoreLatest() {
+  async function handleRestoreLatest() {
     if (!latest?.found || !latest.payload || !restoreAcknowledged) return;
     setBusy("restore");
     setError(null);
