@@ -331,11 +331,13 @@ function GamePage() {
     setRollAnimating(false);
 
     const formula = pending.formula;
-    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total });
+    const success = pending.dc === null ? null : rolled.total >= pending.dc;
+    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total, dc: pending.dc, success });
     const rollRecord = {
       id: `gm-roll-${Date.now().toString(36)}`,
       label: pending.label,
       formula,
+      dc: pending.dc,
       result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
     const allRolls = [...completedPlayerRolls, rollRecord];
@@ -346,15 +348,21 @@ function GamePage() {
     const checkContext = {
       label: pending.label,
       formula,
+      dc: pending.dc,
+      success,
       mechanics: gmTurn.mechanics,
       consequences: gmTurn.consequences,
       spatialAccounting: gmTurn.spatialAccounting,
       nextAction: gmTurn.nextAction,
     };
     const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ${pending.roller === "GM" ? "МАСТЕРА ЗА NPC/СУЩЕСТВО" : "ИГРОКА ЗА ГЛАВНОГО ГЕРОЯ"}: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
-    setPendingAction(continuedAction);
+    const checkedAction = continuedAction + "\n\nЗАФИКСИРОВАННЫЙ РЕЗУЛЬТАТ ПРОВЕРКИ: DC " +
+      (pending.dc ?? "UNKNOWN") + "; " +
+      (success === null ? "сложность не задана" : success ? "УСПЕХ" : "ПРОВАЛ") +
+      ". Не меняй DC и не пересчитывай бонус.";
+    setPendingAction(checkedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction, true, allRolls, originalPlayerIntent || pendingAction);
+    void handleResolveAction(checkedAction, true, allRolls, originalPlayerIntent || pendingAction);
   }
 
   function handleApplyClarification() {
