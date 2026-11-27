@@ -417,7 +417,7 @@ function GamePage() {
         {entry.rolls.length > 0 && (
           <div className="rounded-lg border border-primary/25 bg-background/60 p-2 text-xs">
             <p className="mb-1 flex items-center gap-1 font-semibold"><Dices className="h-3.5 w-3.5" />Броски</p>
-            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula} → {roll.result}</p>)}
+            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula}{roll.dc !== null && roll.dc !== undefined ? ` · DC ${roll.dc}` : ""} → {roll.result}</p>)}
           </div>
         )}
         <p className="text-right text-[10px] text-muted-foreground">HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
@@ -583,7 +583,8 @@ function GamePage() {
                     </div>
                     <div className="space-y-1 text-center">
                       <p className="text-lg font-semibold">{pending.label}</p>
-                      <p className="text-sm text-muted-foreground">Формула броска: <span className="mono-code font-semibold">{pending.formula}</span></p>
+                      <p className="text-sm text-muted-foreground">Формула: <span className="mono-code font-semibold">{pending.formula}</span></p>
+                      {pending.dc !== null && <p className="text-sm font-semibold">Сложность проверки: DC {pending.dc}</p>}
                       <p className="text-xs text-muted-foreground">Исход действия будет определён после твоего броска.</p>
                     </div>
                     <button
@@ -631,6 +632,7 @@ function GamePage() {
             <p className="font-semibold">{rollDisplay.label}</p>
             <p className="text-xs text-muted-foreground">Модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
+            {rollDisplay.dc !== null && <p className="text-xs font-semibold">DC {rollDisplay.dc} · {rollDisplay.success ? "УСПЕХ" : "ПРОВАЛ"}</p>}
             <p className="text-xs text-muted-foreground">Серверный результат передан мастеру без изменений.</p>
           </div>
         </div>
