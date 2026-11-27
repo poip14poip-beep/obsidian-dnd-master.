@@ -48,6 +48,17 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+function playerCharacterFromInput(inputText: string): JsonRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    return isRecord(parsed) && isRecord(parsed.playerCharacterState)
+      ? parsed.playerCharacterState
+      : null;
+  } catch {
+    return null;
+  }
+}
 const EKDRASIL_CANON_SHA256 = "6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4";
 function isEkdrasilCanonV24(value: unknown): value is JsonRecord {
   if (!isRecord(value) || typeof value.content !== "string") return false;
@@ -757,6 +768,7 @@ Deno.serve(async (req: Request) => {
         enabled: isGameTurnRequest,
         rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
         canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
+        playerCharacter: playerCharacterFromInput(inputText),
         maxToolRounds: 3,
         maxToolCalls: 6,
         timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
