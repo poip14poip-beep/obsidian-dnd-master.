@@ -578,7 +578,9 @@ Deno.serve(async (req: Request) => {
         : highImpactTurn
         ? [MODEL_ATTEMPTS[1]!]
         : isGameTurnRequest
-          ? [MODEL_ATTEMPTS[0]!]
+          // Opening a campaign can exceed DeepSeek's 6,144-token output ceiling.
+          // Retry once with an independent provider instead of failing the whole turn.
+          ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
           : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
@@ -660,12 +662,12 @@ Deno.serve(async (req: Request) => {
           // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
           // Game turns have a large structured schema; cap generation to avoid
           // spending the entire mobile request window on oversized responses.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? 6144 : 8192,
+          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? (attempt.id.startsWith("deepseek/") ? 6144 : 8192) : 8192,
           // DeepSeek V4.1 Flash defaults to high thinking; low effort avoids spending the whole output budget on hidden reasoning.
           ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: "low" } } : {}),
         }),
         // Game turns use bounded output and low DeepSeek reasoning effort to finish inside the mobile request window.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 82_000 : 18_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? (attempt.id.startsWith("deepseek/") ? 82_000 : 55_000) : 18_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
