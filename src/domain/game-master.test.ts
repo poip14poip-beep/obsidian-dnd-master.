@@ -82,7 +82,9 @@ describe("game master resolver", () => {
     expect(sent.fullCampaignChronicle).toHaveLength(150);
     expect(sent.fullCampaignChronicle[0].turnNumber).toBe(31);
     expect(sent.fullCampaignChronicle[149].turnNumber).toBe(180);
-    expect(sent.fullCampaignChronicle[0].summary).toHaveLength(60);
+    expect(sent.fullCampaignChronicle[0].summary).toHaveLength(40);
+    expect(sent.fullCampaignChronicle[0].playerIntent).toHaveLength(32);
+    expect(sent.fullCampaignChronicle[0].worldOutcome).toHaveLength(50);
     expect(journal).toHaveLength(180);
   });
 
@@ -227,6 +229,16 @@ describe("game master resolver", () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidPending) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_CLARIFICATION_DELTA" });
+  });
+  it("reports a request timeout separately from a lost network connection", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new DOMException("The operation timed out", "TimeoutError"));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "MODEL_REQUEST_TIMEOUT" });
+  });
+  it("reports a genuine connection failure without claiming the model rejected the request", async () => {
+    const fetcher = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "NETWORK_ERROR" });
   });
   it("surfaces API errors without writing campaign state", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { message: "Invalid API key" } }), { status: 401 }));

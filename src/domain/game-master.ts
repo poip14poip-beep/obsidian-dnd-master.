@@ -493,9 +493,11 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
         inGameDate: entry.inGameDateAfter,
         // A short rolling index keeps chronology available without duplicating
         // long prose; older matching turns remain retrievable via recentJournal.
-        summary: entry.summary.slice(0, 60),
-        playerIntent: entry.playerIntent.slice(0, 50),
-        worldOutcome: entry.worldOutcome.slice(0, 80),
+        // Keep all 150 chronological anchors, but trim each to a compact index.
+        // Detailed recent and query-matched entries remain available in recentJournal.
+        summary: entry.summary.slice(0, 40),
+        playerIntent: entry.playerIntent.slice(0, 32),
+        worldOutcome: entry.worldOutcome.slice(0, 50),
       })),
     recentJournal: selectRelevantJournal(context.journal, context.action).map((entry) => {
       if (entry.entryType === "TECHNICAL_NOTE") {
@@ -558,8 +560,16 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       },
       body: JSON.stringify({ model, instructions: system, input: JSON.stringify(user),
         text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } } }),
+      // The server has a bounded two-provider retry budget; leave room for it to finish.
+      signal: AbortSignal.timeout(95_000),
     });
-  } catch { throw new GameMasterError("Не удалось подключиться к API модели. Проверь интернет-соединение.", "NETWORK_ERROR"); }
+  } catch (error) {
+    const name = error instanceof Error ? error.name : "";
+    if (name === "TimeoutError" || name === "AbortError") {
+      throw new GameMasterError("Мастер отвечает дольше обычного. Запрос прерван по тайм-ауту; игровой ход не сохранён. Попробуй ещё раз.", "MODEL_REQUEST_TIMEOUT");
+    }
+    throw new GameMasterError("Не удалось связаться с сервером мастера. Проверь соединение и попробуй ещё раз; игровой ход не сохранён.", "NETWORK_ERROR");
+  }
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
     const err = payload && typeof payload === "object" ? (payload as Record<string, unknown>)["error"] : null;

@@ -532,6 +532,7 @@ Deno.serve(async (req: Request) => {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
+      const attemptStartedAt = Date.now();
       console.log("[obsidian-gm] model attempt started", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER", model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length });
       const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
         method: "POST",
@@ -548,14 +549,17 @@ Deno.serve(async (req: Request) => {
           structured_outputs: true,
           temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
           // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          // Game turns have a large structured schema; cap generation to avoid
+          // spending the entire mobile request window on oversized responses.
+          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? 4096 : 8192,
         }),
         // Game turns need enough time for the model to finish generating its structured response.
         // Limit them to two providers above; 50s per attempt stays within the Edge wall-clock budget.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 50_000 : 18_000),
+        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 38_000 : 18_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
       const raw = await upstream.text();
+      console.log("[obsidian-gm] model response body received", { model: attempt.id, elapsedMs: Date.now() - attemptStartedAt, responseChars: raw.length });
       let payload: unknown;
       try { payload = JSON.parse(raw); }
       catch { failures.push(`${attempt.id}: unreadable response`); continue; }
