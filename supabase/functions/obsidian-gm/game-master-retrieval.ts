@@ -131,7 +131,33 @@ export async function callWithEkdrasilReadTools(options: {
     const choice = choices[0] && typeof choices[0] === "object" ? choices[0] as JsonRecord : {};
     const message = choice.message && typeof choice.message === "object" ? choice.message as JsonRecord : {};
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-    if (!calls.length) return { response, payload, toolCalls, exhausted: false };
+    if (!calls.length) {
+      // Retrieval and the final structured game turn are separate model phases.
+      // Tool-capable requests omit response_format for OpenAI-compatible
+      // providers; once the model has no more tools to call, make one final
+      // tool-free request with the original strict JSON schema restored.
+      const finalBody: JsonRecord = { ...options.requestBody, messages };
+      delete finalBody.tools;
+      delete finalBody.tool_choice;
+      if (options.requestBody.response_format !== undefined) {
+        finalBody.response_format = options.requestBody.response_format;
+      }
+      if (options.requestBody.structured_outputs !== undefined) {
+        finalBody.structured_outputs = options.requestBody.structured_outputs;
+      }
+      const finalRemainingMs = deadline - Date.now();
+      if (finalRemainingMs <= 1_000) {
+        return { response: new Response(JSON.stringify({ error: { message: "Final structured response time budget exhausted." } }), { status: 504 }), payload: null, toolCalls, exhausted: true };
+      }
+      const finalResponse = await options.fetcher(options.url, {
+        method: "POST",
+        headers: options.headers,
+        body: JSON.stringify(finalBody),
+        signal: AbortSignal.timeout(Math.min(finalRemainingMs, 82_000)),
+      });
+      const finalPayload = await finalResponse.clone().json().catch(() => null) as unknown;
+      return { response: finalResponse, payload: finalPayload, toolCalls, exhausted: false };
+    }
     if (round >= maxRounds) return { response, payload, toolCalls, exhausted: true };
     if (toolCalls + calls.length > 6) return { response, payload, toolCalls, exhausted: true };
     messages.push(message);
