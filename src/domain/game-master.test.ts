@@ -79,7 +79,7 @@ describe("source-grounded context selection", () => {
       canonSections: sections,
     };
     const result = selectCanonContext([], [canon], "Эйргард");
-    expect((result.match(/\\[ИСТОЧНИК:/g) ?? []).length).toBe(12);
+    expect((result.match(/\[ИСТОЧНИК:/g) ?? []).length).toBe(12);
     expect(result).toContain("sectionId=WORLD_CANON:12:section");
     expect(result).not.toContain("sectionId=WORLD_CANON:13:section");
   });
@@ -104,7 +104,7 @@ describe("source-grounded context selection", () => {
       canonSections: sections,
     };
     const result = selectCanonContext([], [canon], "неизвестный запрос");
-    expect((result.match(/\\[ИСТОЧНИК:/g) ?? []).length).toBe(6);
+    expect((result.match(/\[ИСТОЧНИК:/g) ?? []).length).toBe(6);
   });
 
   it("passes normative NDP/NPL sections but excludes blank templates, test fixtures and campaign NPC records", () => {
