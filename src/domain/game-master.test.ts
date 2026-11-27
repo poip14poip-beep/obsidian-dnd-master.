@@ -59,6 +59,54 @@ describe("source-grounded context selection", () => {
     expect(result.length).toBeLessThanOrEqual(14_500);
   });
 
+  it("caps relevant canon context at twelve whole, attributed sections", () => {
+    const sections = Array.from({ length: 30 }, (_, index) => ({
+      id: `WORLD_CANON:${index + 1}:section`,
+      sourceId: "WORLD_CANON",
+      sourceTitle: "Экдрасиль 2.4",
+      headingPath: ["Экдрасиль", "Эйргард"],
+      heading: `Место ${index + 1}`,
+      level: 2,
+      startLine: index * 3 + 1,
+      endLine: index * 3 + 2,
+      text: `Эйргард — подтверждённый регион. Целый фрагмент ${index + 1}.`,
+      contentHash: "a".repeat(64),
+      chunkIndex: 1,
+      chunkCount: 1,
+    }));
+    const canon = {
+      ...source("WORLD_CANON", "# ЭКДРАСИЛЬ\\n\\n## Полная каноническая редакция 2.4\\n\\n## 250. Итоговый принцип живого канона\\n\\nКанон утверждается.\\n\\nКОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"),
+      canonSections: sections,
+    };
+    const result = selectCanonContext([], [canon], "Эйргард");
+    expect((result.match(/\\[ИСТОЧНИК:/g) ?? []).length).toBe(12);
+    expect(result).toContain("sectionId=WORLD_CANON:12:section");
+    expect(result).not.toContain("sectionId=WORLD_CANON:13:section");
+  });
+
+  it("uses at most six canon sections when no action terms match", () => {
+    const sections = Array.from({ length: 20 }, (_, index) => ({
+      id: `WORLD_CANON:${index + 1}:section`,
+      sourceId: "WORLD_CANON",
+      sourceTitle: "Экдрасиль 2.4",
+      headingPath: ["Экдрасиль"],
+      heading: `Раздел ${index + 1}`,
+      level: 2,
+      startLine: index * 2 + 1,
+      endLine: index * 2 + 2,
+      text: `Уникальный канонический текст фрагмента ${index + 1}.`,
+      contentHash: "b".repeat(64),
+      chunkIndex: 1,
+      chunkCount: 1,
+    }));
+    const canon = {
+      ...source("WORLD_CANON", "# ЭКДРАСИЛЬ\\n\\n## Полная каноническая редакция 2.4\\n\\n## 250. Итоговый принцип живого канона\\n\\nКанон утверждается.\\n\\nКОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"),
+      canonSections: sections,
+    };
+    const result = selectCanonContext([], [canon], "неизвестный запрос");
+    expect((result.match(/\\[ИСТОЧНИК:/g) ?? []).length).toBe(6);
+  });
+
   it("passes normative NDP/NPL sections but excludes blank templates, test fixtures and campaign NPC records", () => {
     const reference = [
       "# NPC LEDGER — protocol source",
