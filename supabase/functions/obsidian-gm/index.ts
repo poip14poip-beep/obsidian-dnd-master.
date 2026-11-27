@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
 import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
 import { callWithEkdrasilReadTools } from "./game-master-retrieval.ts";
@@ -918,6 +918,18 @@ Deno.serve(async (req: Request) => {
             role: "system",
             content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН ПРОГРАММНОЙ ПРОВЕРКОЙ: " + semanticFailure +
               ". Верни исправленный JSON игрового хода. Если нужен бросок, result должен быть строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; число генерируется защищённым сервером, никогда не угадывай его. При ожидаемом броске не меняй состояние, время, HP, NPC, квесты, предметы, ресурсы, деньги, локацию или последствия.",
+          });
+          continue;
+        }
+      }
+      if (isGameTurnRequest) {
+        const narrationFailure = validatePendingRollNarration(parsed);
+        if (narrationFailure) {
+          console.warn("[obsidian-gm] pending-roll narration rejected", { model: attempt.id, reason: narrationFailure });
+          failures.push(attempt.id + ": " + narrationFailure);
+          messages.push({
+            role: "system",
+            content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН: бросок ещё не выполнен. Опиши только попытку и обстановку, не утверждай успех, провал, попадание, промах или последствие действия. Запроси ожидающий бросок и дождись его фактического результата.",
           });
           continue;
         }
