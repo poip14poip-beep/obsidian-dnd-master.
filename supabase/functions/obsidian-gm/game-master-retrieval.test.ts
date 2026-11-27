@@ -159,6 +159,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
         label: "Мудрость (Perception)",
         formula: "2d20kh1+5",
         dc: 15,
+        targetType: "DC",
         modifier: 5,
         kind: "SKILL_CHECK",
       },
@@ -242,7 +243,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       playerCharacter: character,
     });
     expect(result.preparedPlayerRoll).toMatchObject({
-      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, modifier: 5,
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5,
     });
   });
 
