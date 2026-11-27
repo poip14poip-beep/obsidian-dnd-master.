@@ -4,12 +4,14 @@ import { Cloud, Database, Download, Plus, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { mapCloudCampaignSettings } from "@/domain/cloud-mappers";
+import { mapCloudCampaignCollections, mapCloudCampaignSettings } from "@/domain/cloud-mappers";
 import type { BackupEnvelope, WorldState } from "@/domain/types";
 import type { PersistVerifyResult } from "@/domain/storage";
 import {
   createCloudCampaign,
   getCloudCampaignLink,
+  importCloudCampaignState,
+  loadCloudCampaign,
   loadLatestCloudCampaignSnapshot,
   saveCloudCampaignSnapshot,
   setCloudCampaignLink,
@@ -40,6 +42,7 @@ export function CloudCampaignPanel({
   const [campaignId, setCampaignId] = useState("");
   const [revision, setRevision] = useState(0);
   const [canSave, setCanSave] = useState(false);
+  const [relationalReady, setRelationalReady] = useState(false);
   const [latest, setLatest] = useState<ObsidianCloudSnapshot | null>(null);
   const [restoreAcknowledged, setRestoreAcknowledged] = useState(false);
   const [busy, setBusy] = useState<"create" | "load" | "save" | "restore" | null>(null);
@@ -59,11 +62,36 @@ export function CloudCampaignPanel({
     setCampaignId(value);
     setRevision(0);
     setCanSave(false);
+    setRelationalReady(false);
     setLatest(null);
     setRestoreAcknowledged(false);
     setNotice(null);
     setError(null);
     setCloudCampaignLink(value.trim() ? { campaignId: value.trim(), revision: 0 } : null);
+  }
+
+  async function initializeRelationalState(id: string) {
+    const envelope = exportBackupJson();
+    const mapped = await mapCloudCampaignCollections(id, envelope.collections);
+    const imported = await importCloudCampaignState(id, mapped);
+    if (imported.ok) {
+      setRelationalReady(true);
+      return imported.data.result;
+    }
+    if (imported.error.detail?.includes("CAMPAIGN_RELATIONAL_STATE_ALREADY_INITIALIZED")) {
+      const existing = await loadCloudCampaign(id);
+      if (existing.ok) {
+        const data = existing.data.snapshot;
+        const ready = Array.isArray(data["sources"]) && data["sources"].length > 0 &&
+          Array.isArray(data["world_state"]) && data["world_state"].length === 1 &&
+          Array.isArray(data["player_character_state"]) && data["player_character_state"].length === 1;
+        if (ready) {
+          setRelationalReady(true);
+          return { alreadyInitialized: true };
+        }
+      }
+    }
+    throw new Error(imported.error.message);
   }
 
   async function handleCreateCampaign() {
@@ -88,9 +116,31 @@ export function CloudCampaignPanel({
     setCampaignId(id);
     setRevision(0);
     setCanSave(true);
+    setRelationalReady(false);
     setCloudCampaignLink({ campaignId: id, revision: 0 });
-    setNotice("Облачная кампания создана. Теперь можно сохранить в неё полный снимок текущего состояния.");
-    setBusy(null);
+    try {
+      await initializeRelationalState(id);
+      const envelope = exportBackupJson();
+      const saved = await saveCloudCampaignSnapshot(
+        id,
+        0,
+        envelope.collections.session_log.lastTurnNumber,
+        envelope as unknown as Record<string, unknown>,
+      );
+      if (saved.ok) {
+        const metadata = saved.data.result;
+        setRevision(metadata.revision);
+        setCloudCampaignLink({ campaignId: id, revision: metadata.revision });
+        setNotice("Облачная кампания создана. Все локальные коллекции импортированы в реляционное хранилище, первый резервный снимок сохранён и проверен.");
+      } else {
+        setNotice("Реляционное состояние импортировано. Первый резервный снимок не сохранился: " + saved.error.message + ". Его можно сохранить отдельно.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Не удалось импортировать реляционное состояние кампании.");
+      setCanSave(true);
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function handleLoadLatest() {
@@ -113,6 +163,17 @@ export function CloudCampaignPanel({
     setLatest(snapshot);
     setRevision(snapshot.revision);
     setCanSave(!snapshot.found);
+    const relational = await loadCloudCampaign(id);
+    if (relational.ok) {
+      const data = relational.data.snapshot;
+      setRelationalReady(
+        Array.isArray(data["sources"]) && data["sources"].length > 0 &&
+        Array.isArray(data["world_state"]) && data["world_state"].length === 1 &&
+        Array.isArray(data["player_character_state"]) && data["player_character_state"].length === 1,
+      );
+    } else {
+      setRelationalReady(false);
+    }
     if (!snapshot.found) setCloudCampaignLink({ campaignId: id, revision: 0 });
     if (!snapshot.found || !snapshot.payload) {
       setNotice("В облачной кампании пока нет резервных снимков. Текущую локальную кампанию можно сохранить как первый снимок.");
@@ -182,6 +243,17 @@ export function CloudCampaignPanel({
       if (!result.ok) throw new Error(result.error);
       setCloudCampaignLink({ campaignId, revision: latest.revision });
       setCanSave(true);
+      const relational = await loadCloudCampaign(campaignId);
+      if (relational.ok) {
+        const data = relational.data.snapshot;
+        setRelationalReady(
+          Array.isArray(data["sources"]) && data["sources"].length > 0 &&
+          Array.isArray(data["world_state"]) && data["world_state"].length === 1 &&
+          Array.isArray(data["player_character_state"]) && data["player_character_state"].length === 1,
+        );
+      } else {
+        setRelationalReady(false);
+      }
       setNotice(`Снимок №${latest.revision} восстановлен. Локальные коллекции прошли проверку и обратное чтение. Перед восстановлением скачана резервная копия прежнего состояния.`);
       setRestoreAcknowledged(false);
     } catch (err) {
@@ -242,6 +314,21 @@ export function CloudCampaignPanel({
         <Button type="button" variant="secondary" className="touch-target" onClick={() => void handleSaveSnapshot()} disabled={!campaignId.trim() || !canSave || busy !== null}>
           <Save className="mr-1.5 h-4 w-4" /> Сохранить текущую кампанию
         </Button>
+        {!relationalReady && (
+          <Button type="button" variant="outline" className="touch-target" onClick={() => {
+            const id = campaignId.trim();
+            if (!id || !canSave || busy !== null) return;
+            setBusy("import");
+            setError(null);
+            setNotice(null);
+            void initializeRelationalState(id)
+              .then(() => setNotice("Все локальные коллекции импортированы в реляционное облачное состояние."))
+              .catch((err) => setError(err instanceof Error ? err.message : "Не удалось инициализировать реляционное состояние."))
+              .finally(() => setBusy(null));
+          }} disabled={!campaignId.trim() || !canSave || busy !== null}>
+            <Database className="mr-1.5 h-4 w-4" /> Инициализировать реляционное состояние
+          </Button>
+        )}
       </div>
 
       {hasRestorableSnapshot && (
