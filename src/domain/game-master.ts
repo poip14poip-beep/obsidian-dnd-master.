@@ -90,7 +90,14 @@ const turnSchema = {
 } as const;
 function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], action: string): string {
   const terms = action.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2);
-  const canon = sources.filter((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true);
+  // The full canonical edition is server-authoritative. A browser backup may contain an older
+  // edition; never let it shadow the version-locked v2.4 excerpts added by obsidian-gm.
+  const canon = sources.filter((source) => source.type === "WORLD_CANON" &&
+    source.contentStatus === "ATTACHED" && source.processing?.status === "PROCESSED" &&
+    source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
+    source.content.includes("Полная каноническая редакция 2.4") &&
+    source.content.includes("## 250. Итоговый принцип живого канона") &&
+    source.content.includes("КОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4"));
   type RankedExcerpt = { source: SourceDocument; sectionId: string; headingPath: string[]; text: string; startLine: number; endLine: number; score: number };
   const ranked: RankedExcerpt[] = canon.flatMap((source) => {
     if (source.canonSections?.length) {
@@ -140,7 +147,7 @@ function selectCanonContext(facts: CanonFact[], sources: SourceDocument[], actio
   return [
     fallbackExcerpts.length ? fallbackExcerpts.map((item) =>
       `[ИСТОЧНИК: ${item.source.title}; sourceId=${item.source.id}; sectionId=${item.sectionId}; строки ${item.startLine}–${item.endLine}; relevance=${item.score}]\n${item.text}`,
-    ).join("\n\n") : "Релевантные фрагменты хроники не извлечены. Не заполняй пробелы выдуманным каноном.",
+    ).join("\n\n") : "Локальная копия канона не используется; полная редакция 2.4 проверяется и извлекается сервером. Не заменяй её старыми копиями и не заполняй пробелы выдуманным каноном.",
     selectedFacts ? `ПОДТВЕРЖДЁННЫЕ ФАКТЫ КАМПАНИИ:\n${selectedFacts}` : "",
   ].filter(Boolean).join("\n\n");
 }
