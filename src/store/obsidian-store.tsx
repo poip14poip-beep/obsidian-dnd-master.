@@ -984,9 +984,7 @@ export function ObsidianStoreProvider({
       ...previousWorld,
       stateVersion: previousWorld.stateVersion + 1,
       campaignName: previousWorld.campaignName || "Экдрасиль — свободная кампания",
-      calendarSystem: previousWorld.calendarSystem === "UNKNOWN"
-        ? `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`
-        : previousWorld.calendarSystem,
+      calendarSystem: `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`,
       startInGameDate: input.date,
       currentInGameDate: input.date,
       elapsedMinutes: 0,

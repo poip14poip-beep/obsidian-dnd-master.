@@ -207,6 +207,7 @@ describe("random free-roam start", () => {
 
     expect(applied!.ok).toBe(true);
     expect(result.current.worldState.startLocationName).toBe("Морвейн");
+    expect(result.current.worldState.calendarSystem).toContain("Календарь Экдрасиля 2.4");
     expect(result.current.worldState.startNarrative).toContain("не задание");
     expect(result.current.locations[0]?.name).toBe("Морвейн");
     expect(result.current.locations[0]?.cityName).toBe("Морвейн");
