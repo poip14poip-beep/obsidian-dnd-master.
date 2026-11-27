@@ -5,6 +5,14 @@ import {
   deterministicCloudId,
   mapCloudCampaignSettings,
   mapCloudNpcs,
+  mapCloudFactions,
+  mapCloudLocations,
+  mapCloudCanonFacts,
+  mapCloudTimelineEvents,
+  mapCloudTurnDrafts,
+  mapCloudSessionLog,
+  mapCloudAuditLog,
+  mapCloudCampaignCollections,
   mapCloudPlayerCharacter,
   mapCloudSources,
   mapCloudWorldState,
@@ -97,6 +105,7 @@ describe("cloud mapping primitives", () => {
     const collections = createInitialCollections();
     const sourceMap = await mapCloudSources(campaignId, collections.sources);
     const locationId = await deterministicCloudId(campaignId, "locations", "loc-market");
+    const factionId = await deterministicCloudId(campaignId, "factions", "faction-watch");
     const npc: NpcRecord = {
       id: "npc-guard",
       name: "Страж",
@@ -108,6 +117,15 @@ describe("cloud mapping primitives", () => {
       certainty: "APPROXIMATE",
       sourceId: collections.sources[1]!.id,
       locked: false,
+      playerKnowledge: [{
+        id: "player-knowledge-1",
+        factSummary: "Персонаж заметил знак на плаще",
+        sourceId: "MANUAL_GM_ENTRY",
+        acquisitionPath: "Личное наблюдение",
+        inGameDate: "День 2",
+        certainty: "KNOWN",
+        recordedAt: "2026-11-25T10:00:00.000Z",
+      }],
       knowledge: [{
         id: "knowledge-1",
         factSummary: "Видел путника у ворот",
@@ -126,11 +144,13 @@ describe("cloud mapping primitives", () => {
       [npc],
       sourceMap.ids,
       { "loc-market": locationId },
+      { "faction-watch": factionId },
     );
 
     expect(mapped.npcs).toHaveLength(1);
     expect(mapped.npcs[0]!.current_location_id).toBe(locationId);
-    expect(mapped.npcs[0]!.npc_state["faction_id"]).toBe("faction-watch");
+    expect(mapped.npcs[0]!.npc_state["faction_id"]).toBe(factionId);
+    expect(mapped.npcs[0]!.npc_state["player_knowledge"]).toHaveLength(1);
     expect(mapped.knowledge).toHaveLength(1);
     expect(mapped.knowledge[0]!.npc_id).toBe(mapped.npcs[0]!.id);
     expect(mapped.knowledge[0]!.status).toBe("KNOWN");
@@ -166,6 +186,83 @@ describe("cloud mapping primitives", () => {
     expect(mapped.npcs[0]?.source_id).toBeNull();
     expect(mapped.knowledge[0]?.source_id).toBeNull();
     expect(mapped.knowledge[0]?.acquisition_reason).toContain("Личное наблюдение");
+  });
+
+  it("maps all remaining local collections with deterministic relational IDs", async () => {
+    const collections = createInitialCollections();
+    collections.world_state.campaignName = "Кампания";
+    collections.world_state.setup = {
+      sourcesConfirmed: true,
+      parametersConfirmed: true,
+      startPointConfirmed: true,
+      characterConfirmed: true,
+      noAutoImportAcknowledged: true,
+      confirmed: true,
+      confirmedAt: "2026-11-27T10:00:00.000Z",
+    };
+    collections.player_character_state.name = "Лия";
+    collections.player_character_state.sourceDossierId = collections.sources[3]!.id;
+    collections.sources[3]!.contentStatus = "ATTACHED";
+    collections.sources[3]!.reviewStatus = "VERIFIED";
+    collections.sources[3]!.contextEnabled = true;
+    collections.sources[3]!.processing = {
+      status: "PROCESSED", sha256: "c".repeat(64), characterCount: 100, lineCount: 10,
+      sectionCount: 1, chunkCount: 1, dateCandidateCount: 0,
+      processedAt: "2026-11-27T10:00:00.000Z", warnings: [],
+    };
+    const sourceId = collections.sources[1]!.id;
+    collections.locations = [{
+      id: "loc-start", name: "Эйргард", region: "Север", cityName: "Эйргард",
+      placeName: "Рыночная площадь", description: "Центральная площадь",
+      certainty: "KNOWN", sourceId,
+    }];
+    collections.world_state.currentLocationId = "loc-start";
+    collections.factions = [{
+      id: "faction-watch", name: "Стража", goals: "Порядок", resources: "Городская стража",
+      standing: "Нейтральное", certainty: "KNOWN", sourceId, locked: false, version: 1, history: [],
+    }];
+    collections.npcs = [{
+      id: "npc-1", name: "Стражник", role: "Страж", locationId: "loc-start", factionId: "faction-watch",
+      goals: "Охранять рынок", resources: "Форма и оружие", attitudeToPlayer: "UNKNOWN",
+      certainty: "KNOWN", sourceId, locked: false, knowledge: [], playerKnowledge: [],
+      version: 1, history: [],
+    }];
+    collections.canon_facts = [{
+      id: "fact-1", title: "Факт", statement: "Стража охраняет рынок", rationale: "Наблюдение",
+      layer: "OBJECTIVE_TRUTH", subjectNpcId: null, certainty: "KNOWN", sourceId,
+      acquisitionPath: "Осмотр", inGameDate: "UNKNOWN", scope: "LOCATION", locked: true,
+      createdAt: "2026-11-27T10:00:00.000Z", version: 1, history: [],
+    }];
+    collections.timeline_events = [{
+      id: "event-1", title: "Смена караула", triggerInGameDate: "UNKNOWN", consequence: "Караул сменится",
+      status: "SCHEDULED", certainty: "KNOWN", sourceId,
+    }];
+    const mapped = await mapCloudCampaignCollections(campaignId, collections, "2026-11-27T10:00:00.000Z");
+    expect(mapped.campaign.status).toBe("active");
+    expect(mapped.campaign.current_location_id).toBe(mapped.locations[0]?.id);
+    expect(mapped.player_character_state.verified_at).toBe("2026-11-27T10:00:00.000Z");
+    expect(mapped.factions[0]?.faction_state).toMatchObject({ goals: "Порядок", standing: "Нейтральное" });
+    expect(mapped.locations[0]?.geography).toMatchObject({ region: "Север", place_name: "Рыночная площадь" });
+    expect(mapped.npcs[0]?.npc_state).toMatchObject({ faction_id: mapped.factions[0]?.id, resources: "Форма и оружие" });
+    expect(mapped.canon_facts[0]?.fact_class).toBe("objective");
+    expect(mapped.timeline_events[0]?.status).toBe("planned");
+    expect(mapped.world_state.state_value.player_character_state).toBeUndefined();
+  });
+
+  it("maps technical notes into audit history without inventing game turns", async () => {
+    const collections = createInitialCollections();
+    collections.session_log = {
+      schemaVersion: 1,
+      lastTurnNumber: 0,
+      entries: [{
+        id: "note-1", entryType: "TECHNICAL_NOTE", recordedAt: "2026-11-27T10:00:00.000Z",
+        inGameDateSnapshot: "UNKNOWN", text: "Проверка", advancesTime: false,
+      }],
+    };
+    const audit = await mapCloudAuditLog(campaignId, collections.audit_log, collections.session_log);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]?.action).toBe("TECHNICAL_NOTE_ADDED");
+    expect(audit[0]?.details).toMatchObject({ text: "Проверка", advances_time: false });
   });
 
   it("rejects unresolved relational IDs instead of silently dropping them", async () => {
