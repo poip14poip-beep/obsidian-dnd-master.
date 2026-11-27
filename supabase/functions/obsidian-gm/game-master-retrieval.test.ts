@@ -246,4 +246,37 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("recalculates a proficient skill with a different ability without reusing the old ability modifier", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 16, charisma: 10 },
+      proficiencyBonus: 3,
+      skillBonuses: [{ name: "Perception", bonus: 6, basis: "WISDOM + владение" }],
+      conditions: [],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "SKILL_CHECK", ability: "intelligence", skill: "Perception", dc: 15,
+      advantage: "NONE", reason: "Вспомнить деталь из прочитанного",
+    }), rules, canon, character);
+    expect(result).toMatchObject({
+      ok: true,
+      preparedPlayerRoll: { formula: "1d20+3", modifier: 3, dc: 15 },
+    });
+  });
+
+  it("rejects a skill check when its proficiency basis is ambiguous", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 16, charisma: 10 },
+      skillBonuses: [{ name: "Perception", bonus: 6, basis: "UNKNOWN" }],
+      conditions: [],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "SKILL_CHECK", ability: "intelligence", skill: "Perception", dc: 15,
+      advantage: "NONE", reason: "Вспомнить деталь",
+    }), rules, canon, character);
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("базовая характеристика");
+  });
+
 });
