@@ -87,7 +87,7 @@ describe("game-turn semantic validation", () => {
     expect(validateGameTurnSemantics({
       ...pending,
       rolls: [{ ...pending.rolls[0], result: "17" }],
-    })).toContain("only the player/application may roll");
+    })).toContain("only the authenticated server may roll");
   });
 
   it("rejects multiple simultaneous pending rolls", () => {
@@ -132,9 +132,10 @@ describe("bounded source-attributed SRD retrieval", () => {
     ].join("\n");
     const result = selectRuleExcerpts(source, ["attack", "ability check"], 10_000, 12);
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ startLine: 3, endLine: 3 });
-    expect(result[0]?.text).toBe("The Attack action lets you make one attack roll.");
-    expect(result[1]?.text).toContain("An ability check uses a d20 test");
+    expect(result[0]).toMatchObject({ startLine: 8, endLine: 9 });
+    expect(result[0]?.text).toContain("An ability check uses a d20 test");
+    expect(result[1]).toMatchObject({ startLine: 3, endLine: 3 });
+    expect(result[1]?.text).toBe("The Attack action lets you make one attack roll.");
   });
 
   it("skips a paragraph that cannot fit whole and continues to a smaller relevant rule", () => {
