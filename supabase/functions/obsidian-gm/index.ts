@@ -44,6 +44,17 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+const EKDRASIL_CANON_SHA256 = "6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4";
+function isEkdrasilCanonV24(value: unknown): value is JsonRecord {
+  if (!isRecord(value) || typeof value.content !== "string") return false;
+  return typeof value.title === "string" && value.title.includes("2.4") &&
+    Number(value.version) >= 4 && value.sha256 === EKDRASIL_CANON_SHA256 &&
+    value.content.startsWith("# ЭКДРАСИЛЬ") &&
+    value.content.includes("Полная каноническая редакция 2.4") &&
+    value.content.includes("## 250. Итоговый принцип живого канона") &&
+    value.content.includes("КОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4");
+}
+
 function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
   if (typeof value === "string") {
     const limit = key === "sourceText" ? 16_000 : key === "sourceTextTail" ? 10_000 : key === "sourceDossier" ? 5_000 : 1200;
@@ -340,9 +351,29 @@ Deno.serve(async (req: Request) => {
     const checks = Object.fromEntries(required.map((kind) => {
       const entry = data[kind];
       return [kind, isRecord(entry) && typeof entry.content === "string" && entry.content.trim().length > 0];
-    }));
+    })) as Record<string, boolean>;
+    const obsidian = data.OBSIDIAN_MASTER_PROMPT;
+    const rules = data.SRD_5_2_1;
+    checks.OBSIDIAN_MASTER_PROMPT = isRecord(obsidian) &&
+      typeof obsidian.content === "string" && obsidian.content.trim().length > 0 &&
+      typeof obsidian.title === "string" && obsidian.title.includes("4.1");
+    checks.SRD_5_2_1 = isRecord(rules) &&
+      typeof rules.content === "string" && rules.content.trim().length > 0 &&
+      typeof rules.title === "string" && rules.title.includes("5.2.1") &&
+      Number(rules.version) >= 2;
+    checks.EKDRASIL_WORLD_BIBLE = isEkdrasilCanonV24(data.EKDRASIL_WORLD_BIBLE);
+    checks.ROUTERAI_API_KEY = Boolean(ROUTERAI_API_KEY);
+    const canon = isRecord(data.EKDRASIL_WORLD_BIBLE) ? data.EKDRASIL_WORLD_BIBLE : {};
     const ready = Object.values(checks).every(Boolean);
-    return json({ ready, checks }, ready ? 200 : 503, cors);
+    return json({
+      ready,
+      checks,
+      canon: {
+        edition: "2.4",
+        sourceVersion: typeof canon.version === "number" ? canon.version : null,
+        sha256: typeof canon.sha256 === "string" ? canon.sha256 : null,
+      },
+    }, ready ? 200 : 503, cors);
   }
 
   const isCompatibilityRequest = isRecord(body) && body.operation === "VALIDATE_CHARACTER_COMPATIBILITY";
@@ -393,7 +424,9 @@ Deno.serve(async (req: Request) => {
   );
   if (privateSourcesError || !isRecord(privateSources) ||
       !isRecord(privateSources.OBSIDIAN_MASTER_PROMPT) ||
-      typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string") {
+      typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string" ||
+      typeof privateSources.OBSIDIAN_MASTER_PROMPT.title !== "string" ||
+      !privateSources.OBSIDIAN_MASTER_PROMPT.title.includes("4.1")) {
     console.error("[obsidian-gm] private source read failed", privateSourcesError?.message ?? "missing master prompt");
     return json({ error: {
       code: "OBSIDIAN_MASTER_PROMPT_NOT_CONFIGURED",
@@ -411,24 +444,32 @@ Deno.serve(async (req: Request) => {
   const ruleParagraphs = needsRulesContext
     ? rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80)
     : [];
-  const canonDoc = isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string"
-    ? privateSources.EKDRASIL_WORLD_BIBLE.content : "";
-  const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
-    ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
-  if (!canonDoc.trim()) {
+  const canonSource = privateSources.EKDRASIL_WORLD_BIBLE;
+  if (!isEkdrasilCanonV24(canonSource)) {
+    console.error("[obsidian-gm] canonical source version rejected", {
+      title: isRecord(canonSource) ? canonSource.title ?? null : null,
+      version: isRecord(canonSource) ? canonSource.version ?? null : null,
+      sha256: isRecord(canonSource) ? canonSource.sha256 ?? null : null,
+    });
     return json({ error: {
-      code: "EKDRASIL_CANON_NOT_CONFIGURED",
-      message: "В постоянную базу мастера ещё не добавлена хроника Экдрасиля. Игровой запрос не отправлен.",
+      code: "EKDRASIL_CANON_VERSION_MISMATCH",
+      message: "Мастер остановлен: требуется полная каноническая редакция Экдрасиля 2.4. Старая редакция не будет использована.",
     } }, 503, cors);
   }
+  const canonDoc = canonSource.content;
+  const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
+    ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
   const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10))
     .map((part) => part.trim()).filter((part) => part.length > 60)
     .map((paragraph) => ({ paragraph, haystack: paragraph.toLowerCase() }));
 
-  if (!rulesDoc.trim()) {
+  if (!rulesDoc.trim() || !isRecord(privateSources.SRD_5_2_1) ||
+      typeof privateSources.SRD_5_2_1.title !== "string" ||
+      !privateSources.SRD_5_2_1.title.includes("5.2.1") ||
+      Number(privateSources.SRD_5_2_1.version) < 2) {
     return json({ error: {
       code: "SRD_SOURCE_NOT_CONFIGURED",
-      message: "В постоянную базу мастера ещё не добавлен SRD 5.2.1. Игровой запрос не отправлен.",
+      message: "Требуется полный D&D 2024 System Reference Document 5.2.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
   let actionText = inputText.toLowerCase();
@@ -504,9 +545,20 @@ Deno.serve(async (req: Request) => {
     .sort((a, b) => b.score - a.score)
     .slice(0, isCompatibilityRequest ? 6 : isStoryRequest ? 5 : 18)
     .map((item) => isCompatibilityRequest ? item.paragraph.slice(0, 900) : isStoryRequest ? item.paragraph.slice(0, 700) : item.paragraph);
+  const canonAuthority = [
+    "ИСТОЧНИК ИСТИНЫ: Ekdrasil_Master_Canon_v2.4.md — полная редакция 2.4, 41 том, 250 нумерованных разделов. SHA-256 исходного файла: " + EKDRASIL_CANON_SHA256 + ".",
+    "СОВРЕМЕННОЕ СОСТОЯНИЕ ГЛОБАЛЬНОГО МИРА: 2000 год. Глобальная хроника заканчивается 2000 годом; события после него не предопределены и развиваются отдельно в каждой кампании либо по отдельно утверждённому сценарию.",
+    "СТАТУСЫ ИСТОЧНИКОВ: CANON-CORE и CANON-EXPANDED редакции 2.4 — действующий мировой канон. CAMPAIGN-STATE — только состояние конкретной кампании; никогда не переносить его в глобальную хронику или другую кампанию без отдельного утверждения владельца мира.",
+    "РАЗДЕЛЕНИЕ ЗНАНИЙ: знание мастера о действительной истине не означает, что её знают персонаж игрока, NPC или фракция. Каждое знание NPC должно иметь путь получения и источник в событиях кампании. Различай действительное событие, документальное подтверждение, слух и личное убеждение.",
+    "ЗАЩИТА МИРА: не добавляй четвёртое измерение, не меняй устройство Рая, Экдрасиля и Ада, законы душ, благодати и брешей, а также крупные исторические, географические и политические факты. Новые локальные детали допустимы только без противоречия редакции 2.4.",
+    "НЕИЗВЕСТНОЕ: отсутствие фрагмента в текущей выборке не доказывает отсутствие факта в полной энциклопедии. Не выдумывай. Уточняй либо используй UNKNOWN; при спорном факте ищи подтверждение в источнике.",
+  ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const canonContext = selectedCanon.length
-    ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
-    : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
+    ? canonAuthority + String.fromCharCode(10) + String.fromCharCode(10) +
+      "РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ПОЛНОЙ ХРОНИКИ 2.4:" + String.fromCharCode(10) +
+      selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
+    : canonAuthority + String.fromCharCode(10) + String.fromCharCode(10) +
+      "Релевантные фрагменты по запросу не найдены. Не выдумывай сведения о мире; используй UNKNOWN и не заменяй отсутствие фрагмента вымышленным фактом.";
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const isGameTurnRequest = !isCompatibilityRequest && !isBiographyRequest;
