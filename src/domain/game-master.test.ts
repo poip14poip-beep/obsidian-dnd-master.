@@ -124,7 +124,7 @@ describe("source-grounded context selection", () => {
     };
     expect(selectNpcSimulationContext([npcSource])).toContain("UNKNOWN");
     expect(selectNpcSimulationContext([{
-      ...npcSource, playerVisible: false, reviewStatus: "UNVERIFIED",
+      ...npcSource, playerVisible: false, reviewStatus: "UNREVIEWED",
     }])).toContain("UNKNOWN");
   });
 });
