@@ -180,6 +180,7 @@ BEGIN
   );
 
   IF nullif(btrim(v_campaign_input.title), '') IS NULL
+    OR v_campaign_input.status IS NULL
     OR v_campaign_input.status NOT IN ('preparation', 'ready', 'active')
     OR v_world_input.state_key IS DISTINCT FROM 'world_state_snapshot'
     OR jsonb_typeof(v_world_input.state_value) IS DISTINCT FROM 'object'
@@ -319,6 +320,69 @@ BEGIN
     entity_id uuid, details jsonb, created_at timestamptz
   );
   GET DIAGNOSTICS v_audit_count = ROW_COUNT;
+
+  IF EXISTS (
+    SELECT 1 FROM obsidian.player_character_state pc
+    LEFT JOIN obsidian.sources s
+      ON s.id = pc.source_id AND s.campaign_id = pc.campaign_id AND s.owner_id = pc.owner_id
+    WHERE pc.campaign_id = p_campaign_id AND pc.owner_id = p_actor
+      AND pc.source_id IS NOT NULL AND s.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.factions f
+    LEFT JOIN obsidian.sources s
+      ON s.id = f.source_id AND s.campaign_id = f.campaign_id AND s.owner_id = f.owner_id
+    WHERE f.campaign_id = p_campaign_id AND f.owner_id = p_actor
+      AND f.source_id IS NOT NULL AND s.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.locations l
+    LEFT JOIN obsidian.sources s
+      ON s.id = l.source_id AND s.campaign_id = l.campaign_id AND s.owner_id = l.owner_id
+    WHERE l.campaign_id = p_campaign_id AND l.owner_id = p_actor
+      AND l.source_id IS NOT NULL AND s.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.locations l
+    LEFT JOIN obsidian.locations parent
+      ON parent.id = l.parent_location_id AND parent.campaign_id = l.campaign_id AND parent.owner_id = l.owner_id
+    WHERE l.campaign_id = p_campaign_id AND l.owner_id = p_actor
+      AND l.parent_location_id IS NOT NULL AND parent.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.npcs n
+    LEFT JOIN obsidian.sources s
+      ON s.id = n.source_id AND s.campaign_id = n.campaign_id AND s.owner_id = n.owner_id
+    LEFT JOIN obsidian.locations l
+      ON l.id = n.current_location_id AND l.campaign_id = n.campaign_id AND l.owner_id = n.owner_id
+    WHERE n.campaign_id = p_campaign_id AND n.owner_id = p_actor
+      AND ((n.source_id IS NOT NULL AND s.id IS NULL)
+        OR (n.current_location_id IS NOT NULL AND l.id IS NULL))
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.npc_knowledge k
+    LEFT JOIN obsidian.npcs n
+      ON n.id = k.npc_id AND n.campaign_id = p_campaign_id AND n.owner_id = k.owner_id
+    LEFT JOIN obsidian.sources s
+      ON s.id = k.source_id AND s.campaign_id = p_campaign_id AND s.owner_id = k.owner_id
+    WHERE k.owner_id = p_actor
+      AND ((n.id IS NULL) OR (k.source_id IS NOT NULL AND s.id IS NULL))
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.canon_facts f
+    LEFT JOIN obsidian.sources s
+      ON s.id = f.source_id AND s.campaign_id = f.campaign_id AND s.owner_id = f.owner_id
+    WHERE f.campaign_id = p_campaign_id AND f.owner_id = p_actor
+      AND f.source_id IS NOT NULL AND s.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.timeline_events e
+    LEFT JOIN obsidian.sources s
+      ON s.id = e.source_id AND s.campaign_id = e.campaign_id AND s.owner_id = e.owner_id
+    WHERE e.campaign_id = p_campaign_id AND e.owner_id = p_actor
+      AND e.source_id IS NOT NULL AND s.id IS NULL
+  ) OR EXISTS (
+    SELECT 1 FROM obsidian.session_log sl
+    LEFT JOIN obsidian.turn_drafts d
+      ON d.id = sl.source_draft_id AND d.campaign_id = sl.campaign_id AND d.owner_id = sl.owner_id
+    WHERE sl.campaign_id = p_campaign_id AND sl.owner_id = p_actor
+      AND sl.source_draft_id IS NOT NULL AND d.id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'CAMPAIGN_IMPORT_CROSS_CAMPAIGN_REFERENCE';
+  END IF;
 
   SELECT coalesce(max(turn_number), 0) INTO v_last_turn
   FROM obsidian.session_log
