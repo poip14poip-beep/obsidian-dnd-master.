@@ -70,7 +70,9 @@ function validateSchema(value: unknown, schema: JsonRecord): boolean {
     return Object.entries(properties).every(([key, child]) => !(key in value) || (isRecord(child) && validateSchema(value[key], child)));
   }
   if (type === "array") {
-    return Array.isArray(value) && (!isRecord(schema.items) || value.every((item) => validateSchema(item, schema.items as JsonRecord)));
+    return Array.isArray(value) &&
+      (typeof schema.maxItems !== "number" || value.length <= schema.maxItems) &&
+      (!isRecord(schema.items) || value.every((item) => validateSchema(item, schema.items as JsonRecord)));
   }
   if (Array.isArray(type)) {
     const allowed = type as unknown[];
@@ -84,9 +86,11 @@ function validateSchema(value: unknown, schema: JsonRecord): boolean {
       if (candidate === "array") return Array.isArray(value);
       return false;
     };
-    return allowed.some(matches);
+    const matched = allowed.some(matches);
+    return matched && !(typeof value === "string" && typeof schema.maxLength === "number" && value.length > schema.maxLength);
   }
-  if (type === "string") return typeof value === "string";
+  if (type === "string") return typeof value === "string" &&
+    (typeof schema.maxLength !== "number" || value.length <= schema.maxLength);
   if (type === "integer") return Number.isInteger(value);
   if (type === "number") return typeof value === "number" && Number.isFinite(value);
   if (type === "boolean") return typeof value === "boolean";
@@ -644,6 +648,14 @@ Deno.serve(async (req: Request) => {
       }
 
       const root = isRecord(payload) ? payload : {};
+      const completionDetails = isRecord(root.usage) && isRecord(root.usage.completion_tokens_details)
+        ? root.usage.completion_tokens_details : {};
+      console.log("[obsidian-gm] model token usage", {
+        model: attempt.id,
+        promptTokens: isRecord(root.usage) ? root.usage.prompt_tokens ?? null : null,
+        completionTokens: isRecord(root.usage) ? root.usage.completion_tokens ?? null : null,
+        reasoningTokens: completionDetails.reasoning_tokens ?? null,
+      });
       const choices = Array.isArray(root.choices) ? root.choices : [];
       const choice = isRecord(choices[0]) ? choices[0] : {};
       const message = isRecord(choice.message) ? choice.message : {};
