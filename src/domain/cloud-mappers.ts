@@ -1,5 +1,4 @@
 import type {
-  AuditEntry,
   AuditLogState,
   CanonFact,
   DelayedEvent,
@@ -11,7 +10,6 @@ import type {
   PlayerCharacterState,
   SessionLogState,
   SourceDocument,
-  TechnicalMessageEntry,
   TurnDraft,
   WorldState,
 } from "./types";
@@ -717,7 +715,7 @@ export async function mapCloudAuditLog(
     const createdAt = parseIsoTimestamp(entry.recordedAt);
     if (!createdAt) throw new CloudMappingError("Technical note " + entry.id + " has an invalid timestamp.");
     rows.push({
-      id: await deterministicCloudId(campaignId, "audit_log", entry.id),
+      id: await deterministicCloudId(campaignId, "audit_log", "TECHNICAL_NOTE:" + entry.id),
       campaign_id: campaignId,
       action: "TECHNICAL_NOTE_ADDED",
       entity_type: "session_log_note",
