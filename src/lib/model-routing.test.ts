@@ -38,7 +38,7 @@ describe("knowledge excerpt retrieval", () => {
     const second = "Investigation checks involve reasoning from clues and evidence.";
     const source = [first, second].join("\n\n");
 
-    const results = selectRuleExcerpts(source, ["Perception"], first.length + 139, 5);
+    const results = selectRuleExcerpts(source, ["Perception"], first.length + 140, 5);
 
     expect(results).toHaveLength(1);
     expect(results[0]?.text).toBe(first);
