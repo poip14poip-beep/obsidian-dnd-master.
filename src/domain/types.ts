@@ -335,6 +335,7 @@ export interface RollRecord {
   label: string;
   formula: string;
   dc?: number | null;
+  targetType?: "DC" | "AC" | "NONE";
   result: string;
 }
 
