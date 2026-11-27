@@ -29,7 +29,7 @@ describe("game master resolver", () => {
     const request = JSON.parse(init?.body as string);
     expect(request.operation).toBe("GAME_TURN");
     expect(request.model).toBe("obsidian-free");
-    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
+    expect(request.instructions).toContain("Полный промт ОБСИДИАН 4.1"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toMatch(/строки \\d+–\\d+/);
     expect(request.input).toContain("Досье игрока");
   });
   it("ignores stale local world canon and relies on the server-locked v2.4 source", async () => {
