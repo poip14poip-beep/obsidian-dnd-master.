@@ -8,6 +8,7 @@ import {
   selectRuleExcerpts,
   selectCanonExcerpts,
   validateGameTurnSemantics,
+  validatePendingRollNarration,
   type ModelRoutingFlags,
 } from "../../supabase/functions/obsidian-gm/model-routing";
 
@@ -114,6 +115,41 @@ describe("game-turn semantic validation", () => {
       timeDeltaMinutes: 5,
     })).toBeNull();
   });
+
+describe("engine-boundary narration guard", () => {
+  const pendingRoll = {
+    rolls: [{ roller: "PLAYER", label: "Сила", formula: "1d20+2", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+  };
+
+  it("rejects narration that resolves success before the player rolls", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Ты успешно открываешь запертую дверь.",
+    })).toContain("before its pending roll");
+  });
+
+  it("rejects narration that resolves failure before the player rolls", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Тебе не удалось взломать замок.",
+    })).toContain("before its pending roll");
+  });
+
+  it("allows framing the attempt without stating its outcome", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Ты опускаешься на колено и осторожно подносишь отмычку к замку.",
+    })).toBeNull();
+  });
+
+  it("does not constrain narration when no roll is pending", () => {
+    expect(validatePendingRollNarration({
+      narration: "Ты успешно открываешь дверь.",
+      rolls: [],
+    })).toBeNull();
+  });
+});
+
 });
 
 
