@@ -245,6 +245,8 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.preparedRoll).toMatchObject({
       roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5,
     });
+    expect(result.conversation.some((message) => message.role === "assistant" && Array.isArray(message.tool_calls))).toBe(true);
+    expect(result.conversation.some((message) => message.role === "tool")).toBe(true);
   });
 
   it("recalculates a proficient skill with a different ability without reusing the old ability modifier", () => {
