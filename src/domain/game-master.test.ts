@@ -86,6 +86,39 @@ describe("game master resolver", () => {
     expect(journal).toHaveLength(180);
   });
 
+  it("bounds NPC and faction history while preserving current state and recent knowledge", async () => {
+    const knowledge = (id: string) => ({ id, factSummary: `Факт ${id}`, sourceId: "source", acquisitionPath: "Разговор", inGameDate: "date", certainty: "KNOWN" as const, recordedAt: id });
+    const npc = {
+      id: "npc-large", name: "Страж", role: "Капитан", locationId: "loc-1", factionId: "fac-1",
+      goals: "Охранять город", resources: "Ключи и отряд", attitudeToPlayer: "Осторожное",
+      certainty: "KNOWN" as const, sourceId: "source", locked: false, version: 30,
+      knowledge: Array.from({ length: 30 }, (_, i) => knowledge(`npc-${i + 1}`)),
+      playerKnowledge: Array.from({ length: 25 }, (_, i) => knowledge(`player-${i + 1}`)),
+      history: Array.from({ length: 12 }, (_, i) => ({ version: i + 1, changedAt: "now", inGameDate: "date", summary: `revision ${i + 1}`, reason: "change" })),
+    };
+    const faction = {
+      id: "fac-1", name: "Стража", goals: "Защита города", resources: "Гарнизон", standing: "Влияние",
+      certainty: "KNOWN" as const, sourceId: "source", locked: false, version: 12,
+      history: Array.from({ length: 12 }, (_, i) => ({ version: i + 1, changedAt: "now", inGameDate: "date", summary: `revision ${i + 1}`, reason: "change" })),
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction("test-user-jwt", { ...context, npcs: [npc], factions: [faction] }, testOptions(fetcher as unknown as typeof fetch));
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const sent = JSON.parse(request.input);
+    expect(sent.knownNpcs[0].goals).toBe("Охранять город");
+    expect(sent.knownNpcs[0].resources).toBe("Ключи и отряд");
+    expect(sent.knownNpcs[0].knowledge).toHaveLength(20);
+    expect(sent.knownNpcs[0].knowledge[0].id).toBe("npc-11");
+    expect(sent.knownNpcs[0].playerKnowledge).toHaveLength(20);
+    expect(sent.knownNpcs[0].playerKnowledge[0].id).toBe("player-6");
+    expect(sent.knownNpcs[0].history).toHaveLength(5);
+    expect(sent.knownNpcs[0].history[0].version).toBe(8);
+    expect(sent.knownFactions[0].goals).toBe("Защита города");
+    expect(sent.knownFactions[0].history).toHaveLength(5);
+    expect(npc.knowledge).toHaveLength(30);
+    expect(npc.history).toHaveLength(12);
+  });
+
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
