@@ -154,7 +154,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, character);
     expect(result).toMatchObject({
       ok: true,
-      preparedPlayerRoll: {
+      preparedRoll: {
         roller: "PLAYER",
         label: "Мудрость (Perception)",
         formula: "2d20kh1+5",
@@ -179,7 +179,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, character);
     expect(result).toMatchObject({
       ok: true,
-      preparedPlayerRoll: { formula: "1d20-1", modifier: -1, dc: 10 },
+      preparedRoll: { formula: "1d20-1", modifier: -1, dc: 10 },
     });
   });
 
@@ -196,7 +196,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, character);
     expect(result).toMatchObject({
       ok: true,
-      preparedPlayerRoll: { label: "Спасбросок Мудрость", formula: "2d20kl1+4", modifier: 4 },
+      preparedRoll: { label: "Спасбросок Мудрость", formula: "2d20kl1+4", modifier: 4 },
     });
   });
 
@@ -242,7 +242,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       canon,
       playerCharacter: character,
     });
-    expect(result.preparedPlayerRoll).toMatchObject({
+    expect(result.preparedRoll).toMatchObject({
       roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5,
     });
   });
@@ -261,7 +261,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, character);
     expect(result).toMatchObject({
       ok: true,
-      preparedPlayerRoll: { formula: "1d20+3", modifier: 3, dc: 15 },
+      preparedRoll: { formula: "1d20+3", modifier: 3, dc: 15 },
     });
   });
 
@@ -292,7 +292,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, character, false, excerpts);
     expect(result).toMatchObject({
       ok: true,
-      preparedPlayerRoll: {
+      preparedRoll: {
         roller: "PLAYER", label: "Атака Longsword по Goblin",
         formula: "1d20+5", dc: 15, targetType: "AC", modifier: 5, kind: "WEAPON_ATTACK",
       },
@@ -354,7 +354,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       canon,
       playerCharacter: character,
     });
-    expect(result.preparedPlayerRoll).toMatchObject({
+    expect(result.preparedRoll).toMatchObject({
       roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+5",
       dc: 15, targetType: "AC", kind: "WEAPON_ATTACK",
     });
