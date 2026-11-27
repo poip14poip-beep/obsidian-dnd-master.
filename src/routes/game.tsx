@@ -48,10 +48,10 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number } | null>(null);
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -293,6 +293,7 @@ function GamePage() {
               id: `chat-roll-${Date.now().toString(36)}-${index}`,
               label: roll.label,
               formula: roll.formula,
+              dc: roll.dc,
               result: roll.result,
             })),
           ],
