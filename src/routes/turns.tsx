@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
+import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
@@ -64,18 +65,17 @@ function TurnsPage() {
     addTechnicalMessage,
   } = useObsidianStore();
 
+  const { session } = useAuth();
   const [explicitConfirm, setExplicitConfirm] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccessMsg, setCommitSuccessMsg] = useState<string | null>(null);
   const [techText, setTechText] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [playerAction, setPlayerAction] = useState("");
   const [gmBusy, setGmBusy] = useState(false);
   // React state updates after the event; this synchronous guard blocks rapid duplicate submissions.
   const gmRequestInFlight = useRef(false);
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
-  const [gmModel, setGmModel] = useState("gpt-4.1-mini");
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [pendingRollResult, setPendingRollResult] = useState("");
 
@@ -102,7 +102,7 @@ function TurnsPage() {
     gmRequestInFlight.current = true;
     setGmBusy(true);
     try {
-      const result = await resolvePlayerAction(apiKey, {
+      const result = await resolvePlayerAction(session?.access_token ?? "", {
         action: actionToResolve,
         sources,
         world: worldState,
@@ -113,7 +113,7 @@ function TurnsPage() {
         locations,
         timelineEvents,
         journal: sessionLog.entries,
-      }, { model: gmModel });
+      }, { model: "obsidian-free" });
       setGmTurn(result.turn);
       if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         updateTurnDraft({
@@ -277,25 +277,14 @@ function TurnsPage() {
           </div>
           <span className="mono-code rounded border border-primary/30 px-2 py-1 text-[10px] text-primary">AI GM</span>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="gm-api-key">OpenAI API-ключ</Label>
-          <Input id="gm-api-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" className="touch-target" />
-          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию или localStorage. В OpenAI отправляются полный текст ОБСИДИАН 4.1, досье персонажа, релевантные фрагменты канона и состояние кампании. Запрос идёт напрямую в OpenAI API; использование тарифицируется отдельно от ChatGPT.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
-          <div className="space-y-1.5">
-            <Label htmlFor="gm-model">Модель</Label>
-            <Input id="gm-model" value={gmModel} onChange={(e) => setGmModel(e.target.value)} className="touch-target" />
-          </div>
-          <div className="flex items-end">
-            <span className="text-[11px] text-muted-foreground">По умолчанию: gpt-4.1-mini</span>
-          </div>
+        <div className="rounded-md border border-border bg-background/50 p-3 text-xs text-muted-foreground">
+          Резервный интерфейс использует ту же защищённую серверную модель, что и игровой чат. API-ключ не вводится: используется твоя активная сессия приложения, а модель выбирается сервером.
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
           <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
-        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !worldState.setup.confirmed} onClick={() => void handleResolveAction()}>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !session?.access_token || !worldState.setup.confirmed} onClick={() => void handleResolveAction()}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
         {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
