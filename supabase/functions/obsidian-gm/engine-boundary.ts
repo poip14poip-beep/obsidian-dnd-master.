@@ -458,7 +458,7 @@ const NEGATION =
   /\b(?:not|n't|never|no longer|nothing|neither|nor|fails? to|failed to|without)\b/i;
 
 function hedged(clause: string): boolean {
-  return HEDGE.test(clause);
+  return HEDGE.test(clause) || /(?:если|возможно|вероятно|почти|едва|кажется|словно|будто|как будто|может быть|собирается|намеревается|угрожает|надеется|боится|думает|считает|верит|говорит|кричит|шепчет|спрашивает|обещает|предупреждает)/i.test(clause);
 }
 
 function escapeRegExp(raw: string): string {
@@ -705,7 +705,7 @@ export function findNarrationContradictions(
     if (hedged(clause)) {
       continue;
     }
-    const negated = NEGATION.test(clause);
+    const negated = NEGATION.test(clause) || /(?:^|[^А-ЯЁа-яё])(?:не|никогда|ничего|ни один|ни одна|уже не|без)(?=$|[^А-ЯЁа-яё])/i.test(clause);
 
     // 1. A hit claimed on a resolved miss, a miss claimed on a resolved hit.
     for (const [key, attack] of outcomes.attacks) {
