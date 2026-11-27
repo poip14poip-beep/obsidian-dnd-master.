@@ -848,6 +848,29 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
       }
+      if (isGameTurnRequest && isRecord(parsed)) {
+        const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const playerRolls = rolls.filter((roll) => roll.roller === "PLAYER");
+        const prepared = modelCall.preparedPlayerRoll;
+        const matchesPrepared = prepared !== null && playerRolls.length === 1 &&
+          playerRolls[0]?.label === prepared.label &&
+          playerRolls[0]?.formula === prepared.formula &&
+          playerRolls[0]?.dc === prepared.dc &&
+          playerRolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
+        const invalidPlayerRoll = prepared !== null ? !matchesPrepared : playerRolls.length > 0;
+        if (invalidPlayerRoll) {
+          const reason = prepared
+            ? "player roll does not match the server-prepared character check"
+            : "player roll was returned without the deterministic prepare_player_check tool";
+          console.warn("[obsidian-gm] player-check tool validation rejected", { model: attempt.id, reason });
+          failures.push(attempt.id + ": " + reason);
+          messages.push({
+            role: "system",
+            content: "ОТКЛОНЕНО: проверка главного героя должна быть подготовлена инструментом prepare_player_check. Используй точные label, formula и DC, возвращённые инструментом, и result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонус и не меняй DC.",
+          });
+          continue;
+        }
+      }
       if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
         // A pending roll is a pause in the action pipeline, not a commit.
         // Safely discard premature model mutations; they are recalculated after the actual roll.
