@@ -106,7 +106,7 @@ describe("source-grounded context selection", () => {
     const result = selectNpcSimulationContext([npcSource]);
     expect(result).toContain("NDP 0.3");
     expect(result).toContain("NPL 0.3");
-    expect(result).toContain("FEASIBLE"); // section 13's planning consistency rule
+    expect(result).toContain("feasible task"); // section 13's planning consistency rule
     expect(result).toContain("sourceId=SUPPLEMENTAL");
     expect(result).not.toContain("EMPTY TEMPLATE");
     expect(result).not.toContain("EMPTY REGISTRY");
