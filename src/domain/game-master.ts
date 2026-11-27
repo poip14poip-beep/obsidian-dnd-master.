@@ -136,7 +136,7 @@ export function selectCanonContext(facts: CanonFact[], sources: SourceDocument[]
       return { source, sectionId: "UNINDEXED", headingPath: [], ...paragraph,
         score: terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0) };
     });
-  }).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 24);
+  }).sort((a, b) => b.score - a.score || a.startLine - b.startLine).slice(0, 12);
 
   const relevantExcerpts = ranked.filter((item) => item.score > 0);
   const fallbackExcerpts = relevantExcerpts.length ? relevantExcerpts : ranked.slice(0, 6);
