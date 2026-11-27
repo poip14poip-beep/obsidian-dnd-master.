@@ -132,7 +132,7 @@ describe("game master resolver", () => {
     const request = JSON.parse(init?.body as string);
     expect(request.operation).toBe("GAME_TURN");
     expect(request.instructions).toContain("Полный текст ОБСИДИАН 4.1 подключён на сервере");
-    expect(request.input).toContain("Тестовый персонаж"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 1–2");
+    expect(request.input).toContain("Тестовый персонаж"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 7–7");
     expect(request.input).toContain("Досье игрока");
   });
 
