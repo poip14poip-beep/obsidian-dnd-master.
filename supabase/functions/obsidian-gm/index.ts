@@ -461,12 +461,12 @@ Deno.serve(async (req: Request) => {
   const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
     ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
   const canonParagraphs = (() => {
-    const lines = canonDoc.replace(/\\r\\n?/g, "\\n").split("\\n");
+    const lines = canonDoc.replace(/\r\n?/g, "\n").split("\n");
     const paragraphs: Array<{ paragraph: string; haystack: string; startLine: number; endLine: number }> = [];
     let current: string[] = [];
     let startLine = 1;
     const flush = (endLine: number) => {
-      const paragraph = current.join("\\n").trim();
+      const paragraph = current.join("\n").trim();
       if (paragraph.length > 60) paragraphs.push({ paragraph, haystack: paragraph.toLowerCase(), startLine, endLine });
       current = [];
     };
@@ -553,7 +553,7 @@ Deno.serve(async (req: Request) => {
   const rankedCanonParagraphs = canonParagraphs
     .map(({ paragraph, haystack, startLine, endLine }) => {
       const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
-      const headingBoost = /^#{1,4}\\s/m.test(paragraph) ? 1 : 0;
+      const headingBoost = /^#{1,4}\s/m.test(paragraph) ? 1 : 0;
       return { paragraph, startLine, endLine, score: score + headingBoost };
     })
     .filter((item) => item.score > 0)
