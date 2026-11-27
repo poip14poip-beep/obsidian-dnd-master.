@@ -49,7 +49,7 @@ function ranked<T extends { haystack: string }>(items: T[], query: string): T[] 
     .map((item) => ({ item, score: terms.reduce((score, term) => score + (item.haystack.includes(term) ? 1 : 0), 0) }))
     .filter((entry) => entry.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
+    .slice(0, 3)
     .map((entry) => entry.item);
 }
 
@@ -128,6 +128,7 @@ export async function callWithEkdrasilReadTools(options: {
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
     if (!calls.length) return { response, payload, toolCalls, exhausted: false };
     if (round >= maxRounds) return { response, payload, toolCalls, exhausted: true };
+    if (toolCalls + calls.length > 6) return { response, payload, toolCalls, exhausted: true };
     messages.push(message);
     for (const rawCall of calls) {
       const call = rawCall && typeof rawCall === "object" ? rawCall as JsonRecord : {};
