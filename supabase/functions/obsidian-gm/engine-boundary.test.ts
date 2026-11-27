@@ -13,25 +13,25 @@ function toolConversation(name: string, result: Record<string, unknown>, args: R
 
 describe("engine boundary narration guard", () => {
   it("pairs assistant tool calls with their exact tool results", () => {
-    const exchanges = collectExchanges(toolConversation("pc_attack", { hit: false, target: "Goblin" }));
+    const exchanges = collectExchanges(toolConversation("pc_attack", { hit: false, target: "Гоблин" }));
     expect(exchanges).toHaveLength(1);
     expect(exchanges[0]).toMatchObject({ name: "pc_attack", result: { hit: false, target: "Goblin" } });
   });
 
   it("rejects narration that turns a server-reported miss into a hit", () => {
-    const conversation = toolConversation("pc_attack", { hit: false, target: "Goblin" });
+    const conversation = toolConversation("pc_attack", { hit: false, target: "Гоблин" });
     const contradictions = checkNarration({ conversation, narration: "Твой клинок поражает гоблина." });
     expect(contradictions).toEqual([expect.objectContaining({ kind: "hit" })]);
   });
 
   it("rejects a claimed death while the resolved creature still has hit points", () => {
-    const conversation = toolConversation("get_creature_state", { name: "Goblin", hp: "7/7", dead: false });
-    const contradictions = checkNarration({ conversation, narration: "Гоблин падает замертво." });
+    const conversation = toolConversation("get_creature_state", { name: "Гоблин", hp: "7/7", dead: false });
+    const contradictions = checkNarration({ conversation, narration: "Гоблин погибает." });
     expect(contradictions).toEqual([expect.objectContaining({ kind: "death" })]);
   });
 
   it("rejects damage figures that no tool result produced", () => {
-    const conversation = toolConversation("apply_damage", { target: "Goblin", damage: 5, hp: "2/7" });
+    const conversation = toolConversation("apply_damage", { target: "Гоблин", damage: 5, hp: "2/7" });
     const contradictions = checkNarration({ conversation, narration: "Ты наносишь 8 урона гоблину." });
     expect(contradictions).toEqual([expect.objectContaining({ kind: "number" })]);
   });
