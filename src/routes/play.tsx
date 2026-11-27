@@ -50,6 +50,7 @@ function PlayPage() {
   const [startError, setStartError] = useState<string | null>(null);
   const [serverReadiness, setServerReadiness] = useState<"CHECKING" | "READY" | "FAILED">("CHECKING");
   const [serverReadinessError, setServerReadinessError] = useState<string | null>(null);
+  const [serverReadinessInfo, setServerReadinessInfo] = useState<{ canon?: { edition?: string; sourceVersion?: number | null; sha256?: string | null }; checks?: Record<string, boolean> } | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
   const [biographyReady, setBiographyReady] = useState(false);
@@ -62,6 +63,7 @@ function PlayPage() {
     async function checkServerReadiness() {
       setServerReadiness("CHECKING");
       setServerReadinessError(null);
+      setServerReadinessInfo(null);
       try {
         const env = readSupabaseEnv();
         const { client, envResult } = getSupabaseAuthClient();
@@ -77,8 +79,12 @@ function PlayPage() {
           }
           throw new Error(detail);
         }
-        if (!data?.ready) throw new Error("На сервере отсутствует один или несколько обязательных документов ОБСИДИАН / SRD / Экдрасиль.");
-        if (!cancelled) setServerReadiness("READY");
+        if (!data?.ready) {
+          if (!cancelled && data) setServerReadinessInfo(data);
+          const failed = Object.entries((data?.checks ?? {}) as Record<string, boolean>).filter(([, ok]) => !ok).map(([key]) => key).join(", ");
+          throw new Error(failed ? `Серверный мастер не готов. Не пройдены проверки: ${failed}.` : "Серверный мастер не готов: проверь ОБСИДИАН 4.1, D&D 2024 / SRD 5.2.1, канон Экдрасиля 2.4 и ключ модели.");
+        }
+        if (!cancelled) { setServerReadinessInfo(data); setServerReadiness("READY"); }
       } catch (error) {
         if (!cancelled) {
           setServerReadiness("FAILED");
@@ -551,6 +557,11 @@ function PlayPage() {
   };
   return <main className="mx-auto max-w-3xl space-y-4 p-4 pb-20">
     <header className="space-y-1"><p className="text-xs uppercase tracking-wider text-primary">ОБСИДИАН 4.1 · подготовка</p><h1 className="text-2xl font-bold">Новая кампания</h1><p className="text-sm text-muted-foreground">Выбери, как создать персонажа.</p></header>
+    <section className="rounded-lg border border-border bg-card p-3 text-xs">
+      {serverReadiness === "CHECKING" && <p className="text-muted-foreground">Проверяю серверные источники мастера…</p>}
+      {serverReadiness === "READY" && <div className="space-y-1"><p className="font-semibold text-emerald-500"><CheckCircle2 className="mr-1 inline h-4 w-4"/>Серверный мастер готов</p><p className="text-muted-foreground">ОБСИДИАН 4.1 · D&D 2024 / SRD 5.2.1 · Экдрасиль {serverReadinessInfo?.canon?.edition ?? "2.4"} · ключ модели настроен</p>{serverReadinessInfo?.canon && <p className="break-all font-mono text-[10px] text-muted-foreground">Редакция 2.4 · запись v{serverReadinessInfo.canon.sourceVersion ?? "?"} · SHA-256 {serverReadinessInfo.canon.sha256?.slice(0,16) ?? "—"}…</p>}</div>}
+      {serverReadiness === "FAILED" && <p role="alert" className="text-destructive"><AlertTriangle className="mr-1 inline h-4 w-4"/>{serverReadinessError ?? "Проверка сервера не пройдена."}</p>}
+    </section>
     {locked && <div className="rounded border border-amber-500/40 p-3 text-sm"><Lock className="mr-2 inline h-4 w-4"/>Кампания уже подтверждена или содержит игровые ходы. Изменение стартового персонажа заблокировано. <Button type="button" variant="destructive" size="sm" className="mt-3 w-full" onClick={handleResetCampaign}>Очистить активную кампанию и начать заново</Button></div>}{startError && locked && <p role="alert" className="text-sm text-destructive">{startError}</p>}
     <section className="grid gap-3 sm:grid-cols-2">
       <button disabled={locked} onClick={loadDossier} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><FileText className="mb-2 h-6 w-6"/><h2 className="font-semibold">Загрузить персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Распознать параметры листа. Стартовые HP, классовые ресурсы, состояния, баланс и местоположение подготовятся автоматически при запуске кампании.</p></button>
