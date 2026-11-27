@@ -740,11 +740,28 @@ export async function mapCloudCampaignCollections(
 ): Promise<CloudCampaignStateMapping> {
   assertCampaignId(campaignId);
   const sourceMap = await mapCloudSources(campaignId, collections.sources);
+  const setup = collections.world_state.setup;
+  if (collections.player_character_state.sourceDossierId === "GENERATED_RANDOM" &&
+      !sourceMap.ids["GENERATED_RANDOM"]) {
+    const generatedSourceId = await deterministicCloudId(campaignId, "sources", "GENERATED_RANDOM");
+    const generatedIsConfirmed = setup.confirmed && setup.characterConfirmed;
+    sourceMap.ids["GENERATED_RANDOM"] = generatedSourceId;
+    sourceMap.rows.push({
+      id: generatedSourceId,
+      campaign_id: campaignId,
+      title: "Персонаж, созданный генератором ОБСИДИАН",
+      source_type: "player_character",
+      version_label: "generated-character-v1",
+      sha256: null,
+      source_uri: null,
+      content_status: generatedIsConfirmed ? "verified" : "metadata_only",
+      notes: "[origin:in-app-random-character]\n[explicit-player-confirmation:" + (generatedIsConfirmed ? "true" : "false") + "]",
+    });
+  }
   const locationMap = await mapCloudLocations(campaignId, collections.locations, sourceMap.ids);
   const factionMap = await mapCloudFactions(campaignId, collections.factions, sourceMap.ids);
   const npcMap = await mapCloudNpcs(campaignId, collections.npcs, sourceMap.ids, locationMap.ids, factionMap.ids);
 
-  const setup = collections.world_state.setup;
   const requiredSourceTypes = ["master_rules", "world_canon", "player_character"];
   const verifiedRequiredSources = requiredSourceTypes.every((sourceType) =>
     sourceMap.rows.some((row) => row.source_type === sourceType && row.content_status === "verified")
