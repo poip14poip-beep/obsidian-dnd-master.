@@ -98,6 +98,7 @@ export async function callWithEkdrasilReadTools(options: {
   ruleParagraphs: string[];
   canonParagraphs: CanonParagraph[];
   maxToolRounds?: number;
+  timeoutMs?: number;
 }): Promise<{ response: Response; payload: unknown; toolCalls: number; exhausted: boolean }> {
   const messages = Array.isArray(options.requestBody.messages)
     ? [...options.requestBody.messages] as JsonRecord[]
@@ -116,7 +117,7 @@ export async function callWithEkdrasilReadTools(options: {
       method: "POST",
       headers: options.headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(82_000),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 82_000),
     });
     const payload = await response.clone().json().catch(() => null) as unknown;
     if (!response.ok || !options.enabled) return { response, payload, toolCalls, exhausted: false };
