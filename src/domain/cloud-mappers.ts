@@ -587,59 +587,55 @@ export async function mapCloudTimelineEvents(
 export async function mapCloudTurnDrafts(
   campaignId: string,
   drafts: TurnDraft[],
-  sourceIds: Record<string, string>,
-  locationIds: Record<string, string>,
+  _sourceIds: Record<string, string>,
+  _locationIds: Record<string, string>,
   nextTurnNumber: number,
 ): Promise<CloudTurnDraftRow[]> {
   assertCampaignId(campaignId);
+  if (drafts.length > 1) throw new CloudMappingError("Only one active local turn draft can be imported.");
   const rows: CloudTurnDraftRow[] = [];
   const seen = new Set<string>();
   for (const draft of drafts) {
     if (seen.has(draft.id)) throw new CloudMappingError("Duplicate local turn draft ID: " + draft.id);
     seen.add(draft.id);
-    const mappedLocationId = draft.newLocationId ? (locationIds[draft.newLocationId] ?? null) : null;
-    if (draft.newLocationId && !mappedLocationId) {
-      throw new CloudMappingError("No cloud location ID is available for the active turn draft.");
-    }
-    const hasNewFact = Boolean(draft.newFactTitle.trim() && draft.newFactStatement.trim());
-    const pendingChanges: Record<string, unknown> = {
-      summary: draft.summary,
-      world_outcome: draft.worldOutcome,
-      gm_narration: draft.gmNarration ?? "",
-      campaign_memory: draft.campaignMemory ?? "",
-      time_delta_minutes: draft.timeDeltaMinutes,
-      new_in_game_date: draft.newInGameDate,
-      new_location_id: mappedLocationId,
-      hp_delta: draft.hpDelta,
-      consequence_text: draft.consequenceText,
-      environment: draft.environment ?? null,
-      environment_reason: draft.environmentReason ?? "",
-      quest_changes: draft.questChanges ?? [],
-      character_changes: draft.characterChanges ?? {
-        inventory: [], resources: [], conditions: [],
-        currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
-      },
-      npc_changes: draft.npcChanges ?? [],
-      rolls: draft.rolls,
-      new_fact: hasNewFact ? {
-        title: draft.newFactTitle,
-        statement: draft.newFactStatement,
-        rationale: draft.newFactRationale,
-        fact_class: draft.newFactLayer,
-        status: draft.newFactCertainty,
-        source_id: resolveCloudSourceId(draft.newFactSourceId, sourceIds, "new turn fact"),
-      } : null,
-      checked_at: draft.checkedAt,
-      validation_errors: draft.validationErrors,
-    };
+    // Imported drafts are deliberately downgraded to DRAFT. They must be
+    // reviewed and checked again against the authoritative cloud state before
+    // any server commit can occur.
     rows.push({
       id: await deterministicCloudId(campaignId, "turn_drafts", draft.id),
       campaign_id: campaignId,
       proposed_turn: nextTurnNumber,
       player_action: draft.playerIntent,
       gm_resolution: draft.gmNarration ?? draft.worldOutcome,
-      pending_changes: pendingChanges,
-      status: draft.checkedAt && draft.validationErrors.length === 0 ? "ready_to_commit" : "draft",
+      pending_changes: {
+        turn_metadata: {
+          local_draft_id: draft.id,
+          created_at: draft.createdAt,
+          updated_at: draft.updatedAt,
+          summary: draft.summary,
+          player_intent: draft.playerIntent,
+          world_outcome: draft.worldOutcome,
+          gm_narration: draft.gmNarration ?? "",
+          campaign_memory: draft.campaignMemory ?? "",
+          time_delta_minutes: draft.timeDeltaMinutes,
+          new_in_game_date: draft.newInGameDate,
+          new_location_local_id: draft.newLocationId,
+          hp_delta: draft.hpDelta,
+          consequence_text: draft.consequenceText,
+          new_fact_title: draft.newFactTitle,
+          new_fact_statement: draft.newFactStatement,
+          new_fact_rationale: draft.newFactRationale,
+          new_fact_layer: draft.newFactLayer,
+          new_fact_certainty: draft.newFactCertainty,
+          new_fact_source_local_id: draft.newFactSourceId,
+          rolls: draft.rolls,
+          character_changes: draft.characterChanges,
+          npc_changes: draft.npcChanges,
+          checked_at: draft.checkedAt,
+          validation_errors: draft.validationErrors,
+        },
+      },
+      status: "draft",
     });
   }
   return rows;
