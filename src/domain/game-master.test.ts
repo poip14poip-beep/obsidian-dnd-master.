@@ -349,6 +349,12 @@ describe("game master resolver", () => {
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
+  it("rejects unsupported player dice formulas before opening the roll dialog", async () => {
+    const invalidFormula = { ...validTurn, rolls: [{ label: "Восприятие", formula: "1d7+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }] };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidFormula) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .rejects.toMatchObject({ code: "INVALID_DICE_FORMULA" });
+  });
   it("rejects NPC or location changes while a player roll is pending", async () => {
     const invalidPending = { ...validTurn, rolls: [{ label: "Атлетика", formula: "1d20+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
       npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", playerVisible: false,
