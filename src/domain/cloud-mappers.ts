@@ -15,7 +15,7 @@ export interface CloudSourceRow {
   version_label: string | null;
   sha256: string | null;
   source_uri: null;
-  content_status: "metadata_only" | "indexed";
+  content_status: "metadata_only" | "indexed" | "verified";
   notes: string;
 }
 
@@ -43,7 +43,7 @@ export interface CloudNpcRow {
   canonical_name: string;
   current_location_id: string | null;
   npc_state: Record<string, unknown>;
-  source_id: string;
+  source_id: string | null;
 }
 
 export interface CloudNpcKnowledgeRow {
@@ -51,7 +51,7 @@ export interface CloudNpcKnowledgeRow {
   npc_id: string;
   knowledge: string;
   status: "KNOWN" | "APPROXIMATE" | "UNKNOWN";
-  source_id: string;
+  source_id: string | null;
   acquisition_reason: string;
   acquired_at: string | null;
 }
@@ -124,15 +124,16 @@ function isSha256(value: string | null | undefined): value is string {
 }
 
 function sourceContentStatus(source: SourceDocument): CloudSourceRow["content_status"] {
-  // Permanent server-managed sources are referenced by metadata only; their
-  // full content lives in the private global GM base, not in campaign rows.
-  if (source.serverManaged) return "metadata_only";
-  return source.contentStatus === "ATTACHED" &&
-    source.processing?.status === "PROCESSED" &&
-    source.reviewStatus === "VERIFIED" &&
-    source.contextEnabled === true
-    ? "indexed"
-    : "metadata_only";
+  // Server-managed sources have no campaign content row: their full text is
+  // held in the private GM base. Their verified marker is still required by
+  // the authoritative turn-commit gate.
+  if (source.serverManaged) {
+    return source.reviewStatus === "VERIFIED" && source.contextEnabled === true &&
+      source.processing?.status === "PROCESSED" ? "verified" : "metadata_only";
+  }
+  if (source.contentStatus !== "ATTACHED" || source.processing?.status !== "PROCESSED" ||
+      source.contextEnabled !== true) return "metadata_only";
+  return source.reviewStatus === "VERIFIED" ? "verified" : "indexed";
 }
 
 export async function mapCloudSources(
@@ -252,8 +253,8 @@ export async function mapCloudNpcs(
   for (const npc of npcs) {
     if (seenNpcIds.has(npc.id)) throw new CloudMappingError(`Duplicate local NPC ID: ${npc.id}`);
     seenNpcIds.add(npc.id);
-    const sourceId = sourceIds[npc.sourceId];
-    if (!sourceId || !UUID_PATTERN.test(sourceId)) {
+    const sourceId = npc.sourceId === "MANUAL_GM_ENTRY" ? null : sourceIds[npc.sourceId] ?? null;
+    if (npc.sourceId !== "MANUAL_GM_ENTRY" && (!sourceId || !UUID_PATTERN.test(sourceId))) {
       throw new CloudMappingError(`No cloud source ID is available for NPC ${npc.name}.`);
     }
     const currentLocationId = npc.locationId ? (locationIds[npc.locationId] ?? null) : null;
@@ -284,8 +285,8 @@ export async function mapCloudNpcs(
     });
 
     for (const entry of npc.knowledge) {
-      const knowledgeSourceId = sourceIds[entry.sourceId];
-      if (!knowledgeSourceId || !UUID_PATTERN.test(knowledgeSourceId)) {
+      const knowledgeSourceId = entry.sourceId === "MANUAL_GM_ENTRY" ? null : sourceIds[entry.sourceId] ?? null;
+      if (entry.sourceId !== "MANUAL_GM_ENTRY" && (!knowledgeSourceId || !UUID_PATTERN.test(knowledgeSourceId))) {
         throw new CloudMappingError(
           `No cloud source ID is available for knowledge entry of NPC ${npc.name}.`,
         );
