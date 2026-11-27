@@ -95,14 +95,14 @@ export function rollDiceFormula(
   let rolledTotal = 0;
   for (const term of parsed.terms) {
     const values = Array.from({ length: term.count }, () => random(term.sides));
-    const keptValue = term.keep === "highest"
-      ? Math.max(...values)
-      : term.keep === "lowest" ? Math.min(...values) : null;
-    for (const value of values) {
-      dice.push({ value, sides: term.sides, kept: keptValue === null || value === keptValue });
+    const keptIndex = term.keep === "highest"
+      ? values.indexOf(Math.max(...values))
+      : term.keep === "lowest" ? values.indexOf(Math.min(...values)) : -1;
+    for (const [index, value] of values.entries()) {
+      dice.push({ value, sides: term.sides, kept: keptIndex === -1 || index === keptIndex });
     }
-    rolledTotal += term.keep === "highest" || term.keep === "lowest"
-      ? keptValue!
+    rolledTotal += keptIndex >= 0
+      ? values[keptIndex]!
       : values.reduce((sum, value) => sum + value, 0);
   }
   return { dice, modifier: parsed.modifier, total: rolledTotal + parsed.modifier };
