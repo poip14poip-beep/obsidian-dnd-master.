@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
+import { EKDRASIL_ENGINE_BOUNDARY_RULES } from "./upstream-adoption.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -611,6 +612,7 @@ Deno.serve(async (req: Request) => {
     canonContext
   ] : [
     masterPrompt,
+    ...(isGameTurnRequest ? [EKDRASIL_ENGINE_BOUNDARY_RULES] : []),
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     instructionText,
