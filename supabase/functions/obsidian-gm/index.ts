@@ -513,6 +513,27 @@ Deno.serve(async (req: Request) => {
   if (/перегруз|вес|грузоподъем/.test(actionText)) mappedTerms.push("carrying capacity", "encumbrance", "push", "drag", "lift");
   if (/смерт|умира|без созн/.test(actionText)) mappedTerms.push("death saving throw", "dying", "stabilize");
   if (/класс|боец|воин|особенност/.test(actionText)) mappedTerms.push("fighter", "character classes", "class features");
+  // Universal action coverage: social interaction, investigation, object use and exploration.
+  if (/разговор|бесед|диалог|спрос|расспрос|переговор|уговор|убед|торг|сделк|подкуп/.test(actionText)) {
+    mappedTerms.push("social interaction", "influence", "persuasion", "friendly attitude", "indifferent attitude", "hostile attitude");
+  }
+  if (/обман|лж|врат|притвор|выдать себя|скрыть правд/.test(actionText)) mappedTerms.push("deception", "social interaction", "influence");
+  if (/запуг|угроз|надавить|устраш/.test(actionText)) mappedTerms.push("intimidation", "social interaction", "influence", "hostile attitude");
+  if (/прочитать намер|понять мотив|распознать лож|чувств|подозрева.*вр|искрен/.test(actionText)) mappedTerms.push("insight", "social interaction", "determine an NPC's attitude");
+  if (/исслед|расслед|изуч|разобрат|обыск|найти.*ули|улиц|доказательств/.test(actionText)) mappedTerms.push("investigation", "study action", "search action", "ability check");
+  if (/откры|вскры|взлом|замок|заперт|двер|сундук|механизм/.test(actionText)) mappedTerms.push("utilize action", "thieves' tools", "sleight of hand", "ability check", "object interaction");
+  if (/ловуш|растяж|капкан|сигнализац|скрыт.*механизм/.test(actionText)) mappedTerms.push("perception", "investigation", "traps", "tools");
+  if (/карман|украсть|подмен|незаметно взять|ловкость рук/.test(actionText)) mappedTerms.push("sleight of hand", "thieves' tools", "dexterity check");
+  if (/живот|лошад|кон|пёс|собак|звер|прируч|успокоить живот/.test(actionText)) mappedTerms.push("animal handling", "influence", "ability check");
+  if (/леч|первая помощь|стабилиз|диагноз|ранен/.test(actionText)) mappedTerms.push("medicine", "healing", "stabilize", "utilize action");
+  if (/след|отпечат|выжива|ориентир|погода|охот|добыть пищ/.test(actionText)) mappedTerms.push("survival", "tracking", "foraging", "travel pace");
+  if (/религ|бож|обряд|культ|святын/.test(actionText)) mappedTerms.push("religion", "holy symbol", "divine magic");
+  if (/истор|древн|летопис|герб|родослов/.test(actionText)) mappedTerms.push("history", "historical lore");
+  if (/природ|растен|гриб|ядовит|минерал|животн/.test(actionText)) mappedTerms.push("nature", "environment");
+  if (/арк|маг|заклин|руна|чар|магическ/.test(actionText)) mappedTerms.push("arcana", "spellcasting", "magic");
+  if (/выступ|петь|играть музыку|танцев|представлени/.test(actionText)) mappedTerms.push("performance", "social interaction");
+  if (/внимател|осматрива|всматр|прислуш|замет|наблюда|ищу.*подозр/.test(actionText)) mappedTerms.push("perception", "search action", "study action");
+  if (/перенос|поднять|толкнуть|тащить|сдвинуть|удержать|перелез|перепрыг/.test(actionText)) mappedTerms.push("athletics", "strength check", "jump", "climb", "push", "drag", "lift");
   if (isCompatibilityRequest) mappedTerms.push(
     "character creation", "character sheet", "character origins", "species", "background",
     "ability scores", "ability score improvement", "proficiency bonus", "saving throw proficiency",
@@ -641,6 +662,13 @@ Deno.serve(async (req: Request) => {
     "=== ПРОТОКОЛ ИСТОЧНИКОВ И ПАМЯТИ ===",
     "Соблюдай разделение источников: правила D&D 2024/SRD определяют механику; ОБСИДИАН 4.1 определяет процедуру ведения; Библия Экдрасиля определяет неизменяемые факты мира; текущее состояние кампании и подтверждённый журнал определяют уже произошедшие события этой конкретной кампании; лист персонажа определяет только данные героя; последнее сообщение игрока — намерение, а не свершившийся факт. Более низкий источник не переписывает более высокий. События кампании могут менять локальное состояние и отношения, но не могут задним числом менять мировую хронику. При отсутствии подтверждения используй UNKNOWN и задай уточняющий вопрос, если без него нельзя честно разрешить действие.",
     "Перед каждым ответом прочитай FULL_CAMPAIGN_CHRONICLE и recentJournal во входном JSON. Хронология, обещания, долги, предметы, травмы, отношения, последствия и уже раскрытые тайны должны сохраняться. Не пересоздавай NPC, локации или факты, которые уже существуют в состоянии кампании.",
+    "=== УНИВЕРСАЛЬНЫЙ ЦИКЛ РАЗРЕШЕНИЯ ЛЮБОГО ДЕЙСТВИЯ ===",
+    "Не ограничивайся боем. Любой свободный текст игрока сначала классифицируй по намерению и объекту взаимодействия: социальное действие/диалог; наблюдение и восприятие; исследование и поиск улик; взаимодействие с предметом/дверью/замком/ловушкой; перемещение и физическое действие; скрытность и ловкость рук; знания и воспоминания; животные; лечение; выживание и путешествие; магия; бой; отдых; использование предмета или способности. Если действие смешанное, разрешай его последовательными этапами, не пропуская зависимость одного этапа от другого.",
+    "Для каждого действия последовательно: (1) установи точное намерение; (2) проверь доступность действия по положению, времени, дистанции, состоянию, инвентарю и ресурсам героя; (3) собери факты о цели из текущего состояния, журнала, канона 2.4 и относящихся к делу разделов SRD 5.2.1; (4) выбери правило, характеристику/навык/инструмент и DC/AC только если исход действительно неопределён; (5) заранее зафиксируй DC/AC и владельца каждого броска; (6) запроси или автоматически выполни бросок; (7) разреши исход по фактическому результату; (8) только затем примени причинно допустимые изменения и сохрани их.",
+    "Не требуй кубик за каждое действие. Обычный разговор, очевидный осмотр, свободное взаимодействие с доступным предметом и действие без неопределённого риска разрешай без броска. В диалоге сначала веди естественную беседу от лица NPC с учётом его характера, целей, отношений, знаний и текущей ситуации. Проверка Persuasion нужна для попытки повлиять/убедить, Deception — обмануть, Intimidation — запугать; Insight — когда герой пытается прочитать мотивы, искренность или состояние собеседника. Не превращай каждую реплику в социальный бросок и не позволяй одному успешному броску автоматически подчинить NPC или изменить его убеждения.",
+    "Различай Perception, Investigation и Study: Perception — заметить то, что доступно чувствам; Investigation — вывести закономерность, исследовать механизм или искать улики; Study — внимательно изучить сведения/объект по правилам D&D 2024. Для замков, ловушек, инструментов, карманных действий и ремесла проверяй подходящий инструмент и владение, не подменяй всё одной проверкой Восприятия.",
+    "Игрок бросает только за главного героя через видимый интерфейс кубика. Мастер автоматически бросает через защищённый сервер за каждого NPC, монстра, союзника, противника и прочее существо/окружение. В состязании назначай отдельного владельца каждой стороны. В ответе каждого броска обязательно указывай roller: PLAYER или GM. Для PLAYER показывается экранный кубик игрока; для GM приложение выполняет серверный бросок автоматически. Не проси игрока вводить числовой результат вручную.",
+    "Пока ожидается любой бросок PLAYER или GM, не меняй HP, время, инвентарь, деньги, ресурсы, состояния, NPC, квесты, локацию, окружение и последствия. После результата продолжай именно незавершённое действие, используя зафиксированные DC/AC и контекст; не начинай его заново и не пересчитывай сложность задним числом. Не описывай обнаруженное, попадание, успех или провал до получения нужного результата.",
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
@@ -773,7 +801,7 @@ Deno.serve(async (req: Request) => {
       const choices = Array.isArray(root.choices) ? root.choices : [];
       const choice = isRecord(choices[0]) ? choices[0] : {};
       const message = isRecord(choice.message) ? choice.message : {};
-      const content = outputText(message);
+      let content = outputText(message);
       if (!content || choice.finish_reason === "length") {
         const failure = `${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`;
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: failure, responseChars: content.length });
@@ -791,6 +819,41 @@ Deno.serve(async (req: Request) => {
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
+      }
+      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+        // A pending roll is a pause in the action pipeline, not a commit.
+        // Safely discard premature model mutations; they are recalculated after the actual roll.
+        let currentEnvironment: JsonRecord = {
+          temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN",
+          visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN",
+          ambientSmells: "UNKNOWN", notes: "",
+        };
+        try {
+          const originalInput = JSON.parse(inputText);
+          const campaign = isRecord(originalInput) && isRecord(originalInput.campaign) ? originalInput.campaign : {};
+          if (isRecord(campaign.environment)) currentEnvironment = campaign.environment;
+        } catch { /* preserve explicit UNKNOWN environment when campaign input is malformed */ }
+        const previousChanges = isRecord(parsed.characterChanges) ? parsed.characterChanges : {};
+        parsed = {
+          ...parsed,
+          timeDeltaMinutes: 0,
+          hpDelta: 0,
+          newLocationId: null,
+          consequenceText: "",
+          npcChanges: [],
+          questChanges: [],
+          environment: currentEnvironment,
+          environmentReason: "Окружение не изменяется до результата броска.",
+          characterChanges: {
+            ...previousChanges,
+            inventory: [],
+            resources: [],
+            conditions: [],
+            currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+          },
+          stateNotes: [],
+        };
+        content = JSON.stringify(parsed);
       }
       if (isGameTurnRequest) {
         const semanticFailure = validateGameTurnSemantics(parsed);
