@@ -467,7 +467,7 @@ function escapeRegExp(raw: string): string {
 
 // The name as prose would write it, with flexible internal whitespace.
 function namePattern(name: string): string {
-  return escapeRegExp(name).replace(/\s+/g, "\\s+");
+  return escapeRegExp(name).replace(/\s+/g, "\\s+") + (/[а-яё]/i.test(name) ? "(?:а|у|ом|е|ы|и|ов|ам|ами)?" : "");
 }
 
 export type Contradiction = {
@@ -480,11 +480,11 @@ export type Contradiction = {
 // "swings toward the goblin" are attempts, not outcomes, so the lookahead
 // throws them out.
 const HIT_VERBS =
-  "hits|strikes|slashes|stabs|slams into|smashes into|bites into|sinks into|tears into|rips into|cuts into|slices into|connects with|impales|skewers|bludgeons|gashes|wounds|batters|crashes into|carves into|hammers into";
+  "hits|strikes|slashes|stabs|slams into|smashes into|bites into|sinks into|tears into|rips into|cuts into|slices into|connects with|impales|skewers|bludgeons|gashes|wounds|batters|crashes into|carves into|hammers into|поражает|пронзает|ударяет|ранит|рассекает|сбивает";
 const HIT_VERB_NOT =
   "at\\b|toward|towards|past\\b|for\\b|through the air|the air\\b|nothing\\b|only\\b|air\\b";
 const MISS_PHRASES =
-  "misses|missed|whiffs|goes wide|went wide|glances off|glanced off|deflects off|sails past|sailed past|whistles past|falls short|fell short|clangs off|bounces off|finds nothing but air|found nothing but air|turns the blade aside";
+  "misses|missed|whiffs|goes wide|went wide|glances off|glanced off|deflects off|sails past|sailed past|whistles past|falls short|fell short|clangs off|bounces off|finds nothing but air|found nothing but air|turns the blade aside|промахивается мимо|промахнулся мимо|не достигает|не задевает";
 
 function hitClaimPatterns(name: string): RegExp[] {
   const target = namePattern(name);
@@ -527,7 +527,7 @@ function deathClaimPatterns(name: string): RegExp[] {
   const target = namePattern(name);
   return [
     new RegExp(
-      `\\b${target}\\b[^.;]{0,25}?\\b(?:dies|drops dead|falls dead|is dead|lies dead|is slain|is killed|breathes (?:its|his|her|their) last|goes limp and still|is no more)\\b`,
+      `\\b${target}\\b[^.;]{0,25}?\\b(?:dies|drops dead|falls dead|is dead|lies dead|is slain|is killed|breathes (?:its|his|her|their) last|goes limp and still|is no more|умирает|погибает|падает замертво|лежит бездыханным|убит)\\b`,
       "i",
     ),
     new RegExp(
@@ -535,7 +535,7 @@ function deathClaimPatterns(name: string): RegExp[] {
       "i",
     ),
     new RegExp(
-      `\\b(?:kills|slays|finishes off|cuts down|strikes down|fells|puts down)\\s+(?:the|that|this)?\\s*${target}\\b`,
+      `\\b(?:kills|slays|finishes off|cuts down|strikes down|fells|puts down|убивает|добивает|сражает насмерть)\\s+(?:the|that|this)?\\s*${target}\\b`,
       "i",
     ),
     new RegExp(`\\b${target}(?:'s|s')?\\s+(?:corpse|lifeless body|dead body)\\b`, "i"),
@@ -546,7 +546,7 @@ function downedClaimPatterns(name: string): RegExp[] {
   const target = namePattern(name);
   return [
     new RegExp(
-      `\\b${target}\\b[^.;]{0,25}?\\b(?:falls|drops|collapses|slumps)\\s+unconscious\\b`,
+      `\\b${target}\\b[^.;]{0,25}?\\b(?:falls|drops|collapses|slumps)\\s+unconscious|теряет сознание|падает без сознания\\b`,
       "i",
     ),
     new RegExp(
@@ -559,7 +559,7 @@ function downedClaimPatterns(name: string): RegExp[] {
 // A number in an explicitly mechanical frame. The lookbehind keeps "2d6 damage"
 // from reading as "6 damage", and the frame is narrow enough that "twenty gold"
 // and "the third bell" never reach the check.
-const NUMBER_CLAIM = /(?<![\dd])(\d{1,3})\s+(?:points?\s+of\s+)?(damage|healing)\b/gi;
+const NUMBER_CLAIM = /(?<![\dd])(\d{1,3})\s+(?:points?\s+of\s+)?(damage|healing|урона|урон|исцеления|лечения|здоровья)\b/gi;
 
 // Only leveled SRD spells whose casting genuinely costs a slot. Cantrips are
 // absent on purpose: casting one spends nothing, so their absence from the
