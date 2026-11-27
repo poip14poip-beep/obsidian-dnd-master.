@@ -407,10 +407,34 @@ BEGIN
     RAISE EXCEPTION 'CAMPAIGN_IMPORT_SESSION_LOG_SEQUENCE_INVALID';
   END IF;
 
+  IF v_character_input.source_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM obsidian.sources s
+    WHERE s.id = v_character_input.source_id
+      AND s.campaign_id = p_campaign_id AND s.owner_id = p_actor
+      AND s.source_type = 'player_character'
+  ) THEN
+    RAISE EXCEPTION 'CAMPAIGN_IMPORT_CHARACTER_SOURCE_INVALID';
+  END IF;
+
+  IF v_campaign_input.current_location_id IS NOT NULL AND NOT EXISTS (
+    SELECT 1 FROM obsidian.locations l
+    WHERE l.id = v_campaign_input.current_location_id
+      AND l.campaign_id = p_campaign_id AND l.owner_id = p_actor
+  ) THEN
+    RAISE EXCEPTION 'CAMPAIGN_IMPORT_CURRENT_LOCATION_NOT_FOUND';
+  END IF;
+
   v_status := v_campaign_input.status;
   IF v_status = 'active' THEN
     IF v_character_input.verified_at IS NULL
+      OR v_character_input.source_id IS NULL
       OR v_campaign_input.current_location_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM obsidian.sources s
+        WHERE s.id = v_character_input.source_id
+          AND s.campaign_id = p_campaign_id AND s.owner_id = p_actor
+          AND s.source_type = 'player_character' AND s.content_status = 'verified'
+      )
       OR NOT EXISTS (
         SELECT 1 FROM obsidian.sources
         WHERE campaign_id = p_campaign_id AND owner_id = p_actor
@@ -428,13 +452,6 @@ BEGIN
       )
     THEN
       RAISE EXCEPTION 'CAMPAIGN_IMPORT_NOT_READY_FOR_ACTIVE_STATUS';
-    END IF;
-    IF NOT EXISTS (
-      SELECT 1 FROM obsidian.locations
-      WHERE id = v_campaign_input.current_location_id
-        AND campaign_id = p_campaign_id AND owner_id = p_actor
-    ) THEN
-      RAISE EXCEPTION 'CAMPAIGN_IMPORT_CURRENT_LOCATION_NOT_FOUND';
     END IF;
   END IF;
 
