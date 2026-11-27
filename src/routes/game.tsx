@@ -49,6 +49,7 @@ function GamePage() {
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number } | null>(null);
+  const [rollAnimating, setRollAnimating] = useState(false);
   const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -296,10 +297,13 @@ function GamePage() {
     }
   }
 
-  function handleRollPendingCheck() {
-    if (!gmTurn || gmBusy) return;
+  async function handleRollPendingCheck() {
+    if (!gmTurn || gmBusy || rollAnimating) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
+    setRollAnimating(true);
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
+    setRollAnimating(false);
     let rolled: ReturnType<typeof rollDiceFormula>;
     try {
       rolled = rollDiceFormula(pending.formula);
@@ -557,7 +561,7 @@ function GamePage() {
                     </div>
                     <button
                       type="button"
-                      disabled={gmBusy || !parsed}
+                      disabled={gmBusy || rollAnimating || !parsed}
                       onClick={handleRollPendingCheck}
                       className="group mx-auto flex w-full flex-col items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-4 transition hover:border-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-50"
                       aria-label={`Бросить кость d${sides}`}
@@ -565,7 +569,7 @@ function GamePage() {
                       <div className="flex flex-wrap items-center justify-center gap-2">
                         {parsed?.terms.map((term, index) => (
                           <div key={index} className="flex flex-col items-center gap-0.5">
-                            <svg viewBox="0 0 100 100" className="h-20 w-20 drop-shadow-lg transition-transform duration-200 group-hover:scale-105 group-active:rotate-12" role="img" aria-label={`Кость d${term.sides}`}>
+                            <svg viewBox="0 0 100 100" className={`h-20 w-20 drop-shadow-lg transition-transform duration-200 group-hover:scale-105 group-active:rotate-12 ${rollAnimating ? "animate-spin" : ""}`} role="img" aria-label={`Кость d${term.sides}`}>
                               <polygon points={diePoints[term.sides] ?? diePoints[20]!} fill="currentColor" className="text-primary/20" stroke="currentColor" strokeWidth="3" strokeLinejoin="round" />
                               <path d="M50 5 L50 50 L12 25 M50 50 L88 25 M50 50 L95 68 M50 50 L50 95 M50 50 L5 68" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-primary/60" />
                               <text x="50" y="58" textAnchor="middle" fontSize={term.sides === 100 ? 16 : 25} fontWeight="800" fill="currentColor">{term.sides === 100 ? "100" : term.sides}</text>
@@ -574,7 +578,7 @@ function GamePage() {
                           </div>
                         ))}
                       </div>
-                      <span className="text-sm font-semibold">Нажми на кубик, чтобы бросить</span>
+                      <span className="text-sm font-semibold">{rollAnimating ? "Кубик бросается…" : "Нажми на кубик, чтобы бросить"}</span>
                       <span className="text-xs text-muted-foreground">{parsed ? `${parsed.totalDice} кость(и) · модификатор ${parsed.modifier >= 0 ? "+" : ""}${parsed.modifier}` : "Формула не поддерживается — ход остановлен"}</span>
                     </button>
                     <p className="text-center text-[11px] text-muted-foreground">Результат генерируется приложением и передаётся мастеру без изменений.</p>
