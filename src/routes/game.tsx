@@ -293,7 +293,7 @@ function GamePage() {
     if (!gmTurn || gmBusy) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const numericBonuses = [...pending.formula.matchAll(/([+-])\s*(\\d+)/g)]
+    const numericBonuses = [...pending.formula.matchAll(/([+-])\s*(\d+)/g)]
       .map((match) => (match[1] === "-" ? -1 : 1) * Number(match[2]));
     const matchingSkill = character.skillBonuses?.find((skill) => {
       const label = pending.label.toLocaleLowerCase();
