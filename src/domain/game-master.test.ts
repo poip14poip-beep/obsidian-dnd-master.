@@ -246,7 +246,8 @@ describe("game master resolver", () => {
     const request = JSON.parse(init?.body as string);
     expect(request.operation).toBe("GAME_TURN");
     expect(request.instructions).toContain("Полный текст ОБСИДИАН 4.1 подключён на сервере");
-    expect(request.input).toContain("Тестовый персонаж"); expect(request.input).toContain("Каменная дверь"); expect(request.input).toContain("строки 7–7");
+    expect(request.input).toContain("Тестовый персонаж");
+    expect(request.input).not.toContain("Каменная дверь");
     expect(request.input).toContain("Досье игрока");
   });
 
@@ -318,8 +319,8 @@ describe("game master resolver", () => {
     await resolvePlayerAction("test-user-jwt", { ...context, sources: staleSources }, testOptions(fetcher as unknown as typeof fetch));
     const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
     const input = JSON.parse(request.input);
-    expect(input.relevantEkdrasilCanon).not.toContain("СТАРЫЙ ФАКТ");
-    expect(input.relevantEkdrasilCanon).toContain("сервером");
+    expect(input).not.toHaveProperty("relevantEkdrasilCanon");
+    expect(request.instructions).toContain("Полный управляющий документ ОБСИДИАН 4.1 добавляется сервером из закрытого хранилища");
   });
   it("rejects malformed model output without accepting a partial turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: "{}" }), { status: 200 }));

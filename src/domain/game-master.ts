@@ -492,8 +492,6 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     "Лист персонажа должен быть загружен, проверен и разрешён для текущей кампании.",
     "PLAYER_DOSSIER_NOT_READY",
   );
-  const openingContextQuery = `${context.world.startLocationName} ${context.world.calendarSystem} ${context.world.startNarrative ?? ""} стартовая локация город регион окружение`;
-  const contextQuery = context.mode === "OPENING" ? openingContextQuery : context.action;
   const verifiedRulesContext = "Полный SRD 5.2.1 хранится отдельно и извлекается сервером по контексту действия. Текст правил не передаётся браузеру.";
   const system = [
     "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
