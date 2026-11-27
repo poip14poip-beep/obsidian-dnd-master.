@@ -183,7 +183,7 @@ describe("bounded source-attributed canon retrieval", () => {
       "",
       "## Compact region",
       "",
-      "Эйргард — короткий, целый и подтверждённый фрагмент канона.",
+      "Эйргард — короткий, целый и подтверждённый фрагмент канона без сокращений и потери исходного смысла.",
     ].join("\n");
     const result = selectCanonExcerpts(content, ["Эйргард"], 500, 4);
     expect(result).toHaveLength(1);
