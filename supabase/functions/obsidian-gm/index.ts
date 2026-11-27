@@ -93,6 +93,58 @@ function validateSchema(value: unknown, schema: JsonRecord): boolean {
   if (Array.isArray(schema.enum)) return schema.enum.includes(value);
   return true;
 }
+const GAME_TURN_STRING_LIMITS: Record<string, number> = {
+  narration: 900, campaignMemory: 600, sensoryDescription: 1100,
+  spatialAccounting: 450, mechanics: 800, consequences: 550,
+  resourceAccounting: 450, nextAction: 300, summary: 160,
+  worldOutcome: 350, newInGameDate: 120, consequenceText: 350,
+  environmentReason: 250, clarificationQuestion: 300,
+  weather: 120, lighting: 100, visibility: 100, wind: 100,
+  precipitation: 100, ambientSounds: 140, ambientSmells: 140, notes: 260,
+  label: 100, formula: 80, result: 100,
+  name: 100, role: 150, goals: 220, resources: 180,
+  attitudeToPlayer: 160, reason: 220, factSummary: 220,
+  acquisitionPath: 150, title: 140, description: 300,
+  reward: 160, sourcePath: 160, objectives: 140,
+  inventory: 180, recovery: 140, stateNotes: 220,
+};
+
+const GAME_TURN_ARRAY_LIMITS: Record<string, number> = {
+  rolls: 4, npcChanges: 5, knowledgeAdditions: 3,
+  playerKnowledgeAdditions: 3, questChanges: 3, objectives: 4,
+  inventory: 5, resources: 8, conditions: 6, stateNotes: 6,
+};
+
+function boundGameTurnSchema(schema: JsonRecord): JsonRecord {
+  const visit = (node: JsonRecord, key = ""): JsonRecord => {
+    const result: JsonRecord = { ...node };
+    const type = result.type;
+    if (type === "string" || (Array.isArray(type) && type.includes("string"))) {
+      const requested = GAME_TURN_STRING_LIMITS[key] ?? 240;
+      const existing = Number(result.maxLength);
+      result.maxLength = Number.isFinite(existing) && existing > 0
+        ? Math.min(existing, requested)
+        : requested;
+    }
+    if (type === "array") {
+      const requested = GAME_TURN_ARRAY_LIMITS[key] ?? 6;
+      const existing = Number(result.maxItems);
+      result.maxItems = Number.isFinite(existing) && existing > 0
+        ? Math.min(existing, requested)
+        : requested;
+      if (isRecord(result.items)) result.items = visit(result.items, key);
+    }
+    if (isRecord(result.properties)) {
+      result.properties = Object.fromEntries(
+        Object.entries(result.properties).map(([childKey, child]) =>
+          [childKey, isRecord(child) ? visit(child, childKey) : child]),
+      );
+    }
+    return result;
+  };
+  return visit(schema);
+}
+
 function outputText(message: JsonRecord): string {
   const content = message.content;
   if (typeof content === "string") return content.trim();
@@ -323,7 +375,8 @@ Deno.serve(async (req: Request) => {
     } catch { /* keep the original input so malformed dossiers are reported accurately */ }
   }
   const instructionText = requestBody.instructions as string;
-  const schema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const selectedSchema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const schema: JsonRecord = isRecord(body) && body.operation === "GAME_TURN" ? boundGameTurnSchema(selectedSchema) : selectedSchema;
   const schemaName = isCompatibilityRequest ? "obsidian_character_compatibility" : isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
@@ -551,10 +604,11 @@ Deno.serve(async (req: Request) => {
           // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
           // Game turns have a large structured schema; cap generation to avoid
           // spending the entire mobile request window on oversized responses.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : 8192,
+          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? 6144 : 8192,
+          // DeepSeek V4.1 Flash defaults to high thinking; low effort avoids spending the whole output budget on hidden reasoning.
+          ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: "low" } } : {}),
         }),
-        // Game turns need enough time for the model to finish generating its structured response.
-        // Limit them to two providers above; 50s per attempt stays within the Edge wall-clock budget.
+        // Game turns use bounded output and low DeepSeek reasoning effort to finish inside the mobile request window.
         signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? 82_000 : 18_000),
       });
       console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
