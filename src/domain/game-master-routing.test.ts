@@ -76,7 +76,7 @@ describe("game-turn semantic validation", () => {
       inventory: [], resources: [], conditions: [],
       currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     },
-    rolls: [{ label: "Мудрость (Восприятие)", formula: "1d20 + 3", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+    rolls: [{ label: "Мудрость (Восприятие)", formula: "1d20 + 3", dc: 15, result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
   };
 
   it("accepts a pending roll without resolving its outcome", () => {
