@@ -43,6 +43,7 @@ function GamePage() {
   const [openingAttempted, setOpeningAttempted] = useState(false);
   const [playerAction, setPlayerAction] = useState("");
   const [pendingAction, setPendingAction] = useState("");
+  const [originalPlayerIntent, setOriginalPlayerIntent] = useState("");
   const [gmBusy, setGmBusy] = useState(false);
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
@@ -134,6 +135,7 @@ function GamePage() {
       } else {
         setPlayerAction("");
         setPendingAction("");
+        setOriginalPlayerIntent("");
         setGmTurn(null);
         setDraftReady(false);
         setCompletedPlayerRolls([]);
@@ -242,7 +244,7 @@ function GamePage() {
     void handleOpenCampaign();
   }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
-  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; result: string }>) {
+  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; result: string }>, playerIntentOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
@@ -251,6 +253,7 @@ function GamePage() {
       setRollDisplay(null);
       setCompletedPlayerRolls([]);
     }
+    if (!preserveRolls) setOriginalPlayerIntent(actionToResolve.trim());
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
@@ -260,7 +263,7 @@ function GamePage() {
       if (!result.turn.needsClarification && !waitingForRoll) {
         updateTurnDraft({
           summary: result.turn.summary,
-          playerIntent: actionToResolve.trim(),
+          playerIntent: playerIntentOverride ?? actionToResolve.trim(),
           worldOutcome: result.turn.worldOutcome,
           gmNarration: formatArchivedGameMasterAnswer(result.turn, worldState, character, locations, nextTurnNumber),
           campaignMemory: result.turn.campaignMemory,
@@ -329,7 +332,7 @@ function GamePage() {
     const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ИГРОКА: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction, true, allRolls);
+    void handleResolveAction(continuedAction, true, allRolls, originalPlayerIntent || pendingAction);
   }
 
   function handleApplyClarification() {
