@@ -27,6 +27,36 @@ export const Route = createFileRoute("/game")({
   component: GamePage,
 });
 
+function rollDie(sides: number): number {
+  if (!Number.isInteger(sides) || sides < 2 || sides > 1000) throw new Error("Недопустимый тип кости.");
+  const random = new Uint32Array(1);
+  const range = 0x1_0000_0000;
+  const limit = Math.floor(range / sides) * sides;
+  let value = 0;
+  do {
+    crypto.getRandomValues(random);
+    value = random[0]!;
+  } while (value >= limit);
+  return value % sides + 1;
+}
+
+function parseDiceFormula(formula: string): { count: number; sides: number; keep: "highest" | "lowest" | null; modifier: number } | null {
+  const match = formula.match(/(\\d*)d(\\d+)(kh1|kl1)?/i);
+  if (!match || match.index === undefined) return null;
+  const count = Number(match[1] || 1);
+  const sides = Number(match[2]);
+  if (!Number.isInteger(count) || count < 1 || count > 20 || !Number.isInteger(sides) || sides < 2 || sides > 1000) return null;
+  const tail = formula.slice(match.index + match[0].length);
+  const bonuses = [...tail.matchAll(/([+-])\\s*(\\d+)/g)]
+    .map((item) => (item[1] === "-" ? -1 : 1) * Number(item[2]));
+  return {
+    count,
+    sides,
+    keep: match[3]?.toLowerCase() === "kh1" ? "highest" : match[3]?.toLowerCase() === "kl1" ? "lowest" : null,
+    modifier: bonuses.reduce((sum, value) => sum + value, 0),
+  };
+}
+
 function GamePage() {
   const {
     sources, worldState, character, canonFacts, npcs, factions, locations, timelineEvents,
@@ -45,7 +75,7 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollDisplay, setRollDisplay] = useState<{ label: string; die: number; modifier: number; total: number } | null>(null);
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: number[]; sides: number; modifier: number; total: number } | null>(null);
   const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -293,35 +323,34 @@ function GamePage() {
     if (!gmTurn || gmBusy) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const numericBonuses = [...pending.formula.matchAll(/([+-])\s*(\d+)/g)]
-      .map((match) => (match[1] === "-" ? -1 : 1) * Number(match[2]));
+    const parsed = parseDiceFormula(pending.formula);
+    if (!parsed) {
+      setGmError(`Мастер запросил неподдерживаемую формулу броска: ${pending.formula}. Ход не продолжен.`);
+      return;
+    }
     const matchingSkill = character.skillBonuses?.find((skill) => {
       const label = pending.label.toLocaleLowerCase();
       const name = skill.name.toLocaleLowerCase();
       return label.includes(name) || name.includes(label);
     });
-    const modifier = numericBonuses.length
-      ? numericBonuses.reduce((sum, value) => sum + value, 0)
-      : matchingSkill?.bonus ?? 0;
-    const random = new Uint32Array(1);
-    const limit = Math.floor(0x1_0000_0000 / 20) * 20;
-    let value = 0;
-    do {
-      crypto.getRandomValues(random);
-      value = random[0]!;
-    } while (value >= limit);
-    const die = value % 20 + 1;
-    const total = die + modifier;
-    const formula = `1d20 ${modifier >= 0 ? "+" : "−"} ${Math.abs(modifier)}`;
-    setRollDisplay({ label: pending.label, die, modifier, total });
+    const modifier = parsed.modifier !== 0
+      ? parsed.modifier
+      : parsed.sides === 20 ? matchingSkill?.bonus ?? 0 : 0;
+    const dice = Array.from({ length: parsed.count }, () => rollDie(parsed.sides));
+    let rolledValue = dice.reduce((sum, value) => sum + value, 0);
+    if (parsed.keep === "highest") rolledValue = Math.max(...dice);
+    if (parsed.keep === "lowest") rolledValue = Math.min(...dice);
+    const total = rolledValue + modifier;
+    const formula = pending.formula;
+    setRollDisplay({ label: pending.label, dice, sides: parsed.sides, modifier, total });
     const rollRecord = {
       id: `player-roll-${Date.now().toString(36)}`,
       label: pending.label,
       formula,
-      result: `d20=${die}; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
+      result: `кости=[${dice.join(", ")}]; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
     };
     setCompletedPlayerRolls((current) => [...current, rollRecord]);
-    const continuedAction = `${pendingAction}\n\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
+    const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; формула ${formula}; выпали значения [${dice.join(", ")}]; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
     void handleResolveAction(continuedAction, true, [...completedPlayerRolls, rollRecord]);
@@ -532,7 +561,7 @@ function GamePage() {
                 <p className="text-sm font-medium">{gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.label}</p>
                 <p className="text-xs text-muted-foreground">Бросок: {gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")?.formula}. Результат определит дальнейший исход действия.</p>
                 <Button type="button" className="w-full" disabled={gmBusy} onClick={handleRollPendingCheck}>
-                  <Dices className="mr-2 h-4 w-4" />Бросить d20
+                  <Dices className="mr-2 h-4 w-4" />Бросить кубики
                 </Button>
               </div>
             )}
@@ -542,13 +571,17 @@ function GamePage() {
 
       {rollDisplay && (
         <div className="flex items-center gap-3 rounded-xl border border-primary/30 bg-card p-3 text-sm" role="status">
-          <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border border-primary/40 bg-primary/10">
-            <Dices className="h-5 w-5 text-primary" />
-            <span className="mono-code text-lg font-bold">{rollDisplay.die}</span>
+          <div className="flex shrink-0 flex-wrap items-center gap-1">
+            {rollDisplay.dice.map((die, index) => (
+              <div key={index} className="flex h-12 w-12 flex-col items-center justify-center rounded-xl border border-primary/40 bg-primary/10">
+                <Dices className="h-4 w-4 text-primary" />
+                <span className="mono-code text-base font-bold">{die}</span>
+              </div>
+            ))}
           </div>
           <div className="min-w-0">
             <p className="font-semibold">{rollDisplay.label}</p>
-            <p className="text-xs text-muted-foreground">d20: {rollDisplay.die} · модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
+            <p className="text-xs text-muted-foreground">d{rollDisplay.sides} · модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
           </div>
         </div>
