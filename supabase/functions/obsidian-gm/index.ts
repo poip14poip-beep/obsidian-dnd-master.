@@ -593,7 +593,7 @@ Deno.serve(async (req: Request) => {
   const requestedModelOrder: GameMasterModelId[] = isGameTurnRequest
     // DeepSeek and Gemini have already reviewed canon/state and rules/character;
     // Claude performs the first synthesis pass, with the other providers as fallbacks.
-    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon", "deepseek/deepseek-v4.1-flash"]
+    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"]
     : selectGameMasterModelOrder({
       isCompatibilityRequest,
       isStoryRequest,
