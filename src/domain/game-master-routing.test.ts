@@ -173,8 +173,8 @@ describe("game-turn payload metrics", () => {
     });
     expect(metrics.campaignChars).toBeGreaterThan(0);
     expect(metrics.characterChars).toBeGreaterThan(0);
-    expect(metrics.dossierChars).toBe("verified dossier".length);
-    expect(metrics.npcSimulationChars).toBe("GM-only rules".length);
+    expect(metrics.dossierChars).toBe(JSON.stringify("verified dossier").length);
+    expect(metrics.npcSimulationChars).toBe(JSON.stringify("GM-only rules").length);
     expect(metrics.canonFacts).toBe(1);
     expect(metrics.npcCount).toBe(2);
     expect(metrics.factionCount).toBe(1);
