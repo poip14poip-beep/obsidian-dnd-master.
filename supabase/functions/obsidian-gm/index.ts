@@ -3,6 +3,7 @@ import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameT
 import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
 import { callWithEkdrasilReadTools } from "./game-master-retrieval.ts";
+import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -57,6 +58,24 @@ function playerCharacterFromInput(inputText: string): JsonRecord | null {
       : null;
   } catch {
     return null;
+  }
+}
+
+function partyNamesFromInput(inputText: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed)) return [];
+    const names: string[] = [];
+    const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
+    if (typeof character.name === "string" && character.name.trim()) names.push(character.name.trim());
+    const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
+    const party = Array.isArray(campaign.partyMembers) ? campaign.partyMembers : [];
+    for (const member of party) {
+      if (isRecord(member) && typeof member.name === "string" && member.name.trim()) names.push(member.name.trim());
+    }
+    return [...new Set(names)];
+  } catch {
+    return [];
   }
 }
 const EKDRASIL_CANON_SHA256 = "6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4";
@@ -668,6 +687,8 @@ Deno.serve(async (req: Request) => {
     canonContext
   ] : [
     masterPrompt,
+    ENGINE_BOUNDARY_RULES,
+    ...(isGameTurnRequest ? [ENGINE_BOUNDARY_CHECK] : []),
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     instructionText,
@@ -936,6 +957,50 @@ Deno.serve(async (req: Request) => {
             content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН: бросок ещё не выполнен. Опиши только попытку и обстановку, не утверждай успех, провал, попадание, промах или последствие действия. Запроси ожидающий бросок и дождись его фактического результата.",
           });
           continue;
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && typeof parsed.narration === "string") {
+        const contradictions = checkNarration({
+          conversation: modelCall.conversation as GuardMessage[],
+          narration: parsed.narration,
+          partyNames: partyNamesFromInput(inputText),
+        });
+        if (contradictions.length) {
+          console.warn("[obsidian-gm] engine-boundary narration contradiction", { model: attempt.id, count: contradictions.length, kinds: [...new Set(contradictions.map((item) => item.kind))] });
+          try {
+            const repairBody: JsonRecord = { ...modelRequestBody, messages: [
+              ...modelCall.conversation,
+              { role: "assistant", content },
+              { role: "system", content: buildCorrectionPrompt(contradictions) },
+            ] };
+            const repairResponse = await fetch("https://routerai.ru/api/v1/chat/completions", {
+              method: "POST", headers: requestHeaders, body: JSON.stringify(repairBody), signal: AbortSignal.timeout(12_000),
+            });
+            const repairPayload: unknown = await repairResponse.json().catch(() => null);
+            const repairRoot = isRecord(repairPayload) ? repairPayload : {};
+            const repairChoices = Array.isArray(repairRoot.choices) ? repairRoot.choices : [];
+            const repairChoice = isRecord(repairChoices[0]) ? repairChoices[0] : {};
+            const repairMessage = isRecord(repairChoice.message) ? repairChoice.message : {};
+            const repairedContent = outputText(repairMessage);
+            let repairedParsed: unknown = null;
+            try { repairedParsed = repairedContent ? JSON.parse(repairedContent) : null; } catch { repairedParsed = null; }
+            const repairSemanticFailure = validateSchema(repairedParsed, schema) ? validateGameTurnSemantics(repairedParsed) : "corrective response does not match the required JSON schema";
+            const repairedContradictions = isRecord(repairedParsed) && typeof repairedParsed.narration === "string"
+              ? checkNarration({ conversation: modelCall.conversation as GuardMessage[], narration: repairedParsed.narration, partyNames: partyNamesFromInput(inputText) })
+              : contradictions;
+            if (!repairResponse.ok || repairChoice.finish_reason === "length" || repairSemanticFailure || repairedContradictions.length) {
+              failures.push(attempt.id + ": engine-boundary correction failed");
+              console.warn("[obsidian-gm] engine-boundary correction rejected", { model: attempt.id, httpStatus: repairResponse.status, schemaOrSemanticFailure: repairSemanticFailure, remainingContradictions: repairedContradictions.length });
+              continue;
+            }
+            parsed = repairedParsed;
+            content = repairedContent;
+            console.log("[obsidian-gm] engine-boundary correction accepted", { model: attempt.id });
+          } catch (error) {
+            failures.push(attempt.id + ": engine-boundary correction unavailable");
+            console.warn("[obsidian-gm] engine-boundary correction unavailable", { model: attempt.id, message: error instanceof Error ? error.message : String(error) });
+            continue;
+          }
         }
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
