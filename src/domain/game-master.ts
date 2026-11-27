@@ -515,12 +515,13 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     }
   }
   for (const roll of turn["rolls"] as Array<Record<string, unknown>>) {
-    if (!["PLAYER", "GM"].includes(String(roll["roller"])) || typeof roll["label"] !== "string" || typeof roll["formula"] !== "string" ||
-        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      throw new GameMasterError("Мастер попытался подставить результат броска. Число должен генерировать защищённый сервер; ход не принят.", "GM_INVENTED_DICE_RESULT");
-    }
-    if (!roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
+    if (typeof roll["label"] !== "string" || typeof roll["formula"] !== "string" ||
+        !roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
+    }
+    if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
+        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      throw new GameMasterError("Мастер попытался подставить результат броска или не указал, кто бросает. Число должен генерировать игрок или защищённый сервер согласно владельцу броска.", "GM_INVENTED_DICE_RESULT");
     }
   }
   const rolls = turn["rolls"] as Array<Record<string, unknown>>;
