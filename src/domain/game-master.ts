@@ -1,4 +1,5 @@
 import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldChangeSet, WorldState } from "./types";
+import { getSupabaseAuthClient } from "@/lib/supabase-auth";
 
 export interface GameMasterContext {
   action: string; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -327,19 +328,54 @@ function validateReferences(turn: GameMasterTurn, context: GameMasterContext): v
     if (!existingFactionIds.has(update.factionId)) throw new GameMasterError("Обновление ссылается на неизвестную фракцию.", "UNKNOWN_FACTION_REFERENCE");
   }
 }
-export async function resolvePlayerAction(apiKey: string, context: GameMasterContext,
-  options: { model?: string; fetcher?: typeof fetch } = {}): Promise<GameMasterResult> {
-  if (!apiKey.trim()) throw new GameMasterError("Введи API-ключ модели в игровом окне.", "API_KEY_REQUIRED");
+type MasterGatewayCredentials = {
+  url: string;
+  publishableKey: string;
+  accessToken: string;
+};
+type ResolvePlayerActionOptions = {
+  fetcher?: typeof fetch;
+  credentials?: MasterGatewayCredentials;
+};
+async function getMasterGatewayCredentials(
+  override?: MasterGatewayCredentials,
+): Promise<MasterGatewayCredentials> {
+  if (override) return override;
+  const { client, envResult } = getSupabaseAuthClient();
+  if (!envResult.ok || !client) {
+    throw new GameMasterError(
+      envResult.ok ? "Клиент Supabase не готов." : envResult.error,
+      "SUPABASE_NOT_CONFIGURED",
+    );
+  }
+  const { data, error } = await client.auth.getSession();
+  if (error || !data.session?.access_token) {
+    throw new GameMasterError(
+      "Для работы ИИ-мастера войди в приложение. Запрос без пользовательской сессии запрещён.",
+      "AUTH_REQUIRED",
+    );
+  }
+  return {
+    url: envResult.config.url,
+    publishableKey: envResult.config.publishableKey,
+    accessToken: data.session.access_token,
+  };
+}
+export async function resolvePlayerAction(
+  context: GameMasterContext,
+  options: ResolvePlayerActionOptions = {},
+): Promise<GameMasterResult> {
   if (!context.action.trim()) throw new GameMasterError("Действие персонажа не может быть пустым.", "EMPTY_ACTION");
   const governing = context.sources.find((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED");
   if (!governing) throw new GameMasterError("Не загружен ОБСИДИАН 4.1. Игра заблокирована: мастер не должен работать по пересказу правил.", "GOVERNING_SOURCE_MISSING");
   const dossier = context.sources.find((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED");
   const system = [
-    "Ты — игровой мастер-симулятор живого мира D&D 5e редакции 2024 в кампании ОБСИДИАН.",
+    "Ты — игровой мастер-симулятор живого мира D&D 2024 (SRD 5.2.1) в кампании ОБСИДИАН 4.1 и мире Экдрасиль.",
     "Ниже передан полный управляющий документ. Его правила обязательны; не сокращай и не переопределяй его.",
     "=== ПОЛНЫЙ ОБСИДИАН 4.1 ===\n" + governing.content,
     "=== ЭПИСТЕМИЧЕСКИЕ И КАНОНИЧЕСКИЕ ОГРАНИЧЕНИЯ ===",
     "Различай объективную истину, знания персонажа, знания каждого NPC и OOC. NPC не всеведущи. Не добавляй неподтверждённые факты Экдрасиля. При неизвестности используй UNKNOWN, при приблизительности APPROXIMATE. Досье персонажа не является каноном мира.",
+    "Каноническая редакция 2.4, год мира 2000, является единственным авторитетным источником мира. CAMPAIGN-STATE относится только к этой кампании и не переписывает глобальную хронику.",
     "Игрок может пытаться совершать любые действия. Не запрещай их произвольно: оцени физическую возможность, механику, риски и последствия.",
     "Не выдумывай результаты бросков. Если нужна проверка, укажи её в rolls с формулой и результатом 'ОЖИДАЕТСЯ БРОСОК ИГРОКА'; не разрешай исход до получения результата. Не бросай за игрока.",
     "Если действие требует уточнения, не продвигай время и не фиксируй последствия; задай один конкретный вопрос в clarificationQuestion.",
@@ -361,24 +397,36 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
       "worldChanges хранит только доказуемые последствия текущего действия: обновляй NPC и их знания только при конкретном канале получения информации; добавляй факты с корректным эпистемическим слоем и не выдавай гипотезы за объективную истину; ресурсы/цели фракций меняй только при установленной причине; delayedEvents создавай только при реальном отложенном обязательстве/триггере. Пустые коллекции обязательны, когда изменений нет.",
       "Не обновляй NPC, фракции или их знания только потому, что игрок о них подумал или спросил. NPCKnowledgeAddition требует конкретного пути: свидетель, услышанная речь, документ, приказ, отчёт или иной достоверный канал.",
       "Новый NPC/фракция создаются только если персонаж действительно установил контакт/идентичность; неизвестное имя остаётся UNKNOWN, не придумывай имена для безымянных людей.",
-
       "stateNotes содержит важные изменения/неизвестности, но не подменяет канон.",
     ],
   };
-  const model = options.model ?? "gpt-4.1-mini";
+  const credentials = await getMasterGatewayCredentials(options.credentials);
+  const endpoint = credentials.url.replace(/\/+$/, "") + "/functions/v1/obsidian-gm";
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)("https://api.openai.com/v1/responses", {
-      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey.trim()}` },
-      body: JSON.stringify({ model, instructions: system, input: JSON.stringify(user),
-        text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } } }),
+    response = await (options.fetcher ?? fetch)(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${credentials.accessToken}`,
+        apikey: credentials.publishableKey,
+      },
+      body: JSON.stringify({
+        operation: "GAME_TURN",
+        model: "obsidian-free",
+        instructions: system,
+        input: JSON.stringify(user),
+        text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } },
+      }),
     });
-  } catch { throw new GameMasterError("Не удалось подключиться к API модели. Проверь интернет-соединение.", "NETWORK_ERROR"); }
+  } catch {
+    throw new GameMasterError("Не удалось подключиться к серверному мастеру. Проверь интернет-соединение.", "NETWORK_ERROR");
+  }
   const payload = await response.json().catch(() => null) as unknown;
   if (!response.ok) {
     const err = payload && typeof payload === "object" ? (payload as Record<string, unknown>).error : null;
     const detail = err && typeof err === "object" && typeof (err as Record<string, unknown>).message === "string"
-      ? (err as { message: string }).message : "API отклонил запрос.";
+      ? (err as { message: string }).message : "Серверный мастер отклонил запрос.";
     throw new GameMasterError(detail, "MODEL_API_ERROR");
   }
   let parsed: unknown;
@@ -386,6 +434,7 @@ export async function resolvePlayerAction(apiKey: string, context: GameMasterCon
   catch (error) { if (error instanceof GameMasterError) throw error; throw new GameMasterError("Модель вернула невалидный JSON. Ничего не сохранено.", "INVALID_JSON"); }
   const record = payload as Record<string, unknown>;
   const usage = record.usage && typeof record.usage === "object" ? record.usage as GameMasterResult["usage"] : undefined;
+  const model = typeof record.model === "string" ? record.model : "obsidian-free";
   const turn = validateTurn(parsed);
   validateReferences(turn, context);
   return { turn, model, usage };
