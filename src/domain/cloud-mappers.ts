@@ -1,7 +1,18 @@
 import type {
+  AuditEntry,
+  AuditLogState,
+  CanonFact,
+  DelayedEvent,
+  FactionRecord,
+  GameTurnEntry,
+  LocationRecord,
   NpcRecord,
+  ObsidianCollections,
   PlayerCharacterState,
+  SessionLogState,
   SourceDocument,
+  TechnicalMessageEntry,
+  TurnDraft,
   WorldState,
 } from "./types";
 
@@ -34,7 +45,7 @@ export interface CloudPlayerCharacterRow {
   character_name: string | null;
   character_data: PlayerCharacterState;
   source_id: string;
-  verified_at: null;
+  verified_at: string | null;
 }
 
 export interface CloudNpcRow {
@@ -214,6 +225,7 @@ export async function mapCloudPlayerCharacter(
   campaignId: string,
   character: PlayerCharacterState,
   sourceIds: Record<string, string>,
+  verifiedAt: string | null = null,
 ): Promise<CloudPlayerCharacterRow> {
   assertCampaignId(campaignId);
   const sourceId = sourceIds[character.sourceDossierId];
@@ -228,8 +240,8 @@ export async function mapCloudPlayerCharacter(
     character_name: character.name === "UNKNOWN" ? null : character.name,
     character_data: character,
     source_id: sourceId,
-    // Verification is a separate human-reviewed operation, never inferred from import.
-    verified_at: null,
+    // Only an explicit, completed campaign setup may mark the imported character verified.
+    verified_at: parseIsoTimestamp(verifiedAt ?? ""),
   };
 }
 
@@ -244,6 +256,7 @@ export async function mapCloudNpcs(
   npcs: NpcRecord[],
   sourceIds: Record<string, string>,
   locationIds: Record<string, string>,
+  factionIds: Record<string, string> = {},
 ): Promise<CloudNpcMapping> {
   assertCampaignId(campaignId);
   const npcRows: CloudNpcRow[] = [];
@@ -261,6 +274,10 @@ export async function mapCloudNpcs(
     if (npc.locationId && (!currentLocationId || !UUID_PATTERN.test(currentLocationId))) {
       throw new CloudMappingError(`No cloud location ID is available for NPC ${npc.name}.`);
     }
+    const factionId = npc.factionId ? (factionIds[npc.factionId] ?? null) : null;
+    if (npc.factionId && (!factionId || !UUID_PATTERN.test(factionId))) {
+      throw new CloudMappingError(`No cloud faction ID is available for NPC ${npc.name}.`);
+    }
 
     const npcId = await deterministicCloudId(campaignId, "npcs", npc.id);
     npcRows.push({
@@ -274,13 +291,29 @@ export async function mapCloudNpcs(
       npc_state: {
         local_id: npc.id,
         role: npc.role,
-        faction_id: npc.factionId,
+        faction_id: factionId,
         goals: npc.goals,
+        resources: npc.resources ?? "",
         attitude_to_player: npc.attitudeToPlayer,
         certainty: npc.certainty,
         locked: npc.locked,
         version: npc.version,
         history: npc.history,
+      player_knowledge: await Promise.all((npc.playerKnowledge ?? []).map(async (entry) => {
+        const playerKnowledgeSourceId = entry.sourceId === "MANUAL_GM_ENTRY" ? null : sourceIds[entry.sourceId] ?? null;
+        if (entry.sourceId !== "MANUAL_GM_ENTRY" && (!playerKnowledgeSourceId || !UUID_PATTERN.test(playerKnowledgeSourceId))) {
+          throw new CloudMappingError("No cloud source ID is available for player knowledge of NPC " + npc.name + ".");
+        }
+        return {
+          id: await deterministicCloudId(campaignId, "npc_player_knowledge", npc.id + ":" + entry.id),
+          fact_summary: entry.factSummary,
+          source_id: playerKnowledgeSourceId,
+          acquisition_path: entry.acquisitionPath,
+          in_game_date: entry.inGameDate,
+          certainty: entry.certainty,
+          recorded_at: parseIsoTimestamp(entry.recordedAt),
+        };
+      })),
       },
     });
 
