@@ -300,6 +300,7 @@ function GamePage() {
               formula: roll.formula,
               dc: roll.dc,
               targetType: roll.targetType,
+              roller: roll.roller,
               result: roll.result,
             })),
           ],
