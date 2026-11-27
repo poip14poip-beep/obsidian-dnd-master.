@@ -39,7 +39,7 @@ export const EKDRASIL_READ_TOOLS = [
 ] as const;
 
 function termsOf(query: string): string[] {
-  return [...new Set(query.toLocaleLowerCase().split(/[^\\p{L}\\p{N}]+/u).filter((term) => term.length > 2))].slice(0, 18);
+  return [...new Set(query.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 2))].slice(0, 18);
 }
 
 function ranked<T extends { haystack: string }>(items: T[], query: string): T[] {
