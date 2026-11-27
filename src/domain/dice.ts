@@ -44,10 +44,10 @@ export function rollDie(sides: number): number {
  * Unknown syntax is rejected instead of silently producing a wrong result.
  */
 export function parseDiceFormula(formula: string): ParsedDiceFormula | null {
-  const compact = formula.replace(/\\s+/g, "");
+  const compact = formula.replace(/\s+/g, "");
   if (!compact || compact.length > 80) return null;
 
-  const token = /([+-]?)(?:(\\d*)d(\\d+)(kh1|kl1)?|(\\d+))/gy;
+  const token = /([+-]?)(?:(\d*)d(\d+)(kh1|kl1)?|(\d+))/gy;
   const terms: DiceTerm[] = [];
   let modifier = 0;
   let totalDice = 0;
