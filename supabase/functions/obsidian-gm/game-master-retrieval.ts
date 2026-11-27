@@ -47,6 +47,25 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "prepare_player_attack",
+      description: "Подготовить атаку главного героя. Бонус атаки берётся только из weaponAttacks листа персонажа. AC цели обязательно должен быть подтверждён выдержкой SRD, ранее полученной через search_dnd_rules. Не выдумывай AC. Не используй для NPC-атак или урона.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          weapon: { type: "string", minLength: 1, maxLength: 80 },
+          targetName: { type: "string", minLength: 2, maxLength: 100 },
+          targetAC: { type: "integer", minimum: 1, maximum: 40 },
+          advantage: { type: "string", enum: ["NONE", "ADVANTAGE", "DISADVANTAGE"] },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["weapon", "targetName", "targetAC", "advantage", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "search_ekdrasil_canon",
       description: "Найти точные выдержки только из Ekdrasil_Master_Canon_v2.4.md. Старые редакции запрещены. Только чтение.",
       parameters: {
@@ -190,6 +209,61 @@ function preparePlayerCheck(
   };
 }
 
+function preparePlayerAttack(
+  args: JsonRecord,
+  rules: RetrievalSource,
+  playerCharacter: JsonRecord | null,
+  retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
+  alreadyPrepared: boolean,
+): { ok: true; preparedPlayerRoll: PreparedPlayerRoll; targetACSource: { sourceId: string; sha256: string; lines: string } } | { ok: false; error: string } {
+  if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешена только одна ожидающая проверка игрока." };
+  if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" || !Array.isArray(playerCharacter.weaponAttacks)) {
+    return { ok: false, error: "В подтверждённом листе нет списка оружейных атак. Не выдумывай бонус атаки." };
+  }
+  const weapon = typeof args.weapon === "string" ? args.weapon.trim() : "";
+  const targetName = typeof args.targetName === "string" ? args.targetName.trim() : "";
+  const targetAC = args.targetAC;
+  const advantage = args.advantage;
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  if (!weapon || !targetName || !Number.isInteger(targetAC) || (targetAC as number) < 1 || (targetAC as number) > 40 ||
+      !["NONE", "ADVANTAGE", "DISADVANTAGE"].includes(String(advantage)) || reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для атаки нужны точное оружие, цель, AC 1–40, преимущество и причина." };
+  }
+  const weaponEntry = (playerCharacter.weaponAttacks as unknown[]).find((entry) =>
+    entry && typeof entry === "object" &&
+    typeof (entry as JsonRecord).weapon === "string" &&
+    ((entry as JsonRecord).weapon as string).normalize("NFKC").trim().toLocaleLowerCase() === weapon.normalize("NFKC").toLocaleLowerCase(),
+  ) as JsonRecord | undefined;
+  if (!weaponEntry || !Number.isInteger(weaponEntry.attackBonus)) {
+    return { ok: false, error: "Оружие или его подтверждённый бонус атаки отсутствует в листе персонажа." };
+  }
+  const targetNeedle = targetName.normalize("NFKC").toLocaleLowerCase();
+  const acPattern = new RegExp("(?:armor\\s+class|\\bAC)\\s*:?\\s*" + String(targetAC) + "\\b", "i");
+  const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) =>
+    excerpt.text.normalize("NFKC").toLocaleLowerCase().includes(targetNeedle) && acPattern.test(excerpt.text),
+  );
+  if (!sourceExcerpt) {
+    return { ok: false, error: "AC цели не подтверждён выдержкой SRD 5.2.1 в этом ходе. Найди статблок через search_dnd_rules; если его нет в SRD, не разрешай атаку без проверенного статблока." };
+  }
+  const modifier = Number(weaponEntry.attackBonus);
+  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
+  const formula = modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
+  return {
+    ok: true,
+    preparedPlayerRoll: {
+      roller: "PLAYER",
+      label: "Атака " + weapon + " по " + targetName,
+      formula,
+      dc: targetAC as number,
+      targetType: "AC",
+      modifier,
+      kind: "WEAPON_ATTACK",
+      reason,
+    },
+    targetACSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
+  };
+}
+
 export function executeEkdrasilReadTool(
   name: string,
   rawArguments: string,
@@ -197,6 +271,7 @@ export function executeEkdrasilReadTool(
   canon: RetrievalSource,
   playerCharacter: JsonRecord | null = null,
   alreadyPrepared = false,
+  retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [],
 ): JsonRecord {
   let args: unknown;
   try { args = JSON.parse(rawArguments || "{}"); }
@@ -206,6 +281,9 @@ export function executeEkdrasilReadTool(
   }
   if (name === "prepare_player_check") {
     return preparePlayerCheck(args as JsonRecord, playerCharacter, alreadyPrepared);
+  }
+  if (name === "prepare_player_attack") {
+    return preparePlayerAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
   }
 
   const query = (args as JsonRecord).query;
