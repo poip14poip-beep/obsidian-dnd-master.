@@ -241,7 +241,7 @@ describe("cloud mapping primitives", () => {
     expect(mapped.npcs[0]?.npc_state).toMatchObject({ faction_id: mapped.factions[0]?.id, resources: "Форма и оружие" });
     expect(mapped.canon_facts[0]?.fact_class).toBe("objective");
     expect(mapped.timeline_events[0]?.status).toBe("planned");
-    expect(mapped.world_state.state_value.player_character_state).toBeUndefined();
+    expect("player_character_state" in mapped.world_state.state_value).toBe(false);
   });
 
   it("maps technical notes into audit history without inventing game turns", async () => {
