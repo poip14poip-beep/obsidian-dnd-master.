@@ -41,13 +41,13 @@ function rollDie(sides: number): number {
 }
 
 function parseDiceFormula(formula: string): { count: number; sides: number; keep: "highest" | "lowest" | null; modifier: number } | null {
-  const match = formula.match(/(\\d*)d(\\d+)(kh1|kl1)?/i);
+  const match = formula.match(/(\d*)d(\d+)(kh1|kl1)?/i);
   if (!match || match.index === undefined) return null;
   const count = Number(match[1] || 1);
   const sides = Number(match[2]);
   if (!Number.isInteger(count) || count < 1 || count > 20 || !Number.isInteger(sides) || sides < 2 || sides > 1000) return null;
   const tail = formula.slice(match.index + match[0].length);
-  const bonuses = [...tail.matchAll(/([+-])\\s*(\\d+)/g)]
+  const bonuses = [...tail.matchAll(/([+-])\s*(\d+)/g)]
     .map((item) => (item[1] === "-" ? -1 : 1) * Number(item[2]));
   return {
     count,
@@ -350,7 +350,7 @@ function GamePage() {
       result: `кости=[${dice.join(", ")}]; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
     };
     setCompletedPlayerRolls((current) => [...current, rollRecord]);
-    const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; формула ${formula}; выпали значения [${dice.join(", ")}]; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
+    const continuedAction = `${pendingAction}\n\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; формула ${formula}; выпали значения [${dice.join(", ")}]; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
     void handleResolveAction(continuedAction, true, [...completedPlayerRolls, rollRecord]);
