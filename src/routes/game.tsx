@@ -293,7 +293,7 @@ function GamePage() {
     if (!gmTurn || gmBusy) return;
     const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
     if (!pending) return;
-    const numericBonuses = [...pending.formula.matchAll(/([+-])\\s*(\\d+)/g)]
+    const numericBonuses = [...pending.formula.matchAll(/([+-])\s*(\\d+)/g)]
       .map((match) => (match[1] === "-" ? -1 : 1) * Number(match[2]));
     const matchingSkill = character.skillBonuses?.find((skill) => {
       const label = pending.label.toLocaleLowerCase();
@@ -321,7 +321,7 @@ function GamePage() {
       result: `d20=${die}; модификатор=${modifier >= 0 ? "+" : ""}${modifier}; итог=${total}`,
     };
     setCompletedPlayerRolls((current) => [...current, rollRecord]);
-    const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
+    const continuedAction = `${pendingAction}\n\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
     void handleResolveAction(continuedAction, true, [...completedPlayerRolls, rollRecord]);
@@ -329,7 +329,7 @@ function GamePage() {
 
   function handleApplyClarification() {
     if (!gmTurn || !clarificationAnswer.trim()) return;
-    const clarifiedAction = `${pendingAction.trim()}\\n\\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`;
+    const clarifiedAction = `${pendingAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`;
     setPlayerAction(clarifiedAction);
     setClarificationAnswer("");
     setGmTurn(null);
