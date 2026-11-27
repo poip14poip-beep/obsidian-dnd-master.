@@ -583,7 +583,7 @@ function GamePage() {
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="pending-roll-title">
                   <div className="w-full max-w-sm space-y-5 rounded-2xl border border-primary/40 bg-card p-5 shadow-2xl">
                     <div className="flex items-center justify-center gap-2 text-base font-bold" id="pending-roll-title">
-                      <Dices className="h-5 w-5 text-primary" />Мастер назначил проверку
+                      <Dices className="h-5 w-5 text-primary" />Мастер назначил бросок
                     </div>
                     <div className="space-y-1 text-center">
                       <p className="text-lg font-semibold">{pending.label}</p>
