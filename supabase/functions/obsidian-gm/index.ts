@@ -851,24 +851,24 @@ Deno.serve(async (req: Request) => {
       }
       if (isGameTurnRequest && isRecord(parsed)) {
         const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
-        const playerRolls = rolls.filter((roll) => roll.roller === "PLAYER");
         const prepared = modelCall.preparedRoll;
-        const matchesPrepared = prepared !== null && playerRolls.length === 1 &&
-          playerRolls[0]?.label === prepared.label &&
-          playerRolls[0]?.formula === prepared.formula &&
-          playerRolls[0]?.dc === prepared.dc &&
-          playerRolls[0]?.targetType === prepared.targetType &&
-          playerRolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
-        const invalidPlayerRoll = prepared !== null ? !matchesPrepared : playerRolls.length > 0;
-        if (invalidPlayerRoll) {
+        const matchesPrepared = prepared !== null && rolls.length === 1 &&
+          rolls[0]?.roller === prepared.roller &&
+          rolls[0]?.label === prepared.label &&
+          rolls[0]?.formula === prepared.formula &&
+          rolls[0]?.dc === prepared.dc &&
+          rolls[0]?.targetType === prepared.targetType &&
+          rolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
+        const invalidPendingRoll = prepared !== null ? !matchesPrepared : rolls.length > 0;
+        if (invalidPendingRoll) {
           const reason = prepared
-            ? "player roll does not match the server-prepared character check"
-            : "player roll was returned without the deterministic prepare_player_check tool";
-          console.warn("[obsidian-gm] player-check tool validation rejected", { model: attempt.id, reason });
+            ? "pending roll does not match the server-prepared game mechanic"
+            : "pending roll was returned without a deterministic preparation tool";
+          console.warn("[obsidian-gm] prepared-roll validation rejected", { model: attempt.id, reason });
           failures.push(attempt.id + ": " + reason);
           messages.push({
             role: "system",
-            content: "ОТКЛОНЕНО: проверка главного героя должна быть подготовлена инструментом prepare_player_check. Используй точные label, formula, targetType и DC/AC, возвращённые инструментом, и result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонус и не меняй DC.",
+            content: "ОТКЛОНЕНО: каждый ожидающий бросок должен быть подготовлен соответствующим серверным инструментом. Используй точные roller, label, formula, targetType и DC/AC из результата инструмента; result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонусы и целевые значения.",
           });
           continue;
         }
