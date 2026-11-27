@@ -238,13 +238,15 @@ function GamePage() {
     void handleOpenCampaign();
   }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
-  async function handleResolveAction(actionOverride?: string) {
+  async function handleResolveAction(actionOverride?: string, preserveRolls = false) {
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
     setGmTurn(null);
-    setRollDisplay(null);
-    setCompletedPlayerRolls([]);
+    if (!preserveRolls) {
+      setRollDisplay(null);
+      setCompletedPlayerRolls([]);
+    }
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
@@ -322,7 +324,7 @@ function GamePage() {
     const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction);
+    void handleResolveAction(continuedAction, true);
   }
 
   function handleApplyClarification() {
@@ -654,7 +656,7 @@ function GamePage() {
               onFocus={() => setActivePanel("chat")}
               onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (playerAction.trim() && setupReady && !draftReady && !gmTurn && !gmBusy && session?.access_token) { setActivePanel("chat"); void handleResolveAction(); } } }}
               disabled={!setupReady || draftReady || Boolean(gmTurn) || gmBusy}
-              placeholder={!setupReady ? "Сначала подготовь кампанию…" : draftReady ? "Подтверди текущий ход выше…" : gmBusy ? "Мастер обрабатывает действие…" : "Что делает персонаж?…"}
+              placeholder={!setupReady ? "Сначала подготовь кампанию…" : draftReady ? "Мастер автоматически записывает ход…" : gmBusy ? "Мастер обрабатывает действие…" : "Что делает персонаж?…"}
               className="min-h-11 max-h-24 resize-none text-sm"
             />
           </div>
