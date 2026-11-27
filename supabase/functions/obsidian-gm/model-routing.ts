@@ -102,6 +102,30 @@ export function validateGameTurnSemantics(value: unknown): string | null {
   return null;
 }
 
+/**
+ * Engine-boundary guard adapted from Open Dungeon Master: while a roll is
+ * pending, narration may frame the attempt but must not state its outcome.
+ */
+export function validatePendingRollNarration(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const turn = value as Record<string, unknown>;
+  if (!Array.isArray(turn["rolls"]) || turn["rolls"].length === 0) return null;
+  const narration = [turn["narration"], turn["worldOutcome"]]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ")
+    .normalize("NFKC");
+  const prematureOutcomePatterns = [
+    /\bуспешно\s+(?:открыва|взламыва|убежда|замеча|наход|попада|уклоня|сопротивля)/i,
+    /\b(?:не удалось|не смог(?:ла)?|не сумел(?:а)?|провал(?:ил|ила|илось)|промахнул(?:ся|ась)|не попал(?:а)?|не заметил(?:а)?|не нашёл|не нашла|не убедил(?:а)?)/i,
+    /\b(?:дверь|замок|цель|враг|противник)\b.{0,60}\b(?:открыт|сломлен|повержен|ранен|убит|поражён|поражен)\b/i,
+    /\b(?:ты|вы)\s+(?:открываешь|взламываешь|убеждаешь|замечаешь|находишь|попадаешь|промахиваешься|уклоняешься)\b/i,
+    /\b(?:successfully|failed to|you hit|you miss|you open|you notice|you find)\b/i,
+  ];
+  return prematureOutcomePatterns.some((pattern) => pattern.test(narration))
+    ? "narration resolves an action before its pending roll has been made"
+    : null;
+}
+
 
 export interface RuleExcerpt {
   text: string;
