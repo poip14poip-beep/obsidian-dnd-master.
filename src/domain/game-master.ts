@@ -15,7 +15,7 @@ export interface GameMasterTurn {
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
-  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; result: string }>;
+  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; result: string }>;
   npcChanges: NpcTurnChange[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -118,8 +118,9 @@ const turnSchema = {
     consequenceText: { type: "string" },
     newLocationId: { type: ["string", "null"] },
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
-      roller: { type: "string", enum: ["PLAYER", "GM"] }, label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
-    }, required: ["roller", "label", "formula", "result"] } },
+      roller: { type: "string", enum: ["PLAYER", "GM"] }, label: { type: "string" }, formula: { type: "string" },
+      dc: { type: ["integer", "null"] }, result: { type: "string" },
+    }, required: ["roller", "label", "formula", "dc", "result"] } },
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
       role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
