@@ -515,6 +515,8 @@ export interface RetrievalLoopResult {
   toolCalls: number;
   exhausted: boolean;
   preparedRoll: PreparedRoll | null;
+  /** Read-only tool conversation retained for the post-generation engine boundary. */
+  conversation: JsonRecord[];
 }
 
 export async function callWithEkdrasilReadTools(options: {
@@ -559,7 +561,7 @@ export async function callWithEkdrasilReadTools(options: {
 
   if (!options.enabled) {
     const result = await send(options.requestBody);
-    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null };
+    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null, conversation: messages };
   }
 
   let toolCalls = 0;
@@ -575,7 +577,7 @@ export async function callWithEkdrasilReadTools(options: {
     delete toolBody.response_format;
     delete toolBody.structured_outputs;
     const result = await send(toolBody);
-    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll };
+    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, conversation: messages };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
       return { ...result, toolCalls, exhausted: false, preparedRoll };
     }
@@ -592,10 +594,10 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       const finalResult = await send(finalBody);
-      return { ...finalResult, toolCalls, exhausted: false, preparedRoll };
+      return { ...finalResult, toolCalls, exhausted: false, preparedRoll, conversation: messages };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
-      return { ...result, toolCalls, exhausted: true, preparedRoll };
+      return { ...result, toolCalls, exhausted: true, preparedRoll, conversation: messages };
     }
 
     messages.push(message);
