@@ -65,7 +65,7 @@ describe("Obsidian GM model routing", () => {
 
 describe("game-turn semantic validation", () => {
   const pending = {
-    narration: "Персонаж замечает движение.",
+    narration: "Персонаж прислушивается к окружающим звукам.",
     timeDeltaMinutes: 0,
     hpDelta: 0,
     newLocationId: null,
@@ -106,6 +106,12 @@ describe("game-turn semantic validation", () => {
         inventory: [{ action: "ADD", name: "Ключ", quantity: 1 }],
       },
     })).toContain("must not mutate");
+  });
+
+  it("rejects campaign memory and world outcomes while a roll is pending", () => {
+    expect(validateGameTurnSemantics({ ...pending, worldOutcome: "Дверь открылась." })).toContain("must not mutate");
+    expect(validateGameTurnSemantics({ ...pending, campaignMemory: "Персонаж узнал тайну." })).toContain("must not mutate");
+    expect(validateGameTurnSemantics({ ...pending, stateNotes: ["NPC увидел игрока"] })).toContain("must not mutate");
   });
 
   it("allows an ordinary turn with no pending roll", () => {
