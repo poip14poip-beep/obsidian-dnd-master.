@@ -983,13 +983,20 @@ Deno.serve(async (req: Request) => {
             const repairedContent = outputText(repairMessage);
             let repairedParsed: unknown = null;
             try { repairedParsed = repairedContent ? JSON.parse(repairedContent) : null; } catch { repairedParsed = null; }
-            const repairSemanticFailure = validateSchema(repairedParsed, schema) ? validateGameTurnSemantics(repairedParsed) : "corrective response does not match the required JSON schema";
+            const repairSemanticFailure = validateSchema(repairedParsed, schema)
+              ? (validateGameTurnSemantics(repairedParsed) ?? validatePendingRollNarration(repairedParsed))
+              : "corrective response does not match the required JSON schema";
+            const originalNonNarration = isRecord(parsed) ? { ...parsed } : {};
+            const repairedNonNarration = isRecord(repairedParsed) ? { ...repairedParsed } : {};
+            delete originalNonNarration.narration;
+            delete repairedNonNarration.narration;
+            const changedNonNarration = JSON.stringify(originalNonNarration) !== JSON.stringify(repairedNonNarration);
             const repairedContradictions = isRecord(repairedParsed) && typeof repairedParsed.narration === "string"
               ? checkNarration({ conversation: modelCall.conversation as GuardMessage[], narration: repairedParsed.narration, partyNames: partyNamesFromInput(inputText) })
               : contradictions;
-            if (!repairResponse.ok || repairChoice.finish_reason === "length" || repairSemanticFailure || repairedContradictions.length) {
+            if (!repairResponse.ok || repairChoice.finish_reason === "length" || repairSemanticFailure || changedNonNarration || repairedContradictions.length) {
               failures.push(attempt.id + ": engine-boundary correction failed");
-              console.warn("[obsidian-gm] engine-boundary correction rejected", { model: attempt.id, httpStatus: repairResponse.status, schemaOrSemanticFailure: repairSemanticFailure, remainingContradictions: repairedContradictions.length });
+              console.warn("[obsidian-gm] engine-boundary correction rejected", { model: attempt.id, httpStatus: repairResponse.status, schemaOrSemanticFailure: repairSemanticFailure, changedNonNarration, remainingContradictions: repairedContradictions.length });
               continue;
             }
             parsed = repairedParsed;
