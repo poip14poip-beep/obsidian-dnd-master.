@@ -139,4 +139,73 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.toolCalls).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("prepares a player skill check from the confirmed character sheet", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Perception", bonus: 5, basis: "WISDOM + владение" }],
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 5, charisma: -1 },
+      conditions: [],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 15,
+      advantage: "ADVANTAGE", reason: "Заметить движение в темноте",
+    }), rules, canon, character);
+    expect(result).toMatchObject({
+      ok: true,
+      preparedPlayerRoll: {
+        roller: "PLAYER",
+        label: "Мудрость (Perception)",
+        formula: "2d20kh1+5",
+        dc: 15,
+        modifier: 5,
+        kind: "SKILL_CHECK",
+      },
+    });
+  });
+
+  it("uses ability modifier for an untrained check and applies the 2024 exhaustion penalty", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      skillBonuses: [],
+      conditions: ["Истощение 1"],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "ABILITY_CHECK", ability: "strength", skill: null, dc: 10,
+      advantage: "NONE", reason: "Сдвинуть тяжёлый предмет",
+    }), rules, canon, character);
+    expect(result).toMatchObject({
+      ok: true,
+      preparedPlayerRoll: { formula: "1d20-1", modifier: -1, dc: 10 },
+    });
+  });
+
+  it("uses the confirmed saving-throw bonus and disadvantage", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 14, charisma: 10 },
+      savingThrowBonuses: { strength: 0, dexterity: 0, constitution: 0, intelligence: 0, wisdom: 4, charisma: 0 },
+      conditions: [],
+    };
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "SAVING_THROW", ability: "Мудрость", skill: null, dc: 13,
+      advantage: "DISADVANTAGE", reason: "Сопротивление воздействию",
+    }), rules, canon, character);
+    expect(result).toMatchObject({
+      ok: true,
+      preparedPlayerRoll: { label: "Спасбросок Мудрость", formula: "2d20kl1+4", modifier: 4 },
+    });
+  });
+
+  it("does not invent a check modifier when character statistics are unknown", () => {
+    const result = executeEkdrasilReadTool("prepare_player_check", JSON.stringify({
+      kind: "ABILITY_CHECK", ability: "strength", skill: null, dc: 10,
+      advantage: "NONE", reason: "Проверка силы",
+    }), rules, canon, { statsCertainty: "UNKNOWN" });
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("подтверждённых характеристик");
+  });
+
 });
