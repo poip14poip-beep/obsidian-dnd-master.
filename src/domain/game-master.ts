@@ -2,7 +2,7 @@ import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
-import { parseDiceFormula } from "./dice";
+import { parseDiceFormula, type DiceRollResult } from "./dice";
 
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -28,6 +28,68 @@ export interface GameMasterTurn {
 export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
 export class GameMasterError extends Error {
   constructor(message: string, readonly code: string) { super(message); this.name = "GameMasterError"; }
+}
+
+export interface ServerDiceRollOptions {
+  fetcher?: typeof fetch;
+  supabaseUrl?: string;
+  publishableKey?: string;
+}
+
+/** Ask the authenticated Edge Function to generate and return a cryptographic dice result. */
+export async function rollDiceAtServer(
+  sessionToken: string,
+  formula: string,
+  options: ServerDiceRollOptions = {},
+): Promise<DiceRollResult> {
+  const env = readSupabaseEnv();
+  const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
+  const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
+  if (!supabaseUrl || !publishableKey) {
+    throw new GameMasterError(env.ok ? "Не настроено подключение к серверу." : env.error, "SUPABASE_ENV_MISSING");
+  }
+  if (!sessionToken.trim()) throw new GameMasterError("Для броска требуется активная сессия.", "AUTH_REQUIRED");
+  if (!parseDiceFormula(formula)) throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска.", "INVALID_DICE_FORMULA");
+
+  let response: Response;
+  try {
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+        apikey: publishableKey,
+      },
+      body: JSON.stringify({ operation: "ROLL_DICE", formula }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new GameMasterError("Не удалось получить серверный бросок. Игровой ход не продолжен.", "DICE_ROLL_NETWORK_ERROR");
+  }
+
+  const payload = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const error = payload && typeof payload === "object" && "error" in payload
+      ? (payload as { error?: { message?: unknown } }).error : undefined;
+    const message = error && typeof error.message === "string" ? error.message : "Сервер отклонил бросок.";
+    throw new GameMasterError(message, "DICE_ROLL_REJECTED");
+  }
+  if (!payload || typeof payload !== "object" || !("dice" in payload) ||
+      !Array.isArray((payload as { dice: unknown }).dice) ||
+      !("modifier" in payload) || !Number.isInteger((payload as { modifier: unknown }).modifier) ||
+      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total)) {
+    throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
+  }
+  const result = payload as DiceRollResult;
+  const parsed = parseDiceFormula(formula)!;
+  if (result.dice.length !== parsed.totalDice ||
+      result.dice.some((die) => !die || !Number.isInteger(die.value) || !Number.isInteger(die.sides) ||
+        typeof die.kept !== "boolean" || die.value < 1 || die.value > die.sides) ||
+      result.modifier !== parsed.modifier ||
+      result.total !== result.dice.reduce((sum, die) => sum + (die.kept ? die.value : 0), 0) + result.modifier) {
+    throw new GameMasterError("Результат броска не соответствует исходной формуле. Ход не продолжен.", "DICE_RESULT_MISMATCH");
+  }
+  return result;
 }
 const turnSchema = {
   type: "object", additionalProperties: false,
