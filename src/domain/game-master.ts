@@ -470,7 +470,19 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     verifiedRulesReference: verifiedRulesContext,
     relevantEkdrasilCanon: selectCanonContext(context.canonFacts, context.sources, contextQuery),
     npcSimulationReference: selectNpcSimulationContext(context.sources),
-    knownNpcs: context.npcs, knownFactions: context.factions, knownLocations: context.locations, scheduledAndDelayedEvents: context.timelineEvents,
+    knownNpcs: context.npcs.map((npc) => ({
+      ...npc,
+      // Keep current NPC state and newest knowledge; omit bulky revision history.
+      knowledge: npc.knowledge.slice(-20),
+      playerKnowledge: npc.playerKnowledge?.slice(-20),
+      history: npc.history.slice(-5),
+    })),
+    knownFactions: context.factions.map((faction) => ({
+      ...faction,
+      history: faction.history.slice(-5),
+    })),
+    knownLocations: context.locations,
+    scheduledAndDelayedEvents: context.timelineEvents,
     // Compact chronicle index includes every committed game turn; recentJournal
     // separately carries full detail for recent and query-matched historical turns.
     fullCampaignChronicle: context.journal
