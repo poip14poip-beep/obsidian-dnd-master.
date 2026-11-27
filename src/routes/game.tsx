@@ -238,7 +238,7 @@ function GamePage() {
     void handleOpenCampaign();
   }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
-  async function handleResolveAction(actionOverride?: string, preserveRolls = false) {
+  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; result: string }>) {
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
@@ -270,7 +270,7 @@ function GamePage() {
           characterChanges: result.turn.characterChanges,
           npcChanges: result.turn.npcChanges,
           rolls: [
-            ...completedPlayerRolls,
+            ...(rollsOverride ?? completedPlayerRolls),
             ...result.turn.rolls.map((roll, index) => ({
               id: `chat-roll-${Date.now().toString(36)}-${index}`,
               label: roll.label,
@@ -324,7 +324,7 @@ function GamePage() {
     const continuedAction = `${pendingAction}\\n\\nБРОСОК ПЕРСОНАЖА ВЫПОЛНЕН ПРИЛОЖЕНИЕМ: ${pending.label}; ${formula}; на d20 выпало ${die}; модификатор ${modifier >= 0 ? "+" : ""}${modifier}; итог ${total}. Используй этот фактический результат, примени правила D&D 2024 и продолжи исходное действие. Не проси повторить бросок и не начинай новый ход.`;
     setPendingAction(continuedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction, true);
+    void handleResolveAction(continuedAction, true, [...completedPlayerRolls, rollRecord]);
   }
 
   function handleApplyClarification() {
