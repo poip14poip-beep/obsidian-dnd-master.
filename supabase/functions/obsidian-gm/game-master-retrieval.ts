@@ -128,7 +128,7 @@ function preparePlayerCheck(
   }
   let modifier = modifierForScore(score as number);
   const exhaustion = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
-  const exhaustionMatch = /(?:exhaustion|истощение)\s*([1-6])/i.exec(exhaustion);
+  const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(exhaustion);
   if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
 
   if (kind === "SAVING_THROW") {
@@ -149,10 +149,12 @@ function preparePlayerCheck(
       const basisAbility = normalizeAbility(basis.split(/[\s+]+/)[0] ?? "");
       const expertise = /эксперт|expertise/i.test(basis);
       const proficient = /влад|proficien/i.test(basis) || expertise;
-      const proficiency = Number.isInteger(playerCharacter.proficiencyBonus)
-        ? Number(playerCharacter.proficiencyBonus)
-        : Number.isInteger(playerCharacter.classLevel ?? playerCharacter.level)
-          ? Math.ceil(Number(playerCharacter.classLevel ?? playerCharacter.level) / 4) + 1
+      const storedProficiency = Number(playerCharacter.proficiencyBonus);
+      const level = Number(playerCharacter.classLevel ?? playerCharacter.level);
+      const proficiency = Number.isInteger(storedProficiency) && storedProficiency >= 2 && storedProficiency <= 6
+        ? storedProficiency
+        : Number.isInteger(level) && level >= 1 && level <= 20
+          ? Math.ceil(level / 4) + 1
           : null;
       if (basisAbility === null) {
         return { ok: false, error: "Неизвестна базовая характеристика владения навыком в листе персонажа." };
