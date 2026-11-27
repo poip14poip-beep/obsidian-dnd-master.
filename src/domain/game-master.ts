@@ -308,13 +308,18 @@ export function selectRulesContext(sources: SourceDocument[], action: string): s
   let budget = 14000;
   const output: string[] = [];
   for (const item of selected) {
-    const excerpt = item.text.slice(0, Math.min(item.text.length, budget));
-    if (!excerpt) break;
-    output.push(`[RULE SOURCE: ${item.source.title}; sourceId=${item.source.id}; lines ${item.startLine}–${item.endLine}]${item.text.length > excerpt.length ? " (excerpt truncated)" : ""}\n${excerpt}`);
-    budget -= excerpt.length;
+    const block = `[RULE SOURCE: ${item.source.title}; sourceId=${item.source.id}; lines ${item.startLine}–${item.endLine}]\n${item.text}`;
+    // Rules are semantic units: never cut a paragraph mid-rule, since its
+    // exception or final condition may be at the end. Skip whole oversized
+    // passages and retain provenance for every passage that fits.
+    if (block.length > budget) continue;
+    output.push(block);
+    budget -= block.length + 2;
     if (budget <= 0) break;
   }
-  return output.join("\n\n");
+  return output.length
+    ? output.join("\n\n")
+    : "Verified SRD 5.2.1 source is enabled, but no whole relevant paragraph fits the safe context budget. RULE UNCERTAINTY: do not invent or truncate the exact rule; retrieve a narrower source passage.";
 }
 function extractOutputText(payload: unknown): string {
   if (!payload || typeof payload !== "object") throw new GameMasterError("API вернул пустой ответ.", "EMPTY_RESPONSE");
