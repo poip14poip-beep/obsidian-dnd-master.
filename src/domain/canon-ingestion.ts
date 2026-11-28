@@ -22,7 +22,7 @@ export interface CanonIngestionManifest {
   sections: CanonSection[]; dateMentions: CanonDateMention[]; warnings: string[];
 }
 
-async function sha256(value: string): Promise<string> {
+export async function sha256Text(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
   const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -33,7 +33,7 @@ function getHeadings(lines: string[]): HeadingMarker[] {
   const result: HeadingMarker[] = [];
   lines.forEach((line, index) => {
     const match = /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
-    if (match) result.push({ line: index + 1, level: match[1].length, title: match[2].trim() });
+    if (match) result.push({ line: index + 1, level: match[1]!.length, title: match[2]!.trim() });
   });
   return result;
 }
@@ -86,42 +86,46 @@ export async function ingestCanonSources(
     for (const boundary of boundaries) {
       const stack = headings.filter((h) => h.line <= boundary.line && h.level <= boundary.level)
         .reduce<HeadingMarker[]>((acc, heading) => {
-          while (acc.length && acc[acc.length - 1].level >= heading.level) acc.pop();
+          while (acc.length && acc[acc.length - 1]!.level >= heading.level) acc.pop();
           acc.push(heading); return acc;
         }, []);
       const bodyStartIndex = boundary.line;
       const bodyLines = lines.slice(bodyStartIndex, boundary.endLine);
       const body = bodyLines.join("\n").trim();
       const chunks = splitIntoChunks(body, maxChunkChars);
-      const sectionBase = `${source.sourceId}:${boundary.line + 1}:${slug(boundary.title)}`;
+      const sectionBase = `${source.sourceId}:${Math.max(1, boundary.line)}:${slug(boundary.title)}`;
       let searchOffset = 0;
       for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
-        const chunk = chunks[chunkIndex];
+        const chunk = chunks[chunkIndex]!;
         const sectionId = chunks.length === 1 ? sectionBase : `${sectionBase}:chunk-${chunkIndex + 1}`;
+        const chunkOffset = body.indexOf(chunk, searchOffset);
+        const safeChunkOffset = chunkOffset >= 0 ? chunkOffset : searchOffset;
+        const startLine = bodyStartIndex + 1 + body.slice(0, safeChunkOffset).split("\n").length - 1;
+        const endLine = startLine + chunk.split("\n").length - 1;
         sections.push({
           id: sectionId, sourceId: source.sourceId, sourceTitle: source.title,
           headingPath: stack.map((h) => h.title), heading: boundary.title, level: boundary.level,
-          startLine: bodyStartIndex + 2 + body.slice(0, searchOffset).split("\n").length - 1,
-          endLine: boundary.endLine, text: chunk, contentHash: await sha256(chunk),
+          startLine, endLine, text: chunk, contentHash: await sha256Text(chunk),
           chunkIndex: chunkIndex + 1, chunkCount: chunks.length,
         });
         const datePattern = /(?:^|\D)(\d{1,4})\s*(?:год(?:а|у|е)?|гг?\.?)|(?:^|\D)(\d{1,4})\s*[–—-]\s*(\d{1,4})/giu;
         let match: RegExpExecArray | null;
         while ((match = datePattern.exec(chunk)) !== null) {
-          const line = bodyStartIndex + 2 + body.slice(0, searchOffset + match.index).split("\n").length - 1;
-          dateMentions.push({ id: `${sectionId}:date:${dateMentions.length + 1}`, sourceId: source.sourceId, sectionId, rawText: match[0], line, reviewStatus: "UNREVIEWED" });
+          const line = startLine + chunk.slice(0, match.index).split("\n").length - 1;
+          dateMentions.push({ id: `${sectionId}:date:${dateMentions.length + 1}`, sourceId: source.sourceId, sectionId, rawText: match[0]!, line, reviewStatus: "UNREVIEWED" });
         }
+        searchOffset = safeChunkOffset + chunk.length;
         sourceChunkCount++;
       }
     }
     if (!headings.length) warnings.push(`Source ${source.sourceId} has no Markdown headings; treated as one section.`);
     manifestSources.push({
       sourceId: source.sourceId, title: source.title, fileName: source.fileName, version: source.version,
-      sha256: await sha256(normalized), characterCount: normalized.length, lineCount: lines.length,
+      sha256: await sha256Text(normalized), characterCount: normalized.length, lineCount: lines.length,
       sectionCount: boundaries.length, chunkCount: sourceChunkCount,
     });
   }
-  const corpusFingerprint = await sha256(manifestSources.map((s) => `${s.sourceId}:${s.sha256}`).join("|"));
+  const corpusFingerprint = await sha256Text(manifestSources.map((s) => `${s.sourceId}:${s.sha256}`).join("|"));
   return { schemaVersion: 1, corpusId: `ekdrasil-corpus-${corpusFingerprint.slice(0, 16)}`, createdAt: options.now ?? new Date().toISOString(), sources: manifestSources, sections, dateMentions, warnings };
 }
 export function findCanonSections(manifest: CanonIngestionManifest, query: string, sourceIds?: string[]): CanonSection[] {

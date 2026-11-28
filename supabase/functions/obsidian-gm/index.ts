@@ -1,4 +1,9 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
+import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
+import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
+import { callWithEkdrasilReadTools } from "./game-master-retrieval.ts";
+import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -10,12 +15,13 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const ALLOWED_MODELS = new Set(["obsidian-free"]);
 const ALLOWED_ORIGINS = new Set([
   "https://poip14poip-beep.github.io",
+  "https://dbchfgkdrqpjspptoezh.supabase.co",
   "http://localhost:3000",
   "http://localhost:5173",
 ]);
 
 type JsonRecord = Record<string, unknown>;
-type ModelAttempt = { id: string; format: "schema" | "json" };
+type ModelAttempt = { id: GameMasterModelId; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
   // Cost-efficient default for ordinary narration and low-risk turns.
   { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
@@ -28,7 +34,7 @@ const MODEL_ATTEMPTS: ModelAttempt[] = [
 function corsHeaders(origin: string | null): HeadersInit {
   return {
     "Access-Control-Allow-Origin": origin && ALLOWED_ORIGINS.has(origin) ? origin : "null",
-    "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type",
+    "Access-Control-Allow-Headers": "authorization, apikey, x-client-info, content-type, x-supabase-api-version, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Max-Age": "86400",
     "Vary": "Origin",
@@ -43,6 +49,170 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(stableSerialize).join(",") + "]";
+  if (isRecord(value)) return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableSerialize(value[key])).join(",") + "}";
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function base64ToBytes(value: string): Uint8Array | null {
+  try {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  } catch { return null; }
+}
+type SignedDiceChallenge = {
+  userId: string; formula: string; dc: number | null;
+  targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM";
+  label: string; issuedAt: number; nonce: string; signature: string;
+};
+function diceChallengePayload(value: Omit<SignedDiceChallenge, "signature">): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dc: value.dc,
+    targetType: value.targetType, roller: value.roller, label: value.label,
+    issuedAt: value.issuedAt, nonce: value.nonce,
+  };
+}
+function diceProofPayload(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge;
+}): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dice: value.dice,
+    modifier: value.modifier, total: value.total, issuedAt: value.issuedAt,
+    nonce: value.nonce, challenge: value.challenge,
+  };
+}
+async function signPayload(payload: JsonRecord): Promise<string> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server signing key is not configured.");
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC", key, new TextEncoder().encode(stableSerialize(payload)),
+  );
+  return bytesToBase64(new Uint8Array(signature));
+}
+async function verifyPayload(payload: JsonRecord, encodedSignature: string): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) return false;
+  const signature = base64ToBytes(encodedSignature);
+  if (!signature) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+  return crypto.subtle.verify(
+    "HMAC", key, signature, new TextEncoder().encode(stableSerialize(payload)),
+  );
+}
+async function issueDiceChallenge(userId: string, prepared: {
+  formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE";
+  roller: "PLAYER" | "GM"; label: string;
+}): Promise<SignedDiceChallenge> {
+  const unsigned = {
+    userId, formula: prepared.formula, dc: prepared.dc,
+    targetType: prepared.targetType, roller: prepared.roller,
+    label: prepared.label, issuedAt: Date.now(), nonce: crypto.randomUUID(),
+  };
+  return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
+}
+async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
+      !value.formula || !value.label || value.label.length > 180 ||
+      !["DC", "AC", "NONE"].includes(value.targetType) ||
+      !["PLAYER", "GM"].includes(value.roller) ||
+      (value.targetType === "NONE" ? value.dc !== null : !Number.isInteger(value.dc) || value.dc === null || value.dc < 1 || value.dc > 40)) {
+    return false;
+  }
+  return verifyPayload(diceChallengePayload(value), value.signature);
+}
+async function verifyDiceProof(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge; signature: string;
+}): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80) return false;
+  const { signature, ...payload } = value;
+  return verifyPayload(diceProofPayload(payload), signature);
+}
+
+function playerCharacterFromInput(inputText: string): JsonRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    return isRecord(parsed) && isRecord(parsed.playerCharacterState)
+      ? parsed.playerCharacterState
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read only the compact NPC dossiers already supplied in knownNpcs.
+ * Combat resolution still requires a matching source excerpt from SRD 5.2.1;
+ * these records can only cross-check, never invent, an attack or damage value.
+ */
+function npcProfilesFromInput(inputText: string): JsonRecord[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || !Array.isArray(parsed.knownNpcs)) return [];
+    return parsed.knownNpcs.filter((entry): entry is JsonRecord =>
+      isRecord(entry) && typeof entry.name === "string" && isRecord(entry.gmProfile),
+    ).slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
+function partyNamesFromInput(inputText: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed)) return [];
+    const names: string[] = [];
+    const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
+    if (typeof character.name === "string" && character.name.trim()) names.push(character.name.trim());
+    const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
+    const party = Array.isArray(campaign.partyMembers) ? campaign.partyMembers : [];
+    for (const member of party) {
+      if (isRecord(member) && typeof member.name === "string" && member.name.trim()) names.push(member.name.trim());
+    }
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
+}
+const EKDRASIL_CANON_SHA256 = "6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4";
+function isEkdrasilCanonV24(value: unknown): value is JsonRecord {
+  if (!isRecord(value) || typeof value.content !== "string") return false;
+  return typeof value.title === "string" && value.title.includes("2.4") &&
+    Number(value.version) >= 4 && value.sha256 === EKDRASIL_CANON_SHA256 &&
+    value.content.startsWith("# ЭКДРАСИЛЬ") &&
+    value.content.includes("Полная каноническая редакция 2.4") &&
+    value.content.includes("## 250. Итоговый принцип живого канона") &&
+    value.content.includes("КОНЕЦ ПОЛНОЙ КАНОНИЧЕСКОЙ РЕДАКЦИИ 2.4");
+}
+
+function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
+  if (typeof value === "string") {
+    const limit = key === "sourceText" ? 16_000 : key === "sourceTextTail" ? 10_000 : key === "sourceDossier" ? 5_000 : 1200;
+    return value.length > limit ? value.slice(0, limit) + "…[сокращено]" : value;
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null) return value;
+  if (depth >= 6) return "[вложенные данные сокращены]";
+  if (Array.isArray(value)) return value.slice(0, 24).map((item) => compactAuditValue(item, depth + 1));
+  if (isRecord(value)) {
+    const entries = Object.entries(value).slice(0, 70).map(([childKey, item]) => [childKey, compactAuditValue(item, depth + 1, childKey)]);
+    return Object.fromEntries(entries);
+  }
+  return String(value);
+}
 function validateSchema(value: unknown, schema: JsonRecord): boolean {
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
   const type = schema.type;
@@ -55,7 +225,9 @@ function validateSchema(value: unknown, schema: JsonRecord): boolean {
     return Object.entries(properties).every(([key, child]) => !(key in value) || (isRecord(child) && validateSchema(value[key], child)));
   }
   if (type === "array") {
-    return Array.isArray(value) && (!isRecord(schema.items) || value.every((item) => validateSchema(item, schema.items as JsonRecord)));
+    return Array.isArray(value) &&
+      (typeof schema.maxItems !== "number" || value.length <= schema.maxItems) &&
+      (!isRecord(schema.items) || value.every((item) => validateSchema(item, schema.items as JsonRecord)));
   }
   if (Array.isArray(type)) {
     const allowed = type as unknown[];
@@ -69,15 +241,75 @@ function validateSchema(value: unknown, schema: JsonRecord): boolean {
       if (candidate === "array") return Array.isArray(value);
       return false;
     };
-    return allowed.some(matches);
+    const matched = allowed.some(matches);
+    return matched && !(typeof value === "string" && typeof schema.maxLength === "number" && value.length > schema.maxLength);
   }
-  if (type === "string") return typeof value === "string";
+  if (type === "string") return typeof value === "string" &&
+    (typeof schema.maxLength !== "number" || value.length <= schema.maxLength);
   if (type === "integer") return Number.isInteger(value);
   if (type === "number") return typeof value === "number" && Number.isFinite(value);
   if (type === "boolean") return typeof value === "boolean";
   if (Array.isArray(schema.enum)) return schema.enum.includes(value);
   return true;
 }
+const GAME_TURN_STRING_LIMITS: Record<string, number> = {
+  narration: 900, campaignMemory: 600, sensoryDescription: 1100,
+  spatialAccounting: 450, mechanics: 800, consequences: 550,
+  resourceAccounting: 450, nextAction: 300, summary: 160,
+  worldOutcome: 350, newInGameDate: 120, consequenceText: 350,
+  environmentReason: 250, clarificationQuestion: 300,
+  weather: 120, lighting: 100, visibility: 100, wind: 100,
+  precipitation: 100, ambientSounds: 140, ambientSmells: 140, notes: 260,
+  label: 100, formula: 80, result: 100,
+  name: 100, role: 150, goals: 220, resources: 180,
+  attitudeToPlayer: 160, reason: 220, factSummary: 220,
+  acquisitionPath: 150, title: 140, description: 300,
+  reward: 160, sourcePath: 160, objectives: 140,
+  inventory: 180, recovery: 140, stateNotes: 220,
+};
+
+const GAME_TURN_ARRAY_LIMITS: Record<string, number> = {
+  rolls: 4, npcChanges: 5, knowledgeAdditions: 3,
+  playerKnowledgeAdditions: 3, questChanges: 3, objectives: 4,
+  inventory: 5, resources: 8, conditions: 6, stateNotes: 6,
+};
+
+function boundGameTurnSchema(schema: JsonRecord): JsonRecord {
+  const visit = (node: JsonRecord, key = ""): JsonRecord => {
+    const result: JsonRecord = { ...node };
+    const type = result.type;
+    if (type === "string" || (Array.isArray(type) && type.includes("string"))) {
+      const requested = GAME_TURN_STRING_LIMITS[key] ?? 240;
+      const existing = Number(result.maxLength);
+      result.maxLength = Number.isFinite(existing) && existing > 0
+        ? Math.min(existing, requested)
+        : requested;
+      // A roll is a request for the player to roll, never a result supplied by
+      // the model. Enforce this at the provider JSON-schema layer, not only
+      // after generation, so numeric/guessed outcomes cannot be emitted.
+      if (key === "result") {
+        result.enum = ["ОЖИДАЕТСЯ БРОСОК ИГРОКА"];
+      }
+    }
+    if (type === "array") {
+      const requested = GAME_TURN_ARRAY_LIMITS[key] ?? 6;
+      const existing = Number(result.maxItems);
+      result.maxItems = Number.isFinite(existing) && existing > 0
+        ? Math.min(existing, requested)
+        : requested;
+      if (isRecord(result.items)) result.items = visit(result.items, key);
+    }
+    if (isRecord(result.properties)) {
+      result.properties = Object.fromEntries(
+        Object.entries(result.properties).map(([childKey, child]) =>
+          [childKey, isRecord(child) ? visit(child, childKey) : child]),
+      );
+    }
+    return result;
+  };
+  return visit(schema);
+}
+
 function outputText(message: JsonRecord): string {
   const content = message.content;
   if (typeof content === "string") return content.trim();
@@ -89,42 +321,62 @@ function outputText(message: JsonRecord): string {
 const identitySchema: JsonRecord = {
   type: "object", additionalProperties: false,
   properties: {
-    name: { type: "string" },
+    name: { type: "string", minLength: 2, maxLength: 70 },
     species: { type: "string", enum: ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] },
     className: { type: "string", enum: ["Fighter","Rogue","Barbarian"] },
     background: { type: "string", enum: ["Acolyte","Criminal","Sage","Soldier"] },
     birthplace: { type: "string", enum: ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"] },
     ageYears: { type: "integer" },
-    genderPresentation: { type: "string" },
-    family: { type: "string" },
-    upbringing: { type: "string" },
-    lifeEvents: { type: "array", items: { type: "string" } },
-    personalityTraits: { type: "array", items: { type: "string" } },
-    ideal: { type: "string" },
-    bond: { type: "string" },
-    flaw: { type: "string" },
-    motivation: { type: "string" },
-    preCampaignDesire: { type: "string" },
-    appearance: { type: "string" },
-    appearanceDetails: {
-      type: "object", additionalProperties: false,
-      properties: {
-        height: { type: "string" }, build: { type: "string" }, skin: { type: "string" },
-        hair: { type: "string" }, eyes: { type: "string" }, face: { type: "string" },
-        clothing: { type: "string" }, footwear: { type: "string" }, accessories: { type: "string" },
-        distinctiveFeatures: { type: "string" }, firstImpression: { type: "string" }
-      },
-      required: ["height","build","skin","hair","eyes","face","clothing","footwear","accessories","distinctiveFeatures","firstImpression"]
-    },
-    birthplaceSource: { type: "string" },
-    biography: { type: "string" },
-    skillOrigins: { type: "array", items: { type: "string" } },
-    weaponBackground: { type: "string" },
-    equipmentBackground: { type: "string" },
-    canonBasis: { type: "array", items: { type: "string" } },
-    inventedDetailsNotice: { type: "string" }
+    genderPresentation: { type: "string", minLength: 2, maxLength: 50 },
+    family: { type: "string", minLength: 20, maxLength: 220 },
+    upbringing: { type: "string", minLength: 20, maxLength: 220 },
+    lifeEvents: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 12, maxLength: 180 } },
+    personalityTraits: { type: "array", minItems: 2, maxItems: 3, items: { type: "string", minLength: 3, maxLength: 70 } },
+    ideal: { type: "string", minLength: 8, maxLength: 140 },
+    bond: { type: "string", minLength: 8, maxLength: 140 },
+    flaw: { type: "string", minLength: 8, maxLength: 140 },
+    motivation: { type: "string", minLength: 15, maxLength: 180 },
+    preCampaignDesire: { type: "string", minLength: 15, maxLength: 180 }
   },
-  required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire","appearance","appearanceDetails","birthplaceSource","biography","skillOrigins","weaponBackground","equipmentBackground","canonBasis","inventedDetailsNotice"]
+  required: ["name","species","className","background","birthplace","ageYears","genderPresentation","family","upbringing","lifeEvents","personalityTraits","ideal","bond","flaw","motivation","preCampaignDesire"]
+};
+const appearanceSchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    appearance: { type: "string" },
+    appearanceDetails: { type: "object", additionalProperties: false, properties: {
+      height:{type:"string"},build:{type:"string"},skin:{type:"string"},hair:{type:"string"},eyes:{type:"string"},face:{type:"string"},
+      clothing:{type:"string"},footwear:{type:"string"},accessories:{type:"string"},distinctiveFeatures:{type:"string"},firstImpression:{type:"string"}
+    }, required:["height","build","skin","hair","eyes","face","clothing","footwear","accessories","distinctiveFeatures","firstImpression"] }
+  }, required:["appearance","appearanceDetails"]
+};
+const storySchema: JsonRecord = {
+  type:"object",additionalProperties:false,
+  properties:{
+    biography:{type:"string"},birthplaceSource:{type:"string"},canonBasis:{type:"array",items:{type:"string"}},
+    inventedDetailsNotice:{type:"string"}
+  },required:["biography","birthplaceSource","canonBasis","inventedDetailsNotice"]
+};
+const originsSchema: JsonRecord = {
+  type:"object",additionalProperties:false,
+  properties:{
+    skillOrigins:{type:"array",items:{type:"string"}},
+    weaponBackground:{type:"string"},equipmentBackground:{type:"string"}
+  },required:["skillOrigins","weaponBackground","equipmentBackground"]
+};
+const auditItem = { type: "string", maxLength: 140 };
+const auditList = { type: "array", items: auditItem, maxItems: 2 };
+const compatibilitySchema: JsonRecord = {
+  type: "object", additionalProperties: false,
+  properties: {
+    status: { type: "string", enum: ["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"] },
+    summary: { type: "string", maxLength: 260 },
+    supportedFacts: auditList,
+    conflicts: auditList,
+    unknowns: auditList,
+    requiredChanges: auditList
+  },
+  required: ["status", "summary", "supportedFacts", "conflicts", "unknowns", "requiredChanges"]
 };
 const biographySchema: JsonRecord = {
   type: "object", additionalProperties: false,
@@ -166,10 +418,6 @@ const biographySchema: JsonRecord = {
 
 // The random-character operation returns the complete dossier in one response.
 // This avoids a second browser-to-edge request after identity selection.
-const identityRequired = identitySchema.required as string[];
-identitySchema.properties = { ...(identitySchema.properties as JsonRecord), ...(biographySchema.properties as JsonRecord) };
-identitySchema.required = [...identityRequired, ...(biographySchema.required as string[]).filter((key) => !identityRequired.includes(key))];
-
 function tokens(usage: unknown): { input_tokens?: number; output_tokens?: number } | undefined {
   if (!isRecord(usage)) return undefined;
   const input = Number(usage.prompt_tokens);
@@ -203,8 +451,10 @@ Deno.serve(async (req: Request) => {
   });
   const { data: authData, error: authError } = await authClient.auth.getUser(tokenMatch[1]);
   if (authError || !authData.user) {
+    console.error("[obsidian-gm] auth rejected", authError?.message ?? "user missing");
     return json({ error: { code: "INVALID_SESSION", message: "Your session is invalid or expired. Sign in again." } }, 401, cors);
   }
+  console.log("[obsidian-gm] authenticated request", { userId: authData.user.id });
   let rawBody: string;
   try { rawBody = await req.text(); }
   catch { return json({ error: { code: "INVALID_BODY", message: "Could not read request body." } }, 400, cors); }
@@ -213,6 +463,44 @@ Deno.serve(async (req: Request) => {
   let body: unknown;
   try { body = JSON.parse(rawBody); }
   catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
+
+  // Dice are rolled by the authenticated server, never guessed by a language model
+  // or generated in the player's browser.
+  if (isRecord(body) && body.operation === "ROLL_DICE") {
+    if (typeof body.formula !== "string" || !parseDiceFormula(body.formula)) {
+      return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
+    }
+    if (!isRecord(body.challenge)) {
+      return json({ error: { code: "DICE_CHALLENGE_REQUIRED", message: "Для броска требуется подписанное сервером задание мастера." } }, 400, cors);
+    }
+    const rawChallenge = body.challenge;
+    const challenge = rawChallenge as unknown as SignedDiceChallenge;
+    if (challenge.userId !== authData.user.id || challenge.formula !== body.formula ||
+        typeof challenge.signature !== "string" || !await verifyDiceChallenge(challenge)) {
+      return json({ error: { code: "INVALID_DICE_CHALLENGE", message: "Задание броска недействительно или устарело. Запроси новое у мастера." } }, 401, cors);
+    }
+    try {
+      const rolled = rollDiceFormula(body.formula);
+      const challengeConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: challenge.nonce, issuedAt: challenge.issuedAt }]);
+      if (!challengeConsumed) {
+        return json({ error: { code: "DICE_CHALLENGE_REPLAY_OR_STORAGE_FAILURE", message: "Это задание уже использовано или хранилище одноразовых заданий недоступно. Запроси новый бросок." } }, 409, cors);
+      }
+      const proof = {
+        userId: authData.user.id,
+        issuedAt: Date.now(),
+        nonce: crypto.randomUUID(),
+        challenge,
+      };
+      const signature = await signPayload(diceProofPayload({
+        ...proof, formula: body.formula, dice: rolled.dice,
+        modifier: rolled.modifier, total: rolled.total,
+      }));
+      return json({ formula: body.formula, ...rolled, proof: { ...proof, signature } }, 200, cors);
+    } catch {
+      return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
+    }
+  }
+
   if (isRecord(body) && body.operation === "STORE_GM_SOURCE") {
     const sourceKind = body.sourceKind;
     const title = body.title;
@@ -242,7 +530,46 @@ Deno.serve(async (req: Request) => {
     return json({ stored: true, source: data }, 200, cors);
   }
 
-  const isBiographyRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_BIOGRAPHY";
+  if (isRecord(body) && body.operation === "CHECK_SERVER_READINESS") {
+    if (!SUPABASE_SERVICE_ROLE_KEY) return json({ ready: false, checks: {}, error: "PRIVATE_VAULT_NOT_CONFIGURED" }, 503, cors);
+    const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data, error } = await serviceClient.rpc("obsidian_api_get_gm_base");
+    if (error || !isRecord(data)) return json({ ready: false, checks: {}, error: "PRIVATE_VAULT_UNAVAILABLE" }, 503, cors);
+    const required = ["OBSIDIAN_MASTER_PROMPT", "SRD_5_2_1", "EKDRASIL_WORLD_BIBLE", "CHARACTER_GENERATION_GUIDE"];
+    const checks = Object.fromEntries(required.map((kind) => {
+      const entry = data[kind];
+      return [kind, isRecord(entry) && typeof entry.content === "string" && entry.content.trim().length > 0];
+    })) as Record<string, boolean>;
+    const obsidian = data.OBSIDIAN_MASTER_PROMPT;
+    const rules = data.SRD_5_2_1;
+    checks.OBSIDIAN_MASTER_PROMPT = isRecord(obsidian) &&
+      typeof obsidian.content === "string" && obsidian.content.trim().length > 0 &&
+      typeof obsidian.title === "string" && obsidian.title.includes("4.1");
+    checks.SRD_5_2_1 = isRecord(rules) &&
+      typeof rules.content === "string" && rules.content.trim().length > 0 &&
+      typeof rules.title === "string" && rules.title.includes("5.2.1") &&
+      Number(rules.version) >= 2;
+    checks.EKDRASIL_WORLD_BIBLE = isEkdrasilCanonV24(data.EKDRASIL_WORLD_BIBLE);
+    checks.ROUTERAI_API_KEY = Boolean(ROUTERAI_API_KEY);
+    const canon = isRecord(data.EKDRASIL_WORLD_BIBLE) ? data.EKDRASIL_WORLD_BIBLE : {};
+    const ready = Object.values(checks).every(Boolean);
+    return json({
+      ready,
+      checks,
+      canon: {
+        edition: "2.4",
+        sourceVersion: typeof canon.version === "number" ? canon.version : null,
+        sha256: typeof canon.sha256 === "string" ? canon.sha256 : null,
+      },
+    }, 200, cors);
+  }
+
+  const isCompatibilityRequest = isRecord(body) && body.operation === "VALIDATE_CHARACTER_COMPATIBILITY";
+  console.log("[obsidian-gm] operation received", { operation: isRecord(body) ? String(body.operation ?? "GAME_TURN") : "INVALID_BODY", bodyLength: rawBody.length });
+  const isBiographyRequest = isRecord(body) && ["GENERATE_CHARACTER_BIOGRAPHY","GENERATE_CHARACTER_APPEARANCE","GENERATE_CHARACTER_STORY","GENERATE_CHARACTER_ORIGINS"].includes(String(body.operation));
+  const isAppearanceRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_APPEARANCE";
+  const isStoryRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_STORY";
+  const isOriginsRequest = isRecord(body) && body.operation === "GENERATE_CHARACTER_ORIGINS";
   const isIdentityRequest = isRecord(body) && body.operation === "GENERATE_RANDOM_CHARACTER_IDENTITY";
   const requestBody: JsonRecord = isRecord(body) ? body : {};
   if (!ROUTERAI_API_KEY) {
@@ -258,13 +585,79 @@ Deno.serve(async (req: Request) => {
   const turnRequestValid = isRecord(requestBody.text) && isRecord(requestBody.text.format) &&
     requestBody.text.format.type === "json_schema" && requestBody.text.format.name === "obsidian_game_turn" &&
     requestBody.text.format.strict === true && isRecord(requestBody.text.format.schema);
-  if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !turnRequestValid)) {
+  if (!commonRequestValid || (!isBiographyRequest && !isIdentityRequest && !isCompatibilityRequest && !turnRequestValid)) {
     return json({ error: { code: "INVALID_REQUEST", message: "The game-master request has an invalid shape or unsupported model." } }, 400, cors);
   }
-  const inputText = requestBody.input as string;
+  let inputText = requestBody.input as string;
+  if (isCompatibilityRequest || isStoryRequest) {
+    try {
+      const parsedInput = JSON.parse(inputText);
+      inputText = JSON.stringify(compactAuditValue(parsedInput));
+      const maxInputLength = isCompatibilityRequest ? 34_000 : 12_000;
+      if (inputText.length > maxInputLength) inputText = inputText.slice(0, maxInputLength);
+    } catch { /* keep the original input so malformed dossiers are reported accurately */ }
+  }
+  if (requestBody.operation === "GAME_TURN") {
+    let parsedTurnInput: unknown;
+    try { parsedTurnInput = JSON.parse(inputText); }
+    catch { return json({ error: { code: "INVALID_GAME_TURN_INPUT", message: "Контекст игрового хода повреждён." } }, 400, cors); }
+    if (isRecord(parsedTurnInput) && "completedRolls" in parsedTurnInput &&
+        !Array.isArray(parsedTurnInput.completedRolls)) {
+      return json({ error: { code: "INVALID_COMPLETED_ROLLS", message: "Список завершённых бросков имеет неверный формат." } }, 400, cors);
+    }
+    const completedRolls = isRecord(parsedTurnInput) && Array.isArray(parsedTurnInput.completedRolls)
+      ? parsedTurnInput.completedRolls : [];
+    if (completedRolls.length > 5) {
+      return json({ error: { code: "TOO_MANY_COMPLETED_ROLLS", message: "За один ход можно передать не более пяти результатов бросков." } }, 400, cors);
+    }
+    const nonceProofs: Array<{ nonce: string; issuedAt: number }> = [];
+    for (const item of completedRolls) {
+      if (!isRecord(item) || typeof item.formula !== "string" || !Array.isArray(item.dice) ||
+          !Number.isInteger(item.modifier) || !Number.isInteger(item.total) || !isRecord(item.proof)) {
+        return json({ error: { code: "INVALID_COMPLETED_ROLL", message: "Структура завершённого броска повреждена." } }, 400, cors);
+      }
+      const proof = item.proof;
+      const formula = item.formula;
+      const parsedFormula = parseDiceFormula(formula);
+      const dice = item.dice;
+      const diceValid = parsedFormula !== null && dice.length === parsedFormula.totalDice &&
+        dice.every((die) => isRecord(die) && Number.isInteger(die.value) &&
+          Number.isInteger(die.sides) && typeof die.kept === "boolean" &&
+          (die.value as number) >= 1 && (die.value as number) <= (die.sides as number));
+      const arithmeticValid = diceValid && parsedFormula !== null &&
+        item.modifier === parsedFormula.modifier &&
+        item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
+      const challenge = isRecord(item.challenge) ? item.challenge as unknown as SignedDiceChallenge : null;
+      const challengeMatchesRoll = challenge !== null && isRecord(proof.challenge) &&
+        stableSerialize(challenge) === stableSerialize(proof.challenge) &&
+        challenge.userId === authData.user.id && challenge.formula === formula &&
+        challenge.dc === item.dc && challenge.targetType === item.targetType &&
+        challenge.roller === item.roller && challenge.label === item.label &&
+        (challenge.targetType === "NONE" ? item.success === null :
+          item.success === (item.total as number >= (challenge.dc as number)));
+      const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
+        typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
+        typeof proof.signature === "string" && challengeMatchesRoll &&
+        await verifyDiceChallenge(challenge!) &&
+        await verifyDiceProof({
+          userId: proof.userId, issuedAt: proof.issuedAt, nonce: proof.nonce,
+          signature: proof.signature, formula, dice, modifier: item.modifier as number,
+          total: item.total as number, challenge: challenge!,
+        });
+      if (!arithmeticValid || !proofValid) {
+        return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
+      }
+      nonceProofs.push({ nonce: proof.nonce as string, issuedAt: proof.issuedAt as number });
+    }
+    const nonceBatchConsumed = await consumeDiceNonces(authData.user.id, nonceProofs);
+    if (!nonceBatchConsumed) {
+      return json({ error: { code: "DICE_PROOF_REPLAY_OR_STORAGE_FAILURE", message: "Один из результатов уже использован или сервер не смог подтвердить одноразовость пакета. Выполни броски заново." } }, 409, cors);
+    }
+  }
   const instructionText = requestBody.instructions as string;
-  const schema: JsonRecord = isIdentityRequest ? identitySchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
-  const schemaName = isIdentityRequest ? "obsidian_random_character_identity" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
+  const selectedSchema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
+  const schema: JsonRecord = isRecord(body) && body.operation === "GAME_TURN" ? boundGameTurnSchema(selectedSchema) : selectedSchema;
+  const schemaName = isCompatibilityRequest ? "obsidian_character_compatibility" : isIdentityRequest ? "obsidian_random_character_identity" : isAppearanceRequest ? "obsidian_character_appearance" : isStoryRequest ? "obsidian_character_story" : isOriginsRequest ? "obsidian_character_origins" : isBiographyRequest ? "obsidian_character_biography" : "obsidian_game_turn";
   if (!SUPABASE_SERVICE_ROLE_KEY) {
     return json({ error: { code: "PRIVATE_VAULT_NOT_CONFIGURED", message: "Не настроено закрытое хранилище документов мастера." } }, 503, cors);
   }
@@ -276,32 +669,49 @@ Deno.serve(async (req: Request) => {
   );
   if (privateSourcesError || !isRecord(privateSources) ||
       !isRecord(privateSources.OBSIDIAN_MASTER_PROMPT) ||
-      typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string") {
+      typeof privateSources.OBSIDIAN_MASTER_PROMPT.content !== "string" ||
+      typeof privateSources.OBSIDIAN_MASTER_PROMPT.title !== "string" ||
+      !privateSources.OBSIDIAN_MASTER_PROMPT.title.includes("4.1")) {
+    console.error("[obsidian-gm] private source read failed", privateSourcesError?.message ?? "missing master prompt");
     return json({ error: {
       code: "OBSIDIAN_MASTER_PROMPT_NOT_CONFIGURED",
       message: "В постоянную базу мастера ещё не добавлен ОБСИДИАН 4.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
+  console.log("[obsidian-gm] private sources loaded", { operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : String(requestBody.operation ?? "GAME_TURN"), masterPromptChars: privateSources.OBSIDIAN_MASTER_PROMPT.content.length, rulesChars: isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string" ? privateSources.SRD_5_2_1.content.length : 0, canonChars: isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string" ? privateSources.EKDRASIL_WORLD_BIBLE.content.length : 0 });
   const masterPrompt = privateSources.OBSIDIAN_MASTER_PROMPT.content;
   const rulesDoc = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.content === "string"
     ? privateSources.SRD_5_2_1.content : "";
-  const ruleParagraphs = rulesDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 80);
-  const canonDoc = isRecord(privateSources.EKDRASIL_WORLD_BIBLE) && typeof privateSources.EKDRASIL_WORLD_BIBLE.content === "string"
-    ? privateSources.EKDRASIL_WORLD_BIBLE.content : "";
-  const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
-    ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
-  if (!canonDoc.trim()) {
+  // Story/appearance/origin generation does not need the 1.4 MB SRD document.
+  // Skip its split/scoring work to stay below the Edge CPU limit.
+  // Compatibility audits are strictly about Ekdrasil lore; do not load or rank SRD rules.
+  const needsRulesContext = !isStoryRequest && !isAppearanceRequest && !isIdentityRequest && !isOriginsRequest && !isCompatibilityRequest;
+  // Keep the full source in storage, but do not split and rescore 1.4 MB into
+  // an unbounded prompt on every turn. The bounded selector below preserves
+  // whole paragraphs and source line ranges.
+  const ruleParagraphs = needsRulesContext ? rulesDoc : "";
+  const canonSource = privateSources.EKDRASIL_WORLD_BIBLE;
+  if (!isEkdrasilCanonV24(canonSource)) {
+    console.error("[obsidian-gm] canonical source version rejected", {
+      title: isRecord(canonSource) ? canonSource.title ?? null : null,
+      version: isRecord(canonSource) ? canonSource.version ?? null : null,
+      sha256: isRecord(canonSource) ? canonSource.sha256 ?? null : null,
+    });
     return json({ error: {
-      code: "EKDRASIL_CANON_NOT_CONFIGURED",
-      message: "В постоянную базу мастера ещё не добавлена хроника Экдрасиля. Игровой запрос не отправлен.",
+      code: "EKDRASIL_CANON_VERSION_MISMATCH",
+      message: "Мастер остановлен: требуется полная каноническая редакция Экдрасиля 2.4. Старая редакция не будет использована.",
     } }, 503, cors);
   }
-  const canonParagraphs = canonDoc.split(String.fromCharCode(10) + String.fromCharCode(10)).map((part) => part.trim()).filter((part) => part.length > 60);
-
-  if (!rulesDoc.trim()) {
+  const canonDoc = canonSource.content;
+  const characterGuide = isRecord(privateSources.CHARACTER_GENERATION_GUIDE) && typeof privateSources.CHARACTER_GENERATION_GUIDE.content === "string"
+    ? privateSources.CHARACTER_GENERATION_GUIDE.content : "";
+  if (!rulesDoc.trim() || !isRecord(privateSources.SRD_5_2_1) ||
+      typeof privateSources.SRD_5_2_1.title !== "string" ||
+      !privateSources.SRD_5_2_1.title.includes("5.2.1") ||
+      Number(privateSources.SRD_5_2_1.version) < 2) {
     return json({ error: {
       code: "SRD_SOURCE_NOT_CONFIGURED",
-      message: "В постоянную базу мастера ещё не добавлен SRD 5.2.1. Игровой запрос не отправлен.",
+      message: "Требуется полный D&D 2024 System Reference Document 5.2.1. Игровой запрос не отправлен.",
     } }, 503, cors);
   }
   let actionText = inputText.toLowerCase();
@@ -325,20 +735,56 @@ Deno.serve(async (req: Request) => {
   if (/перегруз|вес|грузоподъем/.test(actionText)) mappedTerms.push("carrying capacity", "encumbrance", "push", "drag", "lift");
   if (/смерт|умира|без созн/.test(actionText)) mappedTerms.push("death saving throw", "dying", "stabilize");
   if (/класс|боец|воин|особенност/.test(actionText)) mappedTerms.push("fighter", "character classes", "class features");
+  // Universal action coverage: social interaction, investigation, object use and exploration.
+  if (/разговор|бесед|диалог|спрос|расспрос|переговор|уговор|убед|торг|сделк|подкуп/.test(actionText)) {
+    mappedTerms.push("social interaction", "influence", "persuasion", "friendly attitude", "indifferent attitude", "hostile attitude");
+  }
+  if (/обман|лж|врат|притвор|выдать себя|скрыть правд/.test(actionText)) mappedTerms.push("deception", "social interaction", "influence");
+  if (/запуг|угроз|надавить|устраш/.test(actionText)) mappedTerms.push("intimidation", "social interaction", "influence", "hostile attitude");
+  if (/прочитать намер|понять мотив|распознать лож|чувств|подозрева.*вр|искрен/.test(actionText)) mappedTerms.push("insight", "social interaction", "determine an NPC's attitude");
+  if (/исслед|расслед|изуч|разобрат|обыск|найти.*ули|улиц|доказательств/.test(actionText)) mappedTerms.push("investigation", "study action", "search action", "ability check");
+  if (/откры|вскры|взлом|замок|заперт|двер|сундук|механизм/.test(actionText)) mappedTerms.push("utilize action", "thieves' tools", "sleight of hand", "ability check", "object interaction");
+  if (/ловуш|растяж|капкан|сигнализац|скрыт.*механизм/.test(actionText)) mappedTerms.push("perception", "investigation", "traps", "tools");
+  if (/карман|украсть|подмен|незаметно взять|ловкость рук/.test(actionText)) mappedTerms.push("sleight of hand", "thieves' tools", "dexterity check");
+  if (/живот|лошад|кон|пёс|собак|звер|прируч|успокоить живот/.test(actionText)) mappedTerms.push("animal handling", "influence", "ability check");
+  if (/леч|первая помощь|стабилиз|диагноз|ранен/.test(actionText)) mappedTerms.push("medicine", "healing", "stabilize", "utilize action");
+  if (/след|отпечат|выжива|ориентир|погода|охот|добыть пищ/.test(actionText)) mappedTerms.push("survival", "tracking", "foraging", "travel pace");
+  if (/религ|бож|обряд|культ|святын/.test(actionText)) mappedTerms.push("religion", "holy symbol", "divine magic");
+  if (/истор|древн|летопис|герб|родослов/.test(actionText)) mappedTerms.push("history", "historical lore");
+  if (/природ|растен|гриб|ядовит|минерал|животн/.test(actionText)) mappedTerms.push("nature", "environment");
+  if (/арк|маг|заклин|руна|чар|магическ/.test(actionText)) mappedTerms.push("arcana", "spellcasting", "magic");
+  if (/выступ|петь|играть музыку|танцев|представлени/.test(actionText)) mappedTerms.push("performance", "social interaction");
+  if (/внимател|осматрива|всматр|прислуш|замет|наблюда|ищу.*подозр/.test(actionText)) mappedTerms.push("perception", "search action", "study action");
+  if (/перенос|поднять|толкнуть|тащить|сдвинуть|удержать|перелез|перепрыг/.test(actionText)) mappedTerms.push("athletics", "strength check", "jump", "climb", "push", "drag", "lift");
+  if (isCompatibilityRequest) mappedTerms.push(
+    "character creation", "character sheet", "character origins", "species", "background",
+    "ability scores", "ability score improvement", "proficiency bonus", "saving throw proficiency",
+    "skill proficiency", "class features", "class level", "level advancement", "origin feat",
+    "weapon", "weapon mastery", "armor", "shield", "equipment", "starting equipment",
+    "adventuring gear", "tools", "coins", "carrying capacity", "weight", "encumbrance",
+    "spellcasting", "spells", "magic items", "languages", "hit points", "armor class"
+  );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedRules = ruleParagraphs
-    .map((paragraph) => ({ paragraph, score: ruleTerms.reduce((sum, term) => sum + (paragraph.toLowerCase().includes(term) ? 1 : 0), 0) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12)
-    .map((item) => item.paragraph);
+  const selectedRules = selectRuleExcerpts(
+    ruleParagraphs,
+    ruleTerms,
+    isCompatibilityRequest ? 9_000 : 14_000,
+    isCompatibilityRequest ? 8 : 12,
+  );
+  const rulesSourceSha = isRecord(privateSources.SRD_5_2_1) && typeof privateSources.SRD_5_2_1.sha256 === "string"
+    ? privateSources.SRD_5_2_1.sha256 : "UNKNOWN";
   const rulesContext = selectedRules.length
-    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) + selectedRules.join(String.fromCharCode(10) + String.fromCharCode(10))
-    : "SRD 5.2.1: релевантные фрагменты не найдены; не выдумывай точные механические детали, если они не подтверждены.";
+    ? "ПОДТВЕРЖДЁННЫЕ ФРАГМЕНТЫ SRD 5.2.1:" + String.fromCharCode(10) +
+      selectedRules.map((item) =>
+        `[RULE SOURCE: D&D 2024 SRD 5.2.1; sourceId=SRD_5_2_1; SHA-256=${rulesSourceSha}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\\n${item.text}`
+      ).join(String.fromCharCode(10) + String.fromCharCode(10))
+    : "SRD 5.2.1: релевантные фрагменты не найдены в пределах проверенного источника; не выдумывай точные механические детали.";
   const canonSearchParts = [actionText];
+  let inputMetrics = measureGameTurnInput(null);
   if (isIdentityRequest) canonSearchParts.push("Вальдгард Элион Аэлиндор Кхар-Дорн Крейнхольм Тар-Нер Равенск Морвейн Греймарк Азра-Кал Рахимар Ша-Мер Вальдрум Скайнхейм Эйргард Морнхольд", "Том XI §44", "народ культура город происхождение");
   try {
     const parsed = JSON.parse(inputText);
+    inputMetrics = measureGameTurnInput(parsed);
     if (isRecord(parsed)) {
       const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
       const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
@@ -347,6 +793,7 @@ Deno.serve(async (req: Request) => {
         String(campaign.currentInGameDate ?? ""),
         String(campaign.startNarrative ?? ""),
         String(character.speciesAndClass ?? ""),
+        JSON.stringify(parsed.parsedDossier ?? parsed.character ?? parsed.generationBasis ?? {}),
       );
       for (const key of ["knownLocations", "knownNpcs", "knownFactions"] as const) {
         const records = parsed[key];
@@ -357,49 +804,100 @@ Deno.serve(async (req: Request) => {
     }
   } catch { /* action text remains the safe minimum query */ }
   const canonTerms = [...new Set([...canonSearchParts.join(" ").toLowerCase().split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedCanon = canonParagraphs
-    .map((paragraph) => {
-      const haystack = paragraph.toLowerCase();
-      const score = canonTerms.reduce((sum, term) => sum + (haystack.includes(term) ? 1 : 0), 0);
-      const headingBoost = /^#{1,4}\s/m.test(paragraph) ? 1 : 0;
-      return { paragraph, score: score + headingBoost };
-    })
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 18)
-    .map((item) => item.paragraph);
+  const canonExcerptBudget = isCompatibilityRequest ? 5_500 : isStoryRequest ? 5_000 : 12_000;
+  const canonParagraphLimit = isCompatibilityRequest ? 10 : isStoryRequest ? 8 : 12;
+  const canonExcerpts = selectCanonExcerpts(canonDoc, canonTerms, canonExcerptBudget, canonParagraphLimit);
+  const selectedCanon = canonExcerpts.map((item) => {
+    const headingPath = item.headingPath.join(" > ") || "UNKNOWN SECTION";
+    return `[CANON SOURCE: Ekdrasil_Master_Canon_v2.4.md; sourceId=EKDRASIL_WORLD_BIBLE; SHA-256=${EKDRASIL_CANON_SHA256}; sectionId=${item.sectionId}; headingPath=${headingPath}; lines ${item.startLine}–${item.endLine}; relevance=${item.score}]\n${item.text}`;
+  });
+  const canonAuthority = [
+    "ИСТОЧНИК ИСТИНЫ: Ekdrasil_Master_Canon_v2.4.md — полная редакция 2.4, 41 том, 250 нумерованных разделов. SHA-256 исходного файла: " + EKDRASIL_CANON_SHA256 + ".",
+    "СОВРЕМЕННОЕ СОСТОЯНИЕ ГЛОБАЛЬНОГО МИРА: 2000 год. Глобальная хроника заканчивается 2000 годом; события после него не предопределены и развиваются отдельно в каждой кампании либо по отдельно утверждённому сценарию.",
+    "СТАТУСЫ ИСТОЧНИКОВ: CANON-CORE и CANON-EXPANDED редакции 2.4 — действующий мировой канон. CAMPAIGN-STATE — только состояние конкретной кампании; никогда не переносить его в глобальную хронику или другую кампанию без отдельного утверждения владельца мира.",
+    "РАЗДЕЛЕНИЕ ЗНАНИЙ: знание мастера о действительной истине не означает, что её знают персонаж игрока, NPC или фракция. Каждое знание NPC должно иметь путь получения и источник в событиях кампании. Различай действительное событие, документальное подтверждение, слух и личное убеждение.",
+    "ЗАЩИТА МИРА: не добавляй четвёртое измерение, не меняй устройство Рая, Экдрасиля и Ада, законы душ, благодати и брешей, а также крупные исторические, географические и политические факты. Новые локальные детали допустимы только без противоречия редакции 2.4.",
+    "НЕИЗВЕСТНОЕ: отсутствие фрагмента в текущей выборке не доказывает отсутствие факта в полной энциклопедии. Не выдумывай. Уточняй либо используй UNKNOWN; при спорном факте ищи подтверждение в источнике.",
+  ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const canonContext = selectedCanon.length
-    ? "ПОСТОЯННЫЙ КАНОН ЭКДРАСИЛЯ (фрагменты из мировой хроники):" + String.fromCharCode(10) + selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
-    : "Хроника Экдрасиля подключена, но по формулировке действия релевантные фрагменты не найдены. Не выдумывай сведения о мире; UNKNOWN при отсутствии подтверждения.";
+    ? canonAuthority + String.fromCharCode(10) + String.fromCharCode(10) +
+      "РЕЛЕВАНТНЫЕ ФРАГМЕНТЫ ПОЛНОЙ ХРОНИКИ 2.4:" + String.fromCharCode(10) +
+      selectedCanon.join(String.fromCharCode(10) + String.fromCharCode(10))
+    : canonAuthority + String.fromCharCode(10) + String.fromCharCode(10) +
+      "Релевантные фрагменты по запросу не найдены. Не выдумывай сведения о мире; используй UNKNOWN и не заменяй отсутствие фрагмента вымышленным фактом.";
 
-  const isCharacterGeneration = isBiographyRequest || isIdentityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
+  const isGameTurnRequest = requestBody.operation === "GAME_TURN";
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
-  const orderedModelAttempts = isIdentityRequest || isBiographyRequest
-    ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[1]!]
-    : highImpactTurn
-      ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
-      : MODEL_ATTEMPTS;
+  // Character generation is one bounded upstream call. Sequential model fallbacks
+  // keep the HTTP request alive too long and the mobile client drops it.
+  const requestedModelOrder: GameMasterModelId[] = isGameTurnRequest
+    // DeepSeek and Gemini have already reviewed canon/state and rules/character;
+    // Claude performs the first synthesis pass, with the other providers as fallbacks.
+    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"]
+    : selectGameMasterModelOrder({
+      isCompatibilityRequest,
+      isStoryRequest,
+      isIdentityRequest,
+      isBiographyRequest,
+      highImpactTurn,
+      isGameTurnRequest,
+    });
+  const orderedModelAttempts = requestedModelOrder.map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
+    .filter((attempt): attempt is ModelAttempt => Boolean(attempt));
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
       ? "=== РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ (НЕ КАНОН И НЕ ПРАВИЛА) ===" + String.fromCharCode(10) + characterGuide
       : "РЕФЕРЕНС МЕТОДИКИ ГЕНЕРАЦИИ ПЕРСОНАЖЕЙ НЕ ЗАГРУЖЕН. Не выдумывай его содержание; используй только основной промт, подтверждённый канон и SRD.")
     : "";
-  const serverInstructions = [
+  const serverInstructions = isCompatibilityRequest ? [
+    "Ты — аудитор канона мира Экдрасиль. Проверь только соответствие загруженного персонажа установленному лору Экдрасиля. Это аудит биографии и мировых фактов, не проверка механики D&D: не пересчитывай характеристики, навыки, атаки, классовые уровни и ресурсы.",
+    "Источник доказательств — исходный текст досье sourceText и sourceTextTail. parsedDossier — вспомогательное извлечение, которое может ошибаться. Не объявляй конфликт, если факт подтверждён в исходном тексте. Не подменяй авторские названия предметов стандартными предметами.",
+    "Проверь народ/вид и его описанные особенности, предысторию, место рождения и географию, даты и исторические события, организации, имена, NPC, происхождение и свойства необычных предметов, проклятия и магические явления — только там, где досье содержит соответствующие сведения.",
+    "Неизвестное не является противоречием. Не требуй отсутствующие сведения и не выдумывай канон. Личные события, семья, возраст и авторские детали биографии не являются нарушением сами по себе. Явно описанные домашние правила кампании не объявляй конфликтом с каноном.",
+    "Особые оговорки досье: уровень 21 = Fighter 20 + эпический уровень «Память веков» — согласованное расширение кампании, не конфликт; возраст 1879 лет при рождении в 121 году и текущем 2000 году, внешний возраст около 21 — остановка старения в авторской биографии, не арифметическая ошибка; возвращение через 168 часов после смерти — личное проклятие, не стандартное воскрешение.",
+    "Предметы проверяй по точным названиям: «Кожа Последнего Часа» — авторский проклятый лёгкий доспех с описанным происхождением; Cloak of Protection и Boots of Elvenkind указаны в досье с официальными источниками. Не переименовывай авторский доспех в Studded Leather +3. Подробно описанный предмет не считай неподтверждённым только из-за авторского названия.",
+    "Статусы: COMPATIBLE — существенных противоречий нет; COMPATIBLE_WITH_NOTES — противоречий нет, но есть неизвестное; INCOMPATIBLE — доказанное противоречие канону; INSUFFICIENT_DATA — невозможно идентифицировать или проверить досье.",
+    "Верни краткий русский JSON строго по схеме. summary — одно-два коротких предложения. Не более двух пунктов в каждом массиве, каждый до 14 слов. supportedFacts — подтверждённые каноном факты; conflicts — только доказанные противоречия с причиной; unknowns — неизвестные сведения; requiredChanges — необходимые изменения только при реальном конфликте. Пустой список — [].",
+    "=== ФРАГМЕНТЫ ХРОНИКИ ЭКДРАСИЛЯ ===",
+    canonContext,
+  ] : isIdentityRequest ? [
+    "Ты — генератор личности персонажа для D&D 2024 в мире Экдрасиль. Верни только один компактный JSON строго по схеме. Выбери имя, народ, класс, предысторию, возраст 18–80, гендерное представление и подтверждённый город рождения. Добавь краткую семью, воспитание, ровно два жизненных события, две черты, идеал, привязанность, слабость, мотивацию и личное желание. Все значения короткие, конкретные, на русском. Не пиши длинную прозу, вступление, Markdown или пояснения. Не создавай внешность, экипировку или подробную биографию — это следующий этап.",
+    "Канон имеет приоритет: выбирай город только из разрешённого списка и используй только переданные ниже подтверждённые фрагменты. Не придумывай новые города, страны, фракции, исторические события или NPC. Личные семейные обстоятельства можно выдумывать, не выдавая их за мировой канон.",
+    canonContext
+  ] : isAppearanceRequest ? [
+    "Ты создаёшь только внешность персонажа Экдрасиля. Верни строго JSON по схеме. Используй имя, народ, возраст, пол, профессию, биографию и снаряжение из входа. Заполни 11 полей внешности конкретно: рост, телосложение, кожа, волосы, глаза, лицо, одежда, обувь, аксессуары, отличительные особенности, первое впечатление. Каждое поле не менее 20 слов? Нет: кратко, обычно 8–20 слов, без повторов. Не добавляй сверхъестественных черт. Не изменяй личность.",
+    canonContext
+  ] : isStoryRequest ? [
+    "Ты пишешь краткую, живую предысторию персонажа Экдрасиля за последний месяц перед стартом кампании. Верни только JSON по схеме. Поле biography: 140–170 русских слов, 2–3 абзаца; только события последнего месяца, путь и причина прибытия к точке старта. birthplaceSource — одна короткая фраза. canonBasis — ровно 2 коротких подтверждённых факта из канона. inventedDetailsNotice — одна короткая фраза. Не повторяй входные поля, не добавляй вступление и вывод. Используй только переданные факты персонажа; личные бытовые детали допустимы, но не выдумывай мировые события, NPC, организации или географию. Не меняй личность, механику и снаряжение.",
+    canonContext
+  ] : isOriginsRequest ? [
+    "Ты объясняешь происхождение уже имеющихся навыков, оружия и снаряжения. Верни строго JSON по схеме. skillOrigins: по одной строке на каждый навык из входного skillBonuses, формат 'точное имя навыка — конкретное происхождение не менее 20 слов'. weaponBackground объясняет только переданное оружие. equipmentBackground объясняет только предметы входного inventory. Не добавляй и не удаляй навыки, оружие, предметы или механические свойства.",
+    canonContext
+  ] : [
     masterPrompt,
+    ...(isGameTurnRequest ? [ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK] : []),
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     instructionText,
     "=== ПРОТОКОЛ ИСТОЧНИКОВ И ПАМЯТИ ===",
     "Соблюдай разделение источников: правила D&D 2024/SRD определяют механику; ОБСИДИАН 4.1 определяет процедуру ведения; Библия Экдрасиля определяет неизменяемые факты мира; текущее состояние кампании и подтверждённый журнал определяют уже произошедшие события этой конкретной кампании; лист персонажа определяет только данные героя; последнее сообщение игрока — намерение, а не свершившийся факт. Более низкий источник не переписывает более высокий. События кампании могут менять локальное состояние и отношения, но не могут задним числом менять мировую хронику. При отсутствии подтверждения используй UNKNOWN и задай уточняющий вопрос, если без него нельзя честно разрешить действие.",
     "Перед каждым ответом прочитай FULL_CAMPAIGN_CHRONICLE и recentJournal во входном JSON. Хронология, обещания, долги, предметы, травмы, отношения, последствия и уже раскрытые тайны должны сохраняться. Не пересоздавай NPC, локации или факты, которые уже существуют в состоянии кампании.",
+    "=== УНИВЕРСАЛЬНЫЙ ЦИКЛ РАЗРЕШЕНИЯ ЛЮБОГО ДЕЙСТВИЯ ===",
+    "Не ограничивайся боем. Любой свободный текст игрока сначала классифицируй по намерению и объекту взаимодействия: социальное действие/диалог; наблюдение и восприятие; исследование и поиск улик; взаимодействие с предметом/дверью/замком/ловушкой; перемещение и физическое действие; скрытность и ловкость рук; знания и воспоминания; животные; лечение; выживание и путешествие; магия; бой; отдых; использование предмета или способности. Если действие смешанное, разрешай его последовательными этапами, не пропуская зависимость одного этапа от другого.",
+    "Для каждого действия последовательно: (1) установи точное намерение; (2) проверь доступность действия по положению, времени, дистанции, состоянию, инвентарю и ресурсам героя; (3) собери факты о цели из текущего состояния, журнала, канона 2.4 и относящихся к делу разделов SRD 5.2.1; (4) выбери правило, характеристику/навык/инструмент и DC/AC только если исход действительно неопределён; (5) заранее зафиксируй DC/AC и владельца каждого броска; (6) запроси или автоматически выполни бросок; (7) разреши исход по фактическому результату; (8) только затем примени причинно допустимые изменения и сохрани их.",
+    "Не требуй кубик за каждое действие. Обычный разговор, очевидный осмотр, свободное взаимодействие с доступным предметом и действие без неопределённого риска разрешай без броска. В диалоге сначала веди естественную беседу от лица NPC с учётом его характера, целей, отношений, знаний и текущей ситуации. Проверка Persuasion нужна для попытки повлиять/убедить, Deception — обмануть, Intimidation — запугать; Insight — когда герой пытается прочитать мотивы, искренность или состояние собеседника. Не превращай каждую реплику в социальный бросок и не позволяй одному успешному броску автоматически подчинить NPC или изменить его убеждения.",
+    "Различай Perception, Investigation и Study: Perception — заметить то, что доступно чувствам; Investigation — вывести закономерность, исследовать механизм или искать улики; Study — внимательно изучить сведения/объект по правилам D&D 2024. Для замков, ловушек, инструментов, карманных действий и ремесла проверяй подходящий инструмент и владение, не подменяй всё одной проверкой Восприятия.",
+    "Игрок бросает только за главного героя через видимый интерфейс кубика. Мастер автоматически бросает через защищённый сервер за каждого NPC, монстра, союзника, противника и прочее существо/окружение. В состязании назначай отдельного владельца каждой стороны. В ответе каждого броска обязательно указывай roller: PLAYER или GM. Для PLAYER показывается экранный кубик игрока; для GM приложение выполняет серверный бросок автоматически. Не проси игрока вводить числовой результат вручную.",
+    "Пока ожидается любой бросок PLAYER или GM, не меняй HP, время, инвентарь, деньги, ресурсы, состояния, NPC, квесты, локацию, окружение и последствия. После результата продолжай именно незавершённое действие, используя зафиксированные DC/AC и контекст; не начинай его заново и не пересчитывай сложность задним числом. Не описывай обнаруженное, попадание, успех или провал до получения нужного результата.",
     "=== ЗАКРЫТЫЙ КОНТЕКСТ ПРАВИЛ ===",
     rulesContext,
     "=== ПОСТОЯННАЯ БИБЛИЯ МИРА ===",
-    isBiographyRequest ? canonContext : canonContext,
-    ...(isIdentityRequest ? [
-      "РЕЖИМ ВЫБОРА ЛИЧНОСТИ СЛУЧАЙНОГО ПЕРСОНАЖА: создай уникальную личность с нуля. Ты самостоятельно выбираешь имя, народ, класс, предысторию, возраст, подтверждённый город рождения и все личные детали. Не используй имя/народ/класс/предысторию как уже заданные: их ещё нет. Доступные механические профили ограничены enum схемы; не выбирай ничего вне списка. Имя должно соответствовать культурному и языковому звучанию выбранного народа и региона. Город рождения выбирай только из enum; не придумывай географию, государство или организацию. Используй закрытую хронику Экдрасиля и руководство генерации; не приписывай персонажу участие в крупных исторических событиях, знакомства с каноническими NPC или членство во фракциях без основания. Семья, воспитание, личные события, черты, идеал, привязанность, слабость и желание — индивидуальная выдуманная биография нового героя, а не факты мировой хроники. Возраст 18–80. Не делай шаблонную трагедию обязательной; допускаются обычные, неоднозначные и счастливые обстоятельства. Верни все поля, на русском, без заглушек и общих фраз.",
+    canonContext,
+    ...(isIdentityRequest ? [] : isStoryRequest ? [
+      "РЕЖИМ ПОСЛЕДНЕГО МЕСЯЦА: опиши только примерно 30 дней перед стартом кампании, не всю жизнь. Дай краткую последовательность: положение месяц назад, 1–2 личных или бытовых события, причина отправиться к старту и прибытие. Не изменяй личность, механику, навыки, снаряжение и канон. Не добавляй NPC, фракции, преступления, квесты, мировые события или географию без основания во входе. Не выдумывай точные даты. Все поля на русском."
     ] : isBiographyRequest ? [
       "РЕЖИМ ГЕНЕРАЦИИ БИОГРАФИИ: не изменяй механику, имя, народ, класс, предысторию, возраст, гендерное представление, семью, воспитание, события жизни, черты характера, идеал, привязанность, слабость, мотивацию, желание перед началом кампании, место рождения, источник места рождения или canonBasis, переданные в JSON. Возвращай все эти поля дословно; дополняй только подробное описание, внешность и происхождение уже имеющихся навыков/снаряжения.",
       "Создай индивидуальное полное досье на русском языке. Обязательно заполни appearanceDetails как отдельную подробную таблицу внешности: рост, телосложение, кожа, волосы, глаза, лицо, одежда с конкретными предметами и состоянием, обувь, аксессуары, отличительные особенности и первое впечатление. Значения должны быть конкретными, согласованными с народом, возрастом, профессией, климатом и достатком; не используй общие заглушки. Поле appearance оставь кратким сводным описанием. Обязательно заполни preCampaignDesire: конкретное личное желание персонажа в Экдрасиле непосредственно перед началом кампании, не глобальную судьбу и не навязанный квест. Помимо биографии заполни skillOrigins: по одному содержательному объяснению происхождения каждого уже имеющегося навыка из skillBonuses входного персонажа; не добавляй и не удаляй навыки. Заполни weaponBackground: объясни, откуда персонаж получил именно переданное оружие, как научился им пользоваться и почему носит его; не меняй название оружия, атаку, урон или mastery. Заполни equipmentBackground: объясни происхождение и практическую роль каждого предмета переданного inventory; не добавляй, не удаляй и не меняй предметы, количество или свойства. Свяжи эти детали с предысторией, профессией, жизненными событиями и местом происхождения. Не используй готовые универсальные клише. Не делай персонажа избранным или участником глобальных событий без основания. Не приписывай ему секретные знания, членство во фракциях или встречи с NPC.",
@@ -409,37 +907,111 @@ Deno.serve(async (req: Request) => {
     ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
   const messages = [
-    { role: "system", content: serverInstructions },
+    { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
     { role: "user", content: inputText },
   ];
+
+  const isOpeningGameTurn = (() => {
+    if (!isGameTurnRequest) return false;
+    try {
+      const parsed = JSON.parse(inputText);
+      return isRecord(parsed) && parsed.mode === "OPENING";
+    } catch { return false; }
+  })();
+  if (isGameTurnRequest && !isOpeningGameTurn) {
+    let compactCampaignInput = inputText;
+    try { compactCampaignInput = JSON.stringify(compactAuditValue(JSON.parse(inputText))); }
+    catch { compactCampaignInput = inputText.slice(0, 36_000); }
+    const agentStartedAt = Date.now();
+    const specialistResults = await runGameTurnAgents({
+      apiKey: ROUTERAI_API_KEY,
+      campaignInput: compactCampaignInput,
+      canonContext,
+      rulesContext,
+    });
+    const agentContext = formatSpecialistAgentContext(specialistResults);
+    messages.splice(1, 0, {
+      role: "system",
+      content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
+        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Список npcAgencyProposals — только гипотезы, не события и не факты: проверь цели, знания, ресурсы, местоположение и прошедшее время каждого NPC; фиксируй действие только если оно причинно обосновано текущей сценой и допустимо по канону. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
+    });
+    console.log("[obsidian-gm] specialist agents completed", {
+      elapsedMs: Date.now() - agentStartedAt,
+      agents: specialistResults.map((result) => ({
+        role: result.role,
+        model: result.model,
+        status: result.status,
+        findings: result.findings.length,
+        uncertainties: result.uncertainties.length,
+        npcAgencyProposals: result.npcAgencyProposals.length,
+      })),
+      agentContextChars: agentContext.length,
+    });
+  }
+
   const failures: string[] = [];
-  for (const attempt of orderedModelAttempts) {
+  for (const [attemptIndex, attempt] of orderedModelAttempts.entries()) {
     try {
       const responseFormat = attempt.format === "schema"
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
-      const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
-          "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
-          "X-Title": "Obsidian D&D Master",
-        },
-        body: JSON.stringify({
-          model: attempt.id,
-          messages,
-          response_format: responseFormat,
-          structured_outputs: true,
-          temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          max_tokens: (isIdentityRequest || isBiographyRequest) ? 3200 : 8192,
-        }),
-        signal: AbortSignal.timeout((isIdentityRequest || isBiographyRequest) ? 55_000 : 35_000),
+      const attemptStartedAt = Date.now();
+      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
+      const requestHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
+        "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
+        "X-Title": "Obsidian D&D Master",
+      };
+      const modelRequestBody: JsonRecord = {
+        model: attempt.id,
+        messages,
+        response_format: responseFormat,
+        structured_outputs: true,
+        temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
+        max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
+        ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
+      };
+      const modelCall = await callWithEkdrasilReadTools({
+        fetcher: fetch,
+        url: "https://routerai.ru/api/v1/chat/completions",
+        headers: requestHeaders,
+        requestBody: modelRequestBody,
+        enabled: isGameTurnRequest,
+        rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
+        canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
+        playerCharacter: playerCharacterFromInput(inputText),
+        npcProfiles: npcProfilesFromInput(inputText),
+        completedRolls: (() => {
+          try {
+            const parsed = JSON.parse(inputText);
+            return isRecord(parsed) && Array.isArray(parsed.completedRolls)
+              ? parsed.completedRolls.filter(isRecord)
+              : [];
+          } catch { return []; }
+        })(),
+        maxToolRounds: 3,
+        maxToolCalls: 6,
+        timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
       });
+      const upstream = modelCall.response;
+      console.log("[obsidian-gm] model response received", {
+        model: attempt.id,
+        status: upstream.status,
+        retrievalToolCalls: modelCall.toolCalls,
+        retrievalLoopExhausted: modelCall.exhausted,
+      });
+      if (modelCall.exhausted) {
+        failures.push(`${attempt.id}: retrieval tool-call limit exceeded`);
+        continue;
+      }
       const raw = await upstream.text();
-      let payload: unknown;
-      try { payload = JSON.parse(raw); }
-      catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      console.log("[obsidian-gm] model response body received", { model: attempt.id, elapsedMs: Date.now() - attemptStartedAt, responseChars: raw.length });
+      let payload: unknown = modelCall.payload;
+      if (payload === null) {
+        try { payload = JSON.parse(raw); }
+        catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      }
 
       if (!upstream.ok) {
         const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
@@ -467,28 +1039,194 @@ Deno.serve(async (req: Request) => {
       }
 
       const root = isRecord(payload) ? payload : {};
+      const completionDetails = isRecord(root.usage) && isRecord(root.usage.completion_tokens_details)
+        ? root.usage.completion_tokens_details : {};
+      console.log("[obsidian-gm] model token usage", {
+        model: attempt.id,
+        promptTokens: isRecord(root.usage) ? root.usage.prompt_tokens ?? null : null,
+        completionTokens: isRecord(root.usage) ? root.usage.completion_tokens ?? null : null,
+        reasoningTokens: completionDetails.reasoning_tokens ?? null,
+      });
       const choices = Array.isArray(root.choices) ? root.choices : [];
       const choice = isRecord(choices[0]) ? choices[0] : {};
       const message = isRecord(choice.message) ? choice.message : {};
-      const content = outputText(message);
+      let content = outputText(message);
       if (!content || choice.finish_reason === "length") {
-        failures.push(`${attempt.id}: empty or truncated output`);
+        const failure = `${attempt.id}: empty or truncated output (finish_reason=${String(choice.finish_reason ?? "unknown")}, completion_tokens=${String(isRecord(root.usage) ? root.usage.completion_tokens ?? "unknown" : "unknown")})`;
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: failure, responseChars: content.length });
+        failures.push(failure);
         continue;
       }
       let parsed: unknown;
       try { parsed = JSON.parse(content); }
-      catch { failures.push(`${attempt.id}: invalid JSON`); continue; }
+      catch {
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "invalid JSON", responseChars: content.length });
+        failures.push(`${attempt.id}: invalid JSON`);
+        continue;
+      }
       if (!validateSchema(parsed, schema)) {
+        console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
+      }
+      if (isGameTurnRequest && isRecord(parsed)) {
+        const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const prepared = modelCall.preparedRoll;
+        const matchesPrepared = prepared !== null && rolls.length === 1 &&
+          rolls[0]?.roller === prepared.roller &&
+          rolls[0]?.label === prepared.label &&
+          rolls[0]?.formula === prepared.formula &&
+          rolls[0]?.dc === prepared.dc &&
+          rolls[0]?.targetType === prepared.targetType &&
+          rolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
+        const invalidPendingRoll = prepared !== null ? !matchesPrepared : rolls.length > 0;
+        if (invalidPendingRoll) {
+          const reason = prepared
+            ? "pending roll does not match the server-prepared game mechanic"
+            : "pending roll was returned without a deterministic preparation tool";
+          console.warn("[obsidian-gm] prepared-roll validation rejected", { model: attempt.id, reason });
+          failures.push(attempt.id + ": " + reason);
+          messages.push({
+            role: "system",
+            content: "ОТКЛОНЕНО: каждый ожидающий бросок должен быть подготовлен соответствующим серверным инструментом. Используй точные roller, label, formula, targetType и DC/AC из результата инструмента; result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонусы и целевые значения.",
+          });
+          continue;
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+        // A pending roll is a pause in the action pipeline, not a commit.
+        // Safely discard premature model mutations; they are recalculated after the actual roll.
+        let currentEnvironment: JsonRecord = {
+          temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN",
+          visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN",
+          ambientSmells: "UNKNOWN", notes: "",
+        };
+        try {
+          const originalInput = JSON.parse(inputText);
+          const campaign = isRecord(originalInput) && isRecord(originalInput.campaign) ? originalInput.campaign : {};
+          if (isRecord(campaign.environment)) currentEnvironment = campaign.environment;
+        } catch { /* preserve explicit UNKNOWN environment when campaign input is malformed */ }
+        const previousChanges = isRecord(parsed.characterChanges) ? parsed.characterChanges : {};
+        parsed = {
+          ...parsed,
+          timeDeltaMinutes: 0,
+          hpDelta: 0,
+          newLocationId: null,
+          consequenceText: "",
+          worldOutcome: "",
+          campaignMemory: "",
+          newInGameDate: "",
+          npcChanges: [],
+          questChanges: [],
+          environment: currentEnvironment,
+          environmentReason: "Окружение не изменяется до результата броска.",
+          characterChanges: {
+            ...previousChanges,
+            inventory: [],
+            resources: [],
+            conditions: [],
+            currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+          },
+          stateNotes: [],
+        };
+        content = JSON.stringify(parsed);
+      }
+      if (isGameTurnRequest) {
+        const semanticFailure = validateGameTurnSemantics(parsed);
+        if (semanticFailure) {
+          console.warn("[obsidian-gm] game-turn semantics rejected", { model: attempt.id, reason: semanticFailure });
+          failures.push(`${attempt.id}: ${semanticFailure}`);
+          // Give the next provider an explicit correction rather than repeating
+          // the same structurally-valid but game-rule-invalid response.
+          messages.push({
+            role: "system",
+            content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН ПРОГРАММНОЙ ПРОВЕРКОЙ: " + semanticFailure +
+              ". Верни исправленный JSON игрового хода. Если нужен бросок, result должен быть строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА»; число генерируется защищённым сервером, никогда не угадывай его. При ожидаемом броске не меняй состояние, время, HP, NPC, квесты, предметы, ресурсы, деньги, локацию или последствия.",
+          });
+          continue;
+        }
+      }
+      if (isGameTurnRequest) {
+        const narrationFailure = validatePendingRollNarration(parsed);
+        if (narrationFailure) {
+          console.warn("[obsidian-gm] pending-roll narration rejected", { model: attempt.id, reason: narrationFailure });
+          failures.push(attempt.id + ": " + narrationFailure);
+          messages.push({
+            role: "system",
+            content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН: бросок ещё не выполнен. Опиши только попытку и обстановку, не утверждай успех, провал, попадание, промах или последствие действия. Запроси ожидающий бросок и дождись его фактического результата.",
+          });
+          continue;
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && typeof parsed.narration === "string") {
+        const contradictions = checkNarration({
+          conversation: modelCall.conversation as GuardMessage[],
+          narration: parsed.narration,
+          partyNames: partyNamesFromInput(inputText),
+        });
+        if (contradictions.length) {
+          console.warn("[obsidian-gm] engine-boundary narration contradiction", { model: attempt.id, count: contradictions.length, kinds: [...new Set(contradictions.map((item) => item.kind))] });
+          try {
+            const repairBody: JsonRecord = { ...modelRequestBody, messages: [
+              ...modelCall.conversation,
+              { role: "assistant", content },
+              { role: "system", content: buildCorrectionPrompt(contradictions) },
+            ] };
+            const repairResponse = await fetch("https://routerai.ru/api/v1/chat/completions", {
+              method: "POST", headers: requestHeaders, body: JSON.stringify(repairBody), signal: AbortSignal.timeout(12_000),
+            });
+            const repairPayload: unknown = await repairResponse.json().catch(() => null);
+            const repairRoot = isRecord(repairPayload) ? repairPayload : {};
+            const repairChoices = Array.isArray(repairRoot.choices) ? repairRoot.choices : [];
+            const repairChoice = isRecord(repairChoices[0]) ? repairChoices[0] : {};
+            const repairMessage = isRecord(repairChoice.message) ? repairChoice.message : {};
+            const repairedContent = outputText(repairMessage);
+            let repairedParsed: unknown = null;
+            try { repairedParsed = repairedContent ? JSON.parse(repairedContent) : null; } catch { repairedParsed = null; }
+            const repairSemanticFailure = validateSchema(repairedParsed, schema)
+              ? (validateGameTurnSemantics(repairedParsed) ?? validatePendingRollNarration(repairedParsed))
+              : "corrective response does not match the required JSON schema";
+            const originalNonNarration = isRecord(parsed) ? { ...parsed } : {};
+            const repairedNonNarration = isRecord(repairedParsed) ? { ...repairedParsed } : {};
+            delete originalNonNarration.narration;
+            delete repairedNonNarration.narration;
+            const changedNonNarration = stableSerialize(originalNonNarration) !== stableSerialize(repairedNonNarration);
+            const repairedContradictions = isRecord(repairedParsed) && typeof repairedParsed.narration === "string"
+              ? checkNarration({ conversation: modelCall.conversation as GuardMessage[], narration: repairedParsed.narration, partyNames: partyNamesFromInput(inputText) })
+              : contradictions;
+            if (!repairResponse.ok || repairChoice.finish_reason === "length" || repairSemanticFailure || changedNonNarration || repairedContradictions.length) {
+              failures.push(attempt.id + ": engine-boundary correction failed");
+              console.warn("[obsidian-gm] engine-boundary correction rejected", { model: attempt.id, httpStatus: repairResponse.status, schemaOrSemanticFailure: repairSemanticFailure, changedNonNarration, remainingContradictions: repairedContradictions.length });
+              continue;
+            }
+            parsed = repairedParsed;
+            content = repairedContent;
+            console.log("[obsidian-gm] engine-boundary correction accepted", { model: attempt.id });
+          } catch (error) {
+            failures.push(attempt.id + ": engine-boundary correction unavailable");
+            console.warn("[obsidian-gm] engine-boundary correction unavailable", { model: attempt.id, message: error instanceof Error ? error.message : String(error) });
+            continue;
+          }
+        }
+      }
+      console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
+      let rollChallenge: SignedDiceChallenge | null = null;
+      if (isGameTurnRequest && modelCall.preparedRoll) {
+        const prepared = modelCall.preparedRoll;
+        const pendingRolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        if (pendingRolls.length === 1 && pendingRolls[0].result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+          rollChallenge = await issueDiceChallenge(authData.user.id, prepared);
+        }
       }
       return json({
         output_text: content,
         model: attempt.id,
         usage: tokens(root.usage),
+        ...(rollChallenge ? { rollChallenge } : {}),
       }, 200, cors);
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
+      console.error("[obsidian-gm] model attempt failed", { model: attempt.id, timedOut, message: error instanceof Error ? error.message : String(error) });
       failures.push(`${attempt.id}: ${timedOut ? "timeout" : "network error"}`);
     }
   }

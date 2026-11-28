@@ -5,10 +5,45 @@ import type {
   IntegrityCheckItem,
   IntegrityReport,
   ObsidianCollections,
+  NpcRecord,
   PlayerCharacterState,
   TurnDraft,
   WorldState,
 } from "./types";
+
+export interface HitPointDeltaResult {
+  hpCurrent: number | null;
+  hpTemp: number | null;
+  error: string | null;
+}
+
+/**
+ * Applies signed HP changes using D&D 2024 hit-point rules:
+ * damage consumes temporary HP first; healing never restores temporary HP
+ * and cannot raise current HP above its maximum.
+ */
+export function applyHitPointDelta(
+  hpCurrent: number | null,
+  hpMax: number | null,
+  hpTemp: number | null,
+  delta: number,
+): HitPointDeltaResult {
+  if (!Number.isInteger(delta)) return { hpCurrent, hpTemp, error: "Изменение HP должно быть целым числом." };
+  if (delta === 0) return { hpCurrent, hpTemp, error: null };
+  if (hpCurrent === null) return { hpCurrent, hpTemp, error: "Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа." };
+  if (hpMax !== null && (!Number.isInteger(hpMax) || hpMax < 0)) return { hpCurrent, hpTemp, error: "Максимум HP не подтверждён." };
+  const temporary = Math.max(0, hpTemp ?? 0);
+  if (delta < 0) {
+    const damage = -delta;
+    const absorbed = Math.min(temporary, damage);
+    const remainingDamage = damage - absorbed;
+    const nextCurrent = hpCurrent - remainingDamage;
+    if (nextCurrent < 0) return { hpCurrent, hpTemp, error: "Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP)." };
+    return { hpCurrent: nextCurrent, hpTemp: hpTemp === null ? null : temporary - absorbed, error: null };
+  }
+  const healed = hpMax === null ? hpCurrent + delta : Math.min(hpMax, hpCurrent + delta);
+  return { hpCurrent: healed, hpTemp, error: null };
+}
 
 export const COLLECTION_NAMES: ReadonlyArray<CollectionName> = [
   "sources",
@@ -109,6 +144,7 @@ export function validateTurnDraft(
   draft: TurnDraft,
   worldState: WorldState,
   character: PlayerCharacterState,
+  collectionsNpcs: NpcRecord[] = [],
 ): string[] {
   const errors: string[] = [];
   if (!worldState.setup.confirmed) {
@@ -123,13 +159,47 @@ export function validateTurnDraft(
   if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {
     errors.push("Изменение игрового времени не может быть отрицательным.");
   }
-  if (draft.hpDelta !== 0 && character.hpCurrent === null) {
-    errors.push("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа.");
-  } else if (draft.hpDelta !== 0 && character.hpCurrent !== null && character.hpCurrent + draft.hpDelta < 0) {
-    errors.push("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
-  } else if (draft.hpDelta > 0 && character.hpCurrent !== null && character.hpMax !== null &&
-    character.hpCurrent + draft.hpDelta > character.hpMax) {
-    errors.push("Итоговые HP не могут превышать максимум персонажа.");
+  const hpChange = applyHitPointDelta(character.hpCurrent, character.hpMax, character.hpTemp, draft.hpDelta);
+  if (hpChange.error) errors.push(hpChange.error);
+  for (const change of draft.npcChanges ?? []) {
+    const existing = collectionsNpcs.find((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+    if (change.action === "CREATE" && existing) errors.push(`NPC «${change.name}» уже существует; нельзя создать дубликат.`);
+    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить NPC «${change.name}»: он отсутствует в реестре.`);
+    if (change.action === "UPDATE" && existing?.locked) errors.push(`NPC «${change.name}» заблокирован; сначала разблокируйте карточку вручную.`);
+    if (!change.name.trim() || !change.role.trim() || !change.goals.trim() || !change.reason.trim()) errors.push("Изменение NPC требует имени, роли, целей и причины.");
+    if (change.gmProfile) {
+      const profile = change.gmProfile;
+      if ([profile.biography, profile.appearance, profile.personality, profile.motivation, profile.longTermGoal,
+        profile.secrets, profile.relationships, profile.skillsAndAbilities].some((value) => typeof value !== "string")) {
+        errors.push(`Скрытая карточка NPC «${change.name}» содержит некорректные поля.`);
+      }
+      const combat = profile.combatProfile;
+      if (!combat || !["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(combat.status) ||
+          (combat.armorClass !== null && (!Number.isInteger(combat.armorClass) || combat.armorClass < 1 || combat.armorClass > 40)) ||
+          (combat.hitPointsCurrent !== null && (!Number.isInteger(combat.hitPointsCurrent) || combat.hitPointsCurrent < 0 || combat.hitPointsCurrent > 5000)) ||
+          (combat.hitPointsMax !== null && (!Number.isInteger(combat.hitPointsMax) || combat.hitPointsMax < 1 || combat.hitPointsMax > 5000)) ||
+          (combat.hitPointsCurrent !== null && combat.hitPointsMax !== null && combat.hitPointsCurrent > combat.hitPointsMax) ||
+          (combat.status === "SRD_VERIFIED" && (!combat.source.trim() || combat.armorClass === null || combat.hitPointsCurrent === null || combat.hitPointsMax === null))) {
+        errors.push(`Боевой профиль NPC «${change.name}» не прошёл проверку источника и числовых значений.`);
+      }
+    }
+    for (const knowledge of change.knowledgeAdditions) {
+      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
+    }
+    for (const knowledge of change.playerKnowledgeAdditions) {
+      if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание персонажа о NPC «${change.name}» должно иметь содержание и канал получения.`);
+    }
+  }
+  const existingQuests = worldState.quests ?? [];
+  for (const change of draft.questChanges ?? []) {
+    const existing = existingQuests.find((quest) => quest.title.toLocaleLowerCase() === change.title.toLocaleLowerCase());
+    if (change.action === "CREATE" && existing) errors.push(`Задание «${change.title}» уже существует; используйте UPDATE.`);
+    if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить неизвестное персонажу задание «${change.title}».`);
+    if (!change.title.trim() || !change.sourcePath.trim() || !change.description.trim()) errors.push("Запись задания должна иметь название, описание и источник получения информации.");
+  }
+  if (draft.environment) {
+    if (!draft.environment.weather.trim() || !draft.environment.lighting.trim() || !draft.environment.visibility.trim() || !draft.environment.temperatureCertainty) errors.push("Блок окружения должен содержать явные значения или UNKNOWN.");
+    if (draft.environment.temperatureC !== null && (!Number.isFinite(draft.environment.temperatureC) || draft.environment.temperatureC < -90 || draft.environment.temperatureC > 65)) errors.push("Температура вне допустимого физического диапазона; проверьте источник.");
   }
   const changes = draft.characterChanges;
   if (changes) {
@@ -148,6 +218,15 @@ export function validateTurnDraft(
       }
     }
     for (const resource of changes.resources) {
+      const existingResource = character.resources.find((item) => item.name.toLocaleLowerCase() === resource.name.toLocaleLowerCase());
+      if (existingResource?.current === null && resource.current !== null) {
+        errors.push(`Нельзя подставить текущее значение ресурса «${resource.name}»: оно UNKNOWN. Сначала игрок должен указать фактический остаток.`);
+        break;
+      }
+      if (existingResource?.max !== null && existingResource?.max !== undefined && resource.max !== null && resource.max !== existingResource.max) {
+        errors.push(`Нельзя менять максимум ресурса «${resource.name}» без подтверждённого изменения листа персонажа.`);
+        break;
+      }
       if (!resource.name.trim() || (resource.current !== null && (!Number.isInteger(resource.current) || resource.current < 0)) ||
           (resource.max !== null && (!Number.isInteger(resource.max) || resource.max < 0)) ||
           (resource.current !== null && resource.max !== null && resource.current > resource.max)) {
@@ -248,7 +327,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     (f) => !f.sourceId || (!sourceIds.has(f.sourceId) && f.sourceId !== "MANUAL_GM_ENTRY"),
   );
   const npcKnowledgeMissingPath = npcs.flatMap((npc) =>
-    npc.knowledge
+    [...npc.knowledge, ...(npc.playerKnowledge ?? [])]
       .filter((k) => !k.acquisitionPath.trim() || !k.sourceId.trim())
       .map((k) => `${npc.name}: ${k.factSummary}`),
   );
@@ -258,7 +337,7 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     label: "Происхождение фактов и путей знания NPC",
     passed: provenanceOk,
     details: provenanceOk
-      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC: ${npcs.reduce((acc, n) => acc + n.knowledge.length, 0)}.`
+      ? `Проверено фактов: ${canon_facts.length}, записей знаний NPC и игрока: ${npcs.reduce((acc, n) => acc + n.knowledge.length + (n.playerKnowledge?.length ?? 0), 0)}.`
       : `Фактов без источника: ${factsWithoutSource.length}; знаний NPC без пути получения: ${npcKnowledgeMissingPath.length}.`,
   });
 
@@ -274,6 +353,23 @@ export function runIntegrityAudit(collections: ObsidianCollections): IntegrityRe
     details: sourcesOk
       ? "Все три типа источников зарегистрированы раздельно."
       : "Отсутствует один из обязательных типов источников.",
+  });
+
+  // 6. AI context may only contain attached, processed and explicitly reviewed sources.
+  const unsafeContextSources = sources.filter((source) =>
+    source.contextEnabled === true && (
+      source.contentStatus !== "ATTACHED" ||
+      source.processing?.status !== "PROCESSED" ||
+      source.reviewStatus !== "VERIFIED"
+    ),
+  );
+  checks.push({
+    id: "source-context-review",
+    label: "Проверка источников, включённых в контекст ИИ",
+    passed: unsafeContextSources.length === 0,
+    details: unsafeContextSources.length === 0
+      ? "Все источники контекста загружены, обработаны и подтверждены пользователем."
+      : `Непроверенных источников в контексте: ${unsafeContextSources.map((source) => source.title).join(", ")}.`,
   });
 
   return {

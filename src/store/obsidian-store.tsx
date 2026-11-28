@@ -1,4 +1,3 @@
-import { isCampaignActive } from "@/domain/campaign-state";
 import {
   createContext,
   useCallback,
@@ -9,9 +8,11 @@ import {
   type ReactNode,
 } from "react";
 
-import { createEmptyTurnDraft, createInitialCollections } from "@/domain/defaults";
-import { applyWorldChangeSet } from "@/domain/apply-world-changes";
+import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
+import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
+import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
+  applyHitPointDelta,
   buildBackupEnvelope,
   computeChecksum,
   runIntegrityAudit,
@@ -26,6 +27,7 @@ import {
   type PersistVerifyResult,
   type StorageLike,
 } from "@/domain/storage";
+import { saveLinkedCloudSnapshot, setCloudCampaignLink } from "@/lib/obsidian-api";
 import type {
   AuditEntry,
   AuditLogState,
@@ -46,11 +48,13 @@ import type {
   PlayerCharacterState,
   SessionLogState,
   SourceDocument,
+  SourceProcessingSummary,
+  SourceReviewStatus,
   TechnicalMessageEntry,
   TravelRoute,
   TurnDraft,
   WorldConsequence,
-  WorldChangeSet,
+  WorldEnvironment,
   WorldState,
 } from "@/domain/types";
 
@@ -59,6 +63,18 @@ function makeId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
   }
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+export interface CampaignParametersPatch {
+  campaignName?: string;
+  calendarSystem?: string;
+  startInGameDate?: string;
+  startLocationName?: string;
+  startNarrative?: string;
+  startGeneration?: WorldState["startGeneration"];
+  encumbranceMode?: WorldState["encumbranceMode"];
+  campaignPreferences?: WorldState["campaignPreferences"];
+  setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
 }
 
 export interface ObsidianStoreValue {
@@ -78,11 +94,14 @@ export interface ObsidianStoreValue {
   auditLog: AuditLogState;
   lastIntegrityReport: IntegrityReport | null;
   lastStorageError: string | null;
+  cloudSyncStatus: "IDLE" | "SAVING" | "SAVED" | "ERROR";
+  cloudSyncMessage: string | null;
+  retryCloudSnapshot: () => Promise<void>;
 
   // Sources
   attachSourceContent: (
     sourceId: string,
-    payload: { fileName: string | null; content: string; originLabel: string; notes: string },
+    payload: { fileName: string | null; content: string; originLabel: string; notes: string; processing?: SourceProcessingSummary; canonSections?: SourceDocument["canonSections"]; dateMentions?: SourceDocument["dateMentions"] },
   ) => PersistVerifyResult;
   addSupplementalSource: (payload: {
     title: string;
@@ -91,6 +110,8 @@ export interface ObsidianStoreValue {
     fileName: string | null;
     notes: string;
   }) => PersistVerifyResult;
+  verifySource: (sourceId: string) => PersistVerifyResult;
+  setSourceContextEnabled: (sourceId: string, enabled: boolean) => PersistVerifyResult;
 
   // Canon / Facts
   addFact: (
@@ -162,15 +183,21 @@ export interface ObsidianStoreValue {
   updateInventoryItem: (id: string, patch: Partial<Omit<InventoryItem, "id">>) => PersistVerifyResult;
 
   // Setup Wizard & Campaign Parameters
-  updateCampaignParameters: (patch: {
-    campaignName?: string;
-    calendarSystem?: string;
-    startInGameDate?: string;
-    startLocationName?: string;
-    encumbranceMode?: WorldState["encumbranceMode"];
-    setupPatch?: Partial<Omit<CampaignSetupState, "confirmed" | "confirmedAt">>;
+  applyGeneratedStart: (input: {
+    city: { name: string; region: string; continent: string; population: number };
+    placeName: string;
+    date: string;
+    narrative: string;
+    locationDescription: string;
+    generationRecord: NonNullable<WorldState["startGeneration"]>;
+    characterPatch: Partial<Omit<PlayerCharacterState, "schemaVersion" | "stateVersion" | "updatedAt">>;
+    inventory: Array<Omit<InventoryItem, "id">>;
+    replaceInventory?: boolean;
   }) => PersistVerifyResult;
-  confirmCampaignSetup: () => PersistVerifyResult;
+  saveOpeningScene: (openingScene: string, state?: { date?: string; environment?: WorldEnvironment }) => PersistVerifyResult;
+  updateCampaignParameters: (patch: CampaignParametersPatch) => PersistVerifyResult;
+  confirmCampaignSetup: (patch?: CampaignParametersPatch) => PersistVerifyResult;
+  resetForTrialCampaign: () => PersistVerifyResult;
 
   // Turns & Append-only Journal
   updateTurnDraft: (patch: Partial<TurnDraft>) => void;
@@ -200,6 +227,8 @@ export function ObsidianStoreProvider({
   );
   const [lastIntegrityReport, setLastIntegrityReport] = useState<IntegrityReport | null>(null);
   const [lastStorageError, setLastStorageError] = useState<string | null>(null);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<"IDLE" | "SAVING" | "SAVED" | "ERROR">("IDLE");
+  const [cloudSyncMessage, setCloudSyncMessage] = useState<string | null>(null);
 
   const resolveStorage = useCallback(
     () => storageOverride ?? getBrowserStorage(),
@@ -212,10 +241,12 @@ export function ObsidianStoreProvider({
     if (loaded.turn_drafts.length === 0) {
       loaded.turn_drafts = [createEmptyTurnDraft()];
     }
+
     setCollections(loaded);
     setLastIntegrityReport(runIntegrityAudit(loaded));
+    setLastStorageError(null);
     setHydrated(true);
-  }, [resolveStorage]);
+  }, [resolveStorage, storageOverride]);
 
   const commitCollections = useCallback(
     (next: ObsidianCollections, expectedTailTurnNumber?: number): PersistVerifyResult => {
@@ -232,6 +263,33 @@ export function ObsidianStoreProvider({
     },
     [resolveStorage],
   );
+
+  const syncCommittedSnapshot = useCallback(async (snapshotCollections: ObsidianCollections) => {
+    setCloudSyncStatus("SAVING");
+    setCloudSyncMessage("Локальный ход сохранён. Создаётся облачная резервная копия…");
+    try {
+      const result = await saveLinkedCloudSnapshot(buildBackupEnvelope(snapshotCollections));
+      if (!result.ok) {
+        setCloudSyncStatus("ERROR");
+        setCloudSyncMessage(result.error.message);
+        return;
+      }
+      if (result.skipped) {
+        setCloudSyncStatus("IDLE");
+        setCloudSyncMessage(null);
+        return;
+      }
+      setCloudSyncStatus("SAVED");
+      setCloudSyncMessage(`Облачная копия подтверждена: ревизия №${result.revision}, ход №${result.turnNumber}.`);
+    } catch (error) {
+      setCloudSyncStatus("ERROR");
+      setCloudSyncMessage(error instanceof Error ? error.message : "Не удалось сохранить облачную копию.");
+    }
+  }, []);
+
+  const retryCloudSnapshot = useCallback(async () => {
+    await syncCommittedSnapshot(collections);
+  }, [collections, syncCommittedSnapshot]);
 
   const appendAudit = useCallback(
     (
@@ -272,21 +330,29 @@ export function ObsidianStoreProvider({
     (sourceId, payload) => {
       const now = new Date().toISOString();
       const hasText = payload.content.trim().length > 0;
-      const nextSources = collections.sources.map((src) =>
-        src.id === sourceId
-          ? {
-              ...src,
-              fileName: payload.fileName,
-              content: payload.content,
-              originLabel: payload.originLabel.trim() || src.originLabel,
-              notes: payload.notes,
-              contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
-              certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
-              checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
-              attachedAt: hasText ? now : null,
-            }
-          : src,
-      );
+      const nextSources = collections.sources.map((src) => {
+        if (src.id !== sourceId) return src;
+        const { processing: previousProcessing, ...sourceWithoutProcessing } = src;
+        return {
+          ...(hasText ? src : sourceWithoutProcessing),
+          fileName: payload.fileName,
+          content: payload.content,
+          originLabel: payload.originLabel.trim() || src.originLabel,
+          notes: payload.notes,
+          contentStatus: hasText ? ("ATTACHED" as const) : ("NOT_ATTACHED" as const),
+          reviewStatus: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256)
+            ? ("VERIFIED" as const) : ("UNREVIEWED" as const),
+          contextEnabled: payload.processing?.status === "PROCESSED" && Boolean(payload.processing.sha256),
+          certainty: hasText ? ("KNOWN" as const) : ("UNKNOWN" as const),
+          checksum: hasText ? computeChecksum(payload.content) : "EMPTY",
+          attachedAt: hasText ? now : null,
+          ...(hasText
+            ? (payload.processing ? { processing: payload.processing } : previousProcessing ? { processing: previousProcessing } : {})
+            : {}),
+          ...(payload.canonSections ? { canonSections: payload.canonSections } : src.type === "WORLD_CANON" ? { canonSections: [] } : src.canonSections ? { canonSections: src.canonSections } : {}),
+          ...(payload.dateMentions ? { dateMentions: payload.dateMentions } : src.type === "WORLD_CANON" ? { dateMentions: [] } : src.dateMentions ? { dateMentions: src.dateMentions } : {}),
+        };
+      });
       const nextWorld: WorldState = {
         ...collections.world_state,
         stateVersion: collections.world_state.stateVersion + 1,
@@ -321,6 +387,8 @@ export function ObsidianStoreProvider({
         targetPartition: "CAMPAIGN_STATE",
         originLabel: payload.originLabel.trim() || "Пользовательский источник",
         contentStatus: hasText ? "ATTACHED" : "NOT_ATTACHED",
+        reviewStatus: "UNREVIEWED",
+        contextEnabled: false,
         certainty: hasText ? "KNOWN" : "UNKNOWN",
         fileName: payload.fileName,
         content: payload.content,
@@ -349,6 +417,86 @@ export function ObsidianStoreProvider({
       });
     },
     [appendAudit, collections, commitCollections],
+  );
+
+  const verifySource: ObsidianStoreValue["verifySource"] = useCallback(
+    (sourceId) => {
+      const target = collections.sources.find((source) => source.id === sourceId);
+      if (!target) return { ok: false, error: "Источник не найден.", report: lastIntegrityReport };
+      if (target.contentStatus !== "ATTACHED" || !target.content.trim()) {
+        return { ok: false, error: "Нельзя проверить источник без загруженного содержимого.", report: lastIntegrityReport };
+      }
+      if (target.processing?.status !== "PROCESSED" || !target.processing.sha256) {
+        return { ok: false, error: "Сначала обработайте источник и проверьте SHA-256.", report: lastIntegrityReport };
+      }
+      const now = new Date().toISOString();
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_VERIFIED",
+        "OK",
+        `Пользователь подтвердил содержимое источника «${target.title}» (SHA-256 ${target.processing.sha256}).`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: collections.sources.map((source) =>
+          source.id === sourceId ? { ...source, reviewStatus: "VERIFIED" as SourceReviewStatus } : source,
+        ),
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
+  );
+
+  const setSourceContextEnabled: ObsidianStoreValue["setSourceContextEnabled"] = useCallback(
+    (sourceId, enabled) => {
+      const target = collections.sources.find((source) => source.id === sourceId);
+      if (!target) return { ok: false, error: "Источник не найден.", report: lastIntegrityReport };
+      if (enabled && (
+        target.contentStatus !== "ATTACHED" ||
+        target.processing?.status !== "PROCESSED" ||
+        target.reviewStatus !== "VERIFIED"
+      )) {
+        return {
+          ok: false,
+          error: "В контекст ИИ можно включить только загруженный, обработанный и отдельно проверенный источник.",
+          report: lastIntegrityReport,
+        };
+      }
+      if (target.contextEnabled === enabled) {
+        return { ok: true, report: lastIntegrityReport ?? runIntegrityAudit(collections) };
+      }
+      const now = new Date().toISOString();
+      const nextWorld: WorldState = {
+        ...collections.world_state,
+        stateVersion: collections.world_state.stateVersion + 1,
+        updatedAt: now,
+      };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "SOURCE_CONTEXT_CHANGED",
+        "OK",
+        `Источник «${target.title}»: контекст ИИ ${enabled ? "включён" : "отключён"}.`,
+        nextWorld,
+        collections.player_character_state,
+      );
+      return commitCollections({
+        ...collections,
+        sources: collections.sources.map((source) =>
+          source.id === sourceId ? { ...source, contextEnabled: enabled } : source,
+        ),
+        world_state: nextWorld,
+        audit_log: nextAudit,
+      });
+    },
+    [appendAudit, collections, commitCollections, lastIntegrityReport],
   );
 
   const addFact: ObsidianStoreValue["addFact"] = useCallback(
@@ -459,6 +607,7 @@ export function ObsidianStoreProvider({
       const npc: NpcRecord = {
         ...input,
         id: makeId("npc"),
+        resources: input.resources ?? "UNKNOWN",
         knowledge: [],
         version: 1,
         history: [],
@@ -732,9 +881,18 @@ export function ObsidianStoreProvider({
         stateVersion: collections.player_character_state.stateVersion + 1,
         updatedAt: now,
       };
+      const nextAudit = appendAudit(
+        collections.audit_log,
+        "PLAYER_CHARACTER_UPDATED",
+        "OK",
+        "Лист персонажа обновлён вне игрового хода; игровое время не продвигалось.",
+        collections.world_state,
+        nextCharacter,
+      );
       return commitCollections({
         ...collections,
         player_character_state: nextCharacter,
+        audit_log: nextAudit,
       });
     },
     [collections, commitCollections],
@@ -751,13 +909,18 @@ export function ObsidianStoreProvider({
 
   const updateCharacterResource: ObsidianStoreValue["updateCharacterResource"] = useCallback(
     (id, current) => {
+      const existing = collections.player_character_state.resources.find((resource) => resource.id === id);
+      if (!existing) return { ok: false, error: "Ресурс не найден в листе персонажа.", report: lastIntegrityReport };
+      if (current === null || !Number.isInteger(current) || current < 0 || (existing.max !== null && current > existing.max)) {
+        return { ok: false, error: "Текущее количество ресурса должно быть целым числом от 0 до его максимума.", report: lastIntegrityReport };
+      }
       return updatePlayerCharacter({
-        resources: collections.player_character_state.resources.map((r) =>
-          r.id === id ? { ...r, current } : r,
+        resources: collections.player_character_state.resources.map((resource) =>
+          resource.id === id ? { ...resource, current } : resource,
         ),
       });
     },
-    [collections.player_character_state.resources, updatePlayerCharacter],
+    [collections.player_character_state.resources, lastIntegrityReport, updatePlayerCharacter],
   );
 
   const addInventoryItem: ObsidianStoreValue["addInventoryItem"] = useCallback(
@@ -792,6 +955,96 @@ export function ObsidianStoreProvider({
     [collections.player_character_state.inventory, updatePlayerCharacter],
   );
 
+  const applyGeneratedStart: ObsidianStoreValue["applyGeneratedStart"] = useCallback((input) => {
+    if (collections.world_state.setup.confirmed || collections.session_log.lastTurnNumber > 0) {
+      return { ok: false, error: "Случайный старт можно создать только до подтверждения кампании и первого игрового хода.", report: lastIntegrityReport };
+    }
+    const now = new Date().toISOString();
+    const locationId = makeId("loc");
+    const location: LocationRecord = {
+      id: locationId,
+      name: input.city.name,
+      region: input.city.region,
+      cityName: input.city.name,
+      placeName: input.placeName,
+      description: input.locationDescription,
+      certainty: "KNOWN",
+      sourceId: "src-ekdrasil-chronicle",
+    };
+    const previousCharacter = collections.player_character_state;
+    const nextCharacter: PlayerCharacterState = {
+      ...previousCharacter,
+      ...input.characterPatch,
+      stateVersion: previousCharacter.stateVersion + 1,
+      currentLocationLabel: input.city.name,
+      inventory: (input.replaceInventory ?? input.inventory.length > 0) ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
+      updatedAt: now,
+    };
+    const previousWorld = collections.world_state;
+    const nextWorld: WorldState = {
+      ...previousWorld,
+      stateVersion: previousWorld.stateVersion + 1,
+      campaignName: previousWorld.campaignName || "Экдрасиль — свободная кампания",
+      calendarSystem: `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`,
+      startInGameDate: input.date,
+      currentInGameDate: input.date,
+      elapsedMinutes: 0,
+      startLocationName: input.city.name,
+      currentLocationId: locationId,
+      startNarrative: input.narrative,
+      startGeneration: input.generationRecord,
+      setup: {
+        ...previousWorld.setup,
+        parametersConfirmed: false,
+        startPointConfirmed: false,
+        characterConfirmed: false,
+        noAutoImportAcknowledged: false,
+        confirmed: false,
+        confirmedAt: null,
+      },
+      updatedAt: now,
+    };
+    return commitCollections({
+      ...collections,
+      locations: [location, ...collections.locations.filter((item) => item.name.toLocaleLowerCase() !== input.city.name.toLocaleLowerCase())],
+      world_state: nextWorld,
+      player_character_state: nextCharacter,
+    });
+  }, [collections, commitCollections, lastIntegrityReport]);
+
+  const saveOpeningScene: ObsidianStoreValue["saveOpeningScene"] = useCallback((openingScene, state) => {
+    const text = openingScene.trim();
+    if (!text) {
+      return { ok: false, error: "Пустую вступительную сцену нельзя сохранить.", report: lastIntegrityReport };
+    }
+    const currentWorld = collections.world_state;
+    if (!currentWorld.setup.confirmed) {
+      return { ok: false, error: "Сначала подтвердите подготовку кампании.", report: lastIntegrityReport };
+    }
+    if (currentWorld.openingScene?.trim()) {
+      return { ok: false, error: "Вступительная сцена уже сохранена и не может быть сгенерирована заново.", report: lastIntegrityReport };
+    }
+    const now = new Date().toISOString();
+    const nextWorld: WorldState = {
+      ...currentWorld,
+      openingScene: text,
+      openingSceneGeneratedAt: now,
+      ...(state?.date ? { startInGameDate: state.date, currentInGameDate: state.date } : {}),
+      ...(state?.environment ? { environment: state.environment } : {}),
+      stateVersion: currentWorld.stateVersion + 1,
+      updatedAt: now,
+    };
+    const nextAudit = appendAudit(
+      collections.audit_log,
+      "OPENING_SCENE_SAVED",
+      "OK",
+      "Сохранена неизменяемая вступительная сцена мастера. Игровой ход и игровое время не изменены.",
+      nextWorld,
+      collections.player_character_state,
+    );
+    return commitCollections({ ...collections, world_state: nextWorld, audit_log: nextAudit });
+  }, [collections, appendAudit, commitCollections, lastIntegrityReport]);
+
   const updateCampaignParameters: ObsidianStoreValue["updateCampaignParameters"] = useCallback(
     (patch) => {
       const now = new Date().toISOString();
@@ -808,7 +1061,12 @@ export function ObsidianStoreProvider({
             ? patch.startInGameDate
             : ws.currentInGameDate,
         startLocationName: patch.startLocationName ?? ws.startLocationName,
+        ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
+        ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
         encumbranceMode: patch.encumbranceMode ?? ws.encumbranceMode,
+        ...((patch.campaignPreferences ?? ws.campaignPreferences) !== undefined
+          ? { campaignPreferences: patch.campaignPreferences ?? ws.campaignPreferences }
+          : {}),
         setup: patch.setupPatch ? { ...ws.setup, ...patch.setupPatch } : ws.setup,
       };
       return commitCollections({ ...collections, world_state: nextWorld });
@@ -816,16 +1074,89 @@ export function ObsidianStoreProvider({
     [collections, commitCollections],
   );
 
-  const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback(() => {
-    const ws = collections.world_state;
+  const resetForTrialCampaign: ObsidianStoreValue["resetForTrialCampaign"] = useCallback(() => {
+    const now = new Date().toISOString();
+    const blank = createInitialCollections();
+    const preservedCanon = collections.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.CANON);
+    const serverManagedSources = blank.sources.filter((source) =>
+      source.id === DEFAULT_SOURCE_IDS.GOVERNING || source.id === DEFAULT_SOURCE_IDS.SRD
+    );
+    const preservedSources = [...serverManagedSources, ...preservedCanon, ...blank.sources.filter((source) => source.id === DEFAULT_SOURCE_IDS.DOSSIER)];
+    const nextCharacter = {
+      ...blank.player_character_state,
+      stateVersion: collections.player_character_state.stateVersion + 1,
+      updatedAt: now,
+    };
+    const next: ObsidianCollections = {
+      ...blank,
+      // Preserve only world/rules sources. Discard the old player dossier and all character data.
+      sources: preservedSources,
+      player_character_state: nextCharacter,
+      audit_log: {
+        ...blank.audit_log,
+        entries: [{
+          id: makeId("aud"),
+          timestamp: now,
+          action: "CAMPAIGN_RESET_FOR_TRIAL",
+          status: "OK",
+          details: "Текущее состояние кампании очищено в приложении. Сохранены серверные маркеры ОБСИДИАН/SRD и канон Экдрасиля; прежнее досье персонажа, персонаж, NPC, фракции, локации, факты, события, вступление, черновики и игровые ходы удалены из активного состояния.",
+          campaignVersion: blank.world_state.stateVersion,
+          characterVersion: nextCharacter.stateVersion,
+          turnNumber: null,
+          checksumSnapshot: computeChecksum({
+            resetAt: now,
+            preservedSourceIds: preservedSources.map((source) => source.id),
+            characterVersion: nextCharacter.stateVersion,
+          }),
+        }],
+      },
+    };
+    const result = commitCollections(next);
+    if (result.ok) {
+      setCloudCampaignLink(null);
+      setCloudSyncStatus("IDLE");
+      setCloudSyncMessage(null);
+    }
+    return result;
+  }, [collections, commitCollections]);
+
+  const confirmCampaignSetup: ObsidianStoreValue["confirmCampaignSetup"] = useCallback((patch = {}) => {
+    const currentWorld = collections.world_state;
+    const ws: WorldState = {
+      ...currentWorld,
+      campaignName: patch.campaignName ?? currentWorld.campaignName,
+      calendarSystem: patch.calendarSystem ?? currentWorld.calendarSystem,
+      startInGameDate: patch.startInGameDate ?? currentWorld.startInGameDate,
+      startLocationName: patch.startLocationName ?? currentWorld.startLocationName,
+      ...(patch.startNarrative !== undefined ? { startNarrative: patch.startNarrative } : {}),
+      ...(patch.startGeneration !== undefined ? { startGeneration: patch.startGeneration } : {}),
+      encumbranceMode: patch.encumbranceMode ?? currentWorld.encumbranceMode,
+      ...((patch.campaignPreferences ?? currentWorld.campaignPreferences) !== undefined
+        ? { campaignPreferences: patch.campaignPreferences ?? currentWorld.campaignPreferences }
+        : {}),
+      setup: patch.setupPatch ? { ...currentWorld.setup, ...patch.setupPatch } : currentWorld.setup,
+    };
     const pc = collections.player_character_state;
     const s = ws.setup;
-    const governingReady = collections.sources.some((source) => source.type === "GOVERNING_DOC" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
-    const canonReady = collections.sources.some((source) => source.type === "WORLD_CANON" && source.contentStatus === "ATTACHED" && source.content.trim().length > 0);
-    if (!governingReady || !canonReady) {
+    const isVerifiedContextSource = (source: SourceDocument, type: SourceDocument["type"]) =>
+      type === "GOVERNING_DOC" || type === "WORLD_CANON"
+        ? source.type === type && source.serverManaged === true
+        : source.type === type &&
+          source.contentStatus === "ATTACHED" &&
+          source.content.trim().length > 0 &&
+          source.processing?.status === "PROCESSED" &&
+          source.reviewStatus === "VERIFIED" &&
+          source.contextEnabled === true;
+    const governingReady = collections.sources.some((source) => isVerifiedContextSource(source, "GOVERNING_DOC"));
+    const canonReady = collections.sources.some((source) => isVerifiedContextSource(source, "WORLD_CANON"));
+    const dossierReady = collections.sources.some((source) => isVerifiedContextSource(source, "PLAYER_DOSSIER"));
+    const dossierRequired = pc.sourceDossierId !== "GENERATED_RANDOM";
+    if (!governingReady || !canonReady || (dossierRequired && !dossierReady)) {
       return {
         ok: false,
-        error: "Для запуска обязательны загруженные оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля. Досье персонажа может быть загружено отдельно или создано вручную.",
+        error: dossierRequired
+          ? "Для запуска нужны проверенные серверные источники ОБСИДИАН 4.1 и Хроника Экдрасиля, а также отдельный проверенный лист персонажа."
+          : "Для запуска случайного персонажа нужны серверный ОБСИДИАН 4.1 и проверенная Хроника Экдрасиля. Отдельное досье для случайного персонажа не требуется.",
         report: lastIntegrityReport,
       };
     }
@@ -858,6 +1189,10 @@ export function ObsidianStoreProvider({
         report: lastIntegrityReport,
       };
     }
+    const preferenceValues = Object.values(ws.campaignPreferences ?? {});
+    if (preferenceValues.length !== 10 || preferenceValues.some((value) => !value.trim())) {
+      return { ok: false, error: "Не согласованы все настройки Приложения B: книги и опциональные правила, броски, прогрессия, питание/жажда, случайные встречи, PvP, смерть/воскрешение, экономика, границы содержания и домашние правила. Для неиспользуемого пункта явно укажи «Не используется».", report: lastIntegrityReport };
+    }
     if (!pc.name.trim() || pc.name.trim() === "UNKNOWN") {
       return {
         ok: false,
@@ -865,6 +1200,26 @@ export function ObsidianStoreProvider({
           "Заполните имя персонажа в отдельном листе игрока (раздел «Персонаж», не UNKNOWN) перед стартом кампании.",
         report: lastIntegrityReport,
       };
+    }    const missingCombatFields = [
+      pc.hpCurrent === null ? "текущие HP" : "",
+      pc.hpMax === null ? "максимальные HP" : "",
+      pc.armorClass === null ? "КД" : "",
+      pc.level === null ? "уровень" : "",
+      pc.proficiencyBonus === null || pc.proficiencyBonus === undefined ? "бонус мастерства" : "",
+      !pc.abilityScores ? "шесть характеристик" : "",
+      !pc.speciesAndClass.trim() || pc.speciesAndClass === "UNKNOWN" ? "вид и класс" : "",
+      !pc.baseSavingThrowBonuses ? "базовые спасброски" : "",
+      !pc.skillBonuses?.length ? "владения навыками" : "",
+      !pc.weaponAttacks?.length ? "параметры атак" : "",
+      !pc.classFeaturesByLevel?.length ? "классовые особенности" : "",
+    ].filter(Boolean);
+    if (missingCombatFields.length) {
+      return { ok: false, error: "Лист персонажа не готов к механическому разрешению действий: не заполнено — " +
+        missingCombatFields.join(", ") + ". Досье не содержит текущие HP; введи фактическое значение вручную, не подставляй максимум автоматически.",
+        report: lastIntegrityReport };
+    }
+    if (pc.hpCurrent! > pc.hpMax!) {
+      return { ok: false, error: "Текущие HP не могут превышать максимум HP.", report: lastIntegrityReport };
     }
     const now = new Date().toISOString();
     const startLocId = collections.locations.find(
@@ -887,7 +1242,7 @@ export function ObsidianStoreProvider({
 
     const nextWorld: WorldState = {
       ...ws,
-      stateVersion: ws.stateVersion + 1,
+      stateVersion: currentWorld.stateVersion + 1,
       updatedAt: now,
       currentInGameDate: ws.startInGameDate.trim(),
       currentLocationId: activeLocId,
@@ -955,6 +1310,7 @@ export function ObsidianStoreProvider({
       activeDraft,
       collections.world_state,
       collections.player_character_state,
+      collections.npcs,
     );
     const nextDraft: TurnDraft = {
       ...activeDraft,
@@ -985,95 +1341,162 @@ export function ObsidianStoreProvider({
     (explicitConfirmation) => {
       const ws = collections.world_state;
       const pc = collections.player_character_state;
-      if (!isCampaignActive(ws.setup.confirmed, collections.session_log.lastTurnNumber)) {
-        return { ok: false, error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.", report: lastIntegrityReport };
+      if (!ws.setup.confirmed) {
+        return {
+          ok: false,
+          error: "Commit заблокирован: сначала подтвердите Мастер подготовки кампании.",
+          report: lastIntegrityReport,
+        };
       }
       if (!activeDraft.checkedAt) {
-        return { ok: false, error: "Сначала выполните этап проверки черновика хода.", report: lastIntegrityReport };
+        return {
+          ok: false,
+          error: "Сначала выполните этап проверки черновика хода.",
+          report: lastIntegrityReport,
+        };
       }
       if (!explicitConfirmation) {
-        return { ok: false, error: "Требуется явное подтверждение игрока для фиксации хода (commit).", report: lastIntegrityReport };
+        return {
+          ok: false,
+          error: "Требуется явное подтверждение игрока для фиксации хода (commit).",
+          report: lastIntegrityReport,
+        };
       }
       const errors = validateTurnDraft(activeDraft, ws, pc);
-      if (errors.length > 0) return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
+      if (errors.length > 0) {
+        return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
+      }
 
       const now = new Date().toISOString();
       const nextTurnNumber = collections.session_log.lastTurnNumber + 1;
       const nextWorldVersion = ws.stateVersion + 1;
       const nextCharacterVersion = pc.stateVersion + 1;
-      const nextDate = activeDraft.newInGameDate.trim() || ws.currentInGameDate;
-      const worldChanges: WorldChangeSet = activeDraft.worldChanges ?? {
-        facts: [], npcUpdates: [], npcKnowledgeAdditions: [], newLocations: [], newNpcs: [],
-        factionUpdates: [], newFactions: [], delayedEvents: [],
-      };
-      let appliedWorld: ReturnType<typeof applyWorldChangeSet>;
-      try {
-        appliedWorld = applyWorldChangeSet({
-          changes: worldChanges,
-          currentLocationId: ws.currentLocationId,
-          selectedLocationId: activeDraft.newLocationId.trim() || null,
-          selectedLocationKey: activeDraft.newLocationKey ?? null,
-          inGameDate: nextDate,
-          turnNumber: nextTurnNumber,
-          locations: collections.locations,
-          npcs: collections.npcs,
-          factions: collections.factions,
-          now,
-          makeId,
-        });
-      } catch (error) {
-        return {
-          ok: false,
-          error: error instanceof Error ? error.message : "Не удалось применить изменения мира.",
-          report: lastIntegrityReport,
-        };
+      const nextElapsedMinutes = ws.elapsedMinutes + activeDraft.timeDeltaMinutes;
+      const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(ws.calendarSystem);
+      const isTechnicalCalendar = /технический календарь мастера экдрасиля 1\.0|technical calendar 1\.0/i.test(ws.calendarSystem);
+      const calculatedEkdrasilDate = isEkdrasilCalendar
+        ? advanceEkdrasilDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
+        : null;
+      const calculatedTechnicalDate = isTechnicalCalendar
+        ? advanceTechnicalDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
+        : null;
+      if (isEkdrasilCalendar && !calculatedEkdrasilDate) {
+        return { ok: false, error: "Не удалось рассчитать дату по каноническому календарю Экдрасиля 2.4. Ход не сохранён; проверьте стартовую дату.", report: lastIntegrityReport };
       }
-      const nextLocationId = appliedWorld.currentLocationId;
-      const nextLocationObj = appliedWorld.locations.find((location) => location.id === nextLocationId);
-
-      const manualFact: CanonFact | null =
-        activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()
-          ? {
-              id: makeId("fact"),
-              title: activeDraft.newFactTitle.trim(),
-              statement: activeDraft.newFactStatement.trim(),
-              rationale: activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,
-              layer: activeDraft.newFactLayer,
-              subjectNpcId: null,
-              certainty: activeDraft.newFactCertainty,
-              sourceId: activeDraft.newFactSourceId,
-              acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,
-              inGameDate: nextDate,
-              scope: "LOCATION",
-              locked: true,
-              createdAt: now,
-              version: 1,
-              history: [],
-            }
+      const nextDate = calculatedEkdrasilDate ?? calculatedTechnicalDate ?? (activeDraft.newInGameDate.trim() || ws.currentInGameDate);
+      const nextLocationId = activeDraft.newLocationId || ws.currentLocationId;
+      const nextLocationObj = collections.locations.find((l) => l.id === nextLocationId);
+      const nextNpcs = [...collections.npcs];
+      for (const change of activeDraft.npcChanges ?? []) {
+        const existingIndex = nextNpcs.findIndex((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
+        const locationId = change.locationName
+          ? collections.locations.find((location) => location.name.toLocaleLowerCase() === change.locationName!.toLocaleLowerCase())?.id ?? null
           : null;
-      const nextFacts = [
-        ...appliedWorld.canonFacts,
-        ...(manualFact ? [manualFact] : []),
-        ...collections.canon_facts,
-      ];
+        const factionId = change.factionName
+          ? collections.factions.find((faction) => faction.name.toLocaleLowerCase() === change.factionName!.toLocaleLowerCase())?.id ?? null
+          : null;
+        const knowledge = change.knowledgeAdditions.map((entry) => ({
+          id: makeId("know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
+          acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
+        }));
+        const playerKnowledge = change.playerKnowledgeAdditions.map((entry) => ({
+          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
+          acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
+        }));
+        if (change.action === "CREATE") {
+          nextNpcs.unshift({
+            id: makeId("npc"), name: change.name, role: change.role, locationId, factionId,
+            goals: change.goals, ...(change.gmProfile ? { gmProfile: change.gmProfile } : {}), resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            playerVisible: change.playerVisible || playerKnowledge.length > 0, playerKnowledge,
+            sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [],
+          });
+        } else if (existingIndex >= 0) {
+          const existing = nextNpcs[existingIndex]!;
+          nextNpcs[existingIndex] = {
+            ...existing, role: change.role, locationId: locationId ?? existing.locationId,
+            factionId: factionId ?? existing.factionId, goals: change.goals,
+            ...(change.gmProfile ?? existing.gmProfile ? { gmProfile: change.gmProfile ?? existing.gmProfile } : {}), resources: change.resources,
+            attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            playerVisible: Boolean(existing.playerVisible || change.playerVisible || playerKnowledge.length > 0),
+            playerKnowledge: [...(existing.playerKnowledge ?? []), ...playerKnowledge],
+            knowledge: [...existing.knowledge, ...knowledge], version: existing.version + 1,
+            history: [...existing.history, {
+              version: existing.version, changedAt: now, inGameDate: nextDate,
+              summary: `Цели: ${existing.goals}; ресурсы: ${existing.resources ?? "UNKNOWN"}; отношение: ${existing.attitudeToPlayer}`,
+              reason: change.reason,
+            }],
+          };
+        }
+      }
+
+      const nextFacts =
+        activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()
+          ? [
+              {
+                id: makeId("fact"),
+                title: activeDraft.newFactTitle.trim(),
+                statement: activeDraft.newFactStatement.trim(),
+                rationale:
+                  activeDraft.newFactRationale.trim() || `Зафиксировано в ходе №${nextTurnNumber}`,
+                layer: activeDraft.newFactLayer,
+                subjectNpcId: null,
+                certainty: activeDraft.newFactCertainty,
+                sourceId: activeDraft.newFactSourceId,
+                acquisitionPath: `Зафиксировано в ходе №${nextTurnNumber}`,
+                inGameDate: nextDate,
+                scope: "LOCATION" as const,
+                locked: true,
+                createdAt: now,
+                version: 1,
+                history: [],
+              },
+              ...collections.canon_facts,
+            ]
+          : collections.canon_facts;
+
       const nextConsequences = activeDraft.consequenceText.trim()
-        ? [{
-            id: makeId("csq"), summary: activeDraft.consequenceText.trim(), inGameDate: nextDate,
-            turnNumber: nextTurnNumber, certainty: "KNOWN" as const, sourceId: "MANUAL_GM_ENTRY",
-          }, ...ws.consequences]
+        ? [
+            {
+              id: makeId("csq"),
+              summary: activeDraft.consequenceText.trim(),
+              inGameDate: nextDate,
+              turnNumber: nextTurnNumber,
+              certainty: "KNOWN" as const,
+              sourceId: "MANUAL_GM_ENTRY",
+            },
+            ...ws.consequences,
+          ]
         : ws.consequences;
+
+      const nextQuests = [...(ws.quests ?? [])];
+      for (const change of activeDraft.questChanges ?? []) {
+        const existingIndex = nextQuests.findIndex((quest) => quest.title.toLocaleLowerCase() === change.title.toLocaleLowerCase());
+        const quest = {
+          id: existingIndex >= 0 ? nextQuests[existingIndex]!.id : makeId("quest"),
+          title: change.title, description: change.description, objectives: change.objectives,
+          status: change.status, giverName: change.giverName, locationName: change.locationName,
+          deadline: change.deadline, reward: change.reward, sourcePath: change.sourcePath,
+          certainty: change.certainty, lastUpdatedInGameDate: nextDate, playerVisible: true as const,
+        };
+        if (existingIndex >= 0) nextQuests[existingIndex] = quest;
+        else nextQuests.unshift(quest);
+      }
+
       const nextWorld: WorldState = {
         ...ws,
+        quests: nextQuests,
+        ...(activeDraft.environment ? { environment: activeDraft.environment } : {}),
         stateVersion: nextWorldVersion,
         updatedAt: now,
         currentInGameDate: nextDate,
-        elapsedMinutes: ws.elapsedMinutes + activeDraft.timeDeltaMinutes,
+        elapsedMinutes: nextElapsedMinutes,
         currentLocationId: nextLocationId,
-        routes: [...ws.routes, ...appliedWorld.routes],
         consequences: nextConsequences,
       };
 
-      const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;
+      const hpChange = applyHitPointDelta(pc.hpCurrent, pc.hpMax, pc.hpTemp, activeDraft.hpDelta);
+      if (hpChange.error) return { ok: false, error: hpChange.error, report: lastIntegrityReport };
+      const nextHp = hpChange.hpCurrent;
       const characterChanges: CharacterChangeSet = activeDraft.characterChanges ?? {
         inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
       };
@@ -1085,7 +1508,7 @@ export function ObsidianStoreProvider({
             const existing = nextInventory[existingIndex]!;
             nextInventory[existingIndex] = { ...existing, quantity: existing.quantity + change.quantity, notes: change.notes || existing.notes, certainty: change.certainty };
           } else {
-            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "OTHER", unitWeightLb: null });
+            nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
           }
         } else if (change.action === "REMOVE" && existingIndex >= 0) {
           const existing = nextInventory[existingIndex]!;
@@ -1096,7 +1519,7 @@ export function ObsidianStoreProvider({
         } else if (change.action === "SET") {
           if (change.quantity === 0) nextInventory = nextInventory.filter((_, index) => index !== existingIndex);
           else if (existingIndex >= 0) nextInventory[existingIndex] = { ...nextInventory[existingIndex]!, quantity: change.quantity, notes: change.notes, certainty: change.certainty };
-          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "OTHER", unitWeightLb: null });
+          else nextInventory.push({ id: makeId("item"), name: change.name, quantity: change.quantity, notes: change.notes, certainty: change.certainty, location: "CARRIED", unitWeightLb: null });
         }
       }
       const nextResources = [...pc.resources];
@@ -1124,12 +1547,14 @@ export function ObsidianStoreProvider({
         stateVersion: nextCharacterVersion,
         updatedAt: now,
         hpCurrent: nextHp,
+        hpTemp: hpChange.hpTemp,
         inventory: nextInventory,
         resources: nextResources,
         conditions: nextConditions,
-        currency: pc.currency || Object.values(characterChanges.currencyDelta).some((delta) => delta !== 0) ? nextCurrency : undefined,
+        ...(pc.currency || Object.values(characterChanges.currencyDelta).some((delta) => delta !== 0) ? { currency: nextCurrency } : {}),
         currentLocationLabel: nextLocationObj?.name ?? pc.currentLocationLabel,
       };
+
       const baseTurnPayload = {
         id: makeId("turn"),
         entryType: "GAME_TURN" as const,
@@ -1142,44 +1567,54 @@ export function ObsidianStoreProvider({
         playerIntent: activeDraft.playerIntent.trim(),
         worldOutcome: activeDraft.worldOutcome.trim(),
         gmNarration: activeDraft.gmNarration?.trim() ?? "",
+        campaignMemory: activeDraft.campaignMemory?.trim() ?? "",
+        ...(activeDraft.environment ? { environment: activeDraft.environment } : {}),
+        questChanges: activeDraft.questChanges ?? [],
         characterChanges,
-        worldChanges,
-        newLocationKey: activeDraft.newLocationKey ?? null,
+        npcChanges: activeDraft.npcChanges ?? [],
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,
         affectedCampaignVersion: nextWorldVersion,
         affectedCharacterVersion: nextCharacterVersion,
       };
-      const turnEntry: GameTurnEntry = { ...baseTurnPayload, entryChecksum: computeChecksum(baseTurnPayload) };
+
+      const turnEntry: GameTurnEntry = {
+        ...baseTurnPayload,
+        entryChecksum: computeChecksum(baseTurnPayload),
+      };
+
       const nextSessionLog: SessionLogState = {
         ...collections.session_log,
         lastTurnNumber: nextTurnNumber,
         entries: [...collections.session_log.entries, turnEntry],
       };
-      const auditDetails = [
-        `Зафиксирован ход №${nextTurnNumber}: ${turnEntry.summary} (+${turnEntry.timeDeltaMinutes} мин).`,
-        `Изменения мира: факты ${appliedWorld.counts.facts}, NPC ${appliedWorld.counts.npcUpdates + appliedWorld.counts.newNpcs}, знания NPC ${appliedWorld.counts.npcKnowledge}, фракции ${appliedWorld.counts.factionUpdates + appliedWorld.counts.newFactions}, локации ${appliedWorld.counts.newLocations}, отложенные события ${appliedWorld.counts.delayedEvents}.`,
-      ].join(" ");
+
       const nextAudit = appendAudit(
-        collections.audit_log, "TURN_COMMITTED", "OK", auditDetails,
-        nextWorld, nextCharacter, nextTurnNumber,
+        collections.audit_log,
+        "TURN_COMMITTED",
+        "OK",
+        `Зафиксирован ход №${nextTurnNumber}: ${turnEntry.summary} (+${turnEntry.timeDeltaMinutes} мин).`,
+        nextWorld,
+        nextCharacter,
+        nextTurnNumber,
       );
-      return commitCollections({
+
+      const nextCollections: ObsidianCollections = {
         ...collections,
         canon_facts: nextFacts,
         world_state: nextWorld,
         player_character_state: nextCharacter,
-        npcs: appliedWorld.npcs,
-        factions: appliedWorld.factions,
-        locations: appliedWorld.locations,
-        timeline_events: [...collections.timeline_events, ...appliedWorld.timelineEvents],
+        npcs: nextNpcs,
         turn_drafts: [createEmptyTurnDraft(makeId("draft"))],
         session_log: nextSessionLog,
         audit_log: nextAudit,
-      }, nextTurnNumber);
+      };
+      const committed = commitCollections(nextCollections, nextTurnNumber);
+      if (committed.ok) void syncCommittedSnapshot(nextCollections);
+      return committed;
     },
-    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport],
+    [activeDraft, appendAudit, collections, commitCollections, lastIntegrityReport, syncCommittedSnapshot],
   );
 
   const addTechnicalMessage: ObsidianStoreValue["addTechnicalMessage"] = useCallback(
@@ -1287,8 +1722,13 @@ export function ObsidianStoreProvider({
       auditLog: collections.audit_log,
       lastIntegrityReport,
       lastStorageError,
+      cloudSyncStatus,
+      cloudSyncMessage,
+      retryCloudSnapshot,
       attachSourceContent,
       addSupplementalSource,
+      verifySource,
+      setSourceContextEnabled,
       addFact,
       amendFact,
       toggleFactLock,
@@ -1308,8 +1748,11 @@ export function ObsidianStoreProvider({
       addInventoryItem,
       removeInventoryItem,
       updateInventoryItem,
+      applyGeneratedStart,
+      saveOpeningScene,
       updateCampaignParameters,
       confirmCampaignSetup,
+    resetForTrialCampaign,
       updateTurnDraft,
       saveTurnDraftExplicit,
       checkTurnDraft,
@@ -1325,8 +1768,13 @@ export function ObsidianStoreProvider({
       activeDraft,
       lastIntegrityReport,
       lastStorageError,
+      cloudSyncStatus,
+      cloudSyncMessage,
+      retryCloudSnapshot,
       attachSourceContent,
       addSupplementalSource,
+      verifySource,
+      setSourceContextEnabled,
       addFact,
       amendFact,
       toggleFactLock,
@@ -1346,6 +1794,8 @@ export function ObsidianStoreProvider({
       addInventoryItem,
       removeInventoryItem,
       updateInventoryItem,
+      applyGeneratedStart,
+      saveOpeningScene,
       updateCampaignParameters,
       confirmCampaignSetup,
       updateTurnDraft,

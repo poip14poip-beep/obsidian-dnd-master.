@@ -37,6 +37,7 @@ jobs:
           GITHUB_PAGES: "true"
           VITE_SUPABASE_URL: "https://dbchfgkdrqpjspptoezh.supabase.co"
           VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_DSbvWZk4wHJ3CAcXeqwuUA_9F-FzB7J"
+          VITE_GITHUB_PAGES: "true"
         run: bun run build
       - name: Prepare SPA fallback
         run: |
@@ -47,7 +48,10 @@ jobs:
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
+          name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
           path: .output/public
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        with:
+          artifact_name: github-pages-${{ github.run_id }}-${{ github.run_attempt }}

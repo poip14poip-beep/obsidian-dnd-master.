@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, cloud-api-client]
   pull_request:
-    branches: [main]
+    branches: [main, cloud-api-client]
 
 jobs:
   validate:
@@ -16,4 +16,5 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run test
+      - run: bunx tsc --noEmit
       - run: bun run build

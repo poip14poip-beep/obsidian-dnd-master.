@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -9,13 +9,13 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
+import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
-import { isCampaignActive } from "@/domain/campaign-state";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
-import { buildDiceContinuationAction } from "@/domain/dice-continuation";
+import { formatGameMasterAnswer } from "@/domain/game-master-presentation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -53,9 +53,11 @@ function TurnsPage() {
     npcs,
     factions,
     locations,
+    timelineEvents,
     sessionLog,
     turnDraft,
     lastStorageError,
+    cloudSyncStatus, cloudSyncMessage, retryCloudSnapshot,
     updateTurnDraft,
     saveTurnDraftExplicit,
     checkTurnDraft,
@@ -63,39 +65,45 @@ function TurnsPage() {
     addTechnicalMessage,
   } = useObsidianStore();
 
+  const { session } = useAuth();
   const [explicitConfirm, setExplicitConfirm] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [commitSuccessMsg, setCommitSuccessMsg] = useState<string | null>(null);
   const [techText, setTechText] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [playerAction, setPlayerAction] = useState("");
   const [gmBusy, setGmBusy] = useState(false);
+  // React state updates after the event; this synchronous guard blocks rapid duplicate submissions.
+  const gmRequestInFlight = useRef(false);
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
-  const [gmModel, setGmModel] = useState("gpt-4.1-mini");
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollAnswers, setRollAnswers] = useState<Record<number, string>>({});
+  const [pendingRollResult, setPendingRollResult] = useState("");
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
   const [rollResult, setRollResult] = useState("");
 
-  const campaignActive = isCampaignActive(worldState.setup.confirmed, sessionLog.lastTurnNumber);
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
+  const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
 
   async function handleResolveAction(actionOverride?: string) {
-    const submittedAction = actionOverride ?? playerAction;
+    if (gmRequestInFlight.current) return;
+    const actionToResolve = actionOverride ?? playerAction;
+    if (!actionToResolve.trim()) {
+      setGmError("Опиши действие персонажа перед отправкой мастеру.");
+      return;
+    }
     setGmError(null);
     setGmTurn(null);
-    if (!submittedAction.trim()) return;
-    if (!campaignActive) {
+    if (!worldState.setup.confirmed) {
       setGmError("Сначала завершите обязательную подготовку кампании.");
       return;
     }
+    gmRequestInFlight.current = true;
     setGmBusy(true);
     try {
-      const result = await resolvePlayerAction(apiKey, {
-        action: submittedAction,
+      const result = await resolvePlayerAction(session?.access_token ?? "", {
+        action: actionToResolve,
         sources,
         world: worldState,
         character,
@@ -103,23 +111,23 @@ function TurnsPage() {
         npcs,
         factions,
         locations,
+        timelineEvents,
         journal: sessionLog.entries,
-      }, { model: gmModel });
+      }, { model: "obsidian-free" });
       setGmTurn(result.turn);
       if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         updateTurnDraft({
           summary: result.turn.summary,
-          playerIntent: submittedAction.trim(),
+          playerIntent: actionToResolve.trim(),
           worldOutcome: result.turn.worldOutcome,
           gmNarration: result.turn.narration,
           timeDeltaMinutes: result.turn.timeDeltaMinutes,
           newInGameDate: result.turn.newInGameDate,
+          newLocationId: result.turn.newLocationId ?? "",
           hpDelta: result.turn.hpDelta,
           consequenceText: result.turn.consequenceText,
           characterChanges: result.turn.characterChanges,
-          worldChanges: result.turn.worldChanges,
-          newLocationId: result.turn.newLocationId ?? "",
-          newLocationKey: result.turn.newLocationKey ?? null,
+          npcChanges: result.turn.npcChanges,
           rolls: result.turn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
@@ -130,26 +138,24 @@ function TurnsPage() {
     } catch (error) {
       setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
     } finally {
+      gmRequestInFlight.current = false;
       setGmBusy(false);
     }
   }
 
-  function handleSubmitRolls() {
-    if (!gmTurn) return;
-    const pending = gmTurn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
-    if (pending.length === 0 || pending.some((_, index) => !rollAnswers[index]?.trim())) return;
-    let continuedAction: string;
-    try {
-      continuedAction = buildDiceContinuationAction(playerAction, pending, rollAnswers);
-    } catch (error) {
-      setGmError(error instanceof Error ? error.message : "Не удалось передать результаты бросков.");
+  function handleSubmitPendingRoll() {
+    if (!gmTurn || !pendingRollResult.trim()) return;
+    if (!Number.isInteger(Number(pendingRollResult.trim()))) {
+      setGmError("Результат броска должен быть целым числом. Введи итог с модификатором, если он применим.");
       return;
     }
-    setPlayerAction(continuedAction);
-    setRollAnswers({});
-    void handleResolveAction(continuedAction);
+    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+    if (!pending) return;
+    const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
+    setPlayerAction(action);
+    setPendingRollResult("");
+    void handleResolveAction(action);
   }
-
   function handleApplyClarification() {
     if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
     setPlayerAction(`${playerAction.trim()}\n\nОтвет игрока на уточнение мастера: ${clarificationAnswer.trim()}`);
@@ -238,40 +244,54 @@ function TurnsPage() {
         </p>
       </header>
 
-      <SetupGateBanner confirmed={campaignActive} />\n\n      <section className="panel-surface space-y-3 p-4">
+      <SetupGateBanner confirmed={worldState.setup.confirmed} />
+      {cloudSyncStatus !== "IDLE" && (
+        <section role="status" className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3 text-xs ${cloudSyncStatus === "ERROR" ? "border-status-danger/50 bg-status-danger-bg/30" : "border-border bg-background/50"}`}>
+          <div>
+            <p className="font-semibold text-foreground">{cloudSyncStatus === "SAVING" ? "Сохранение облачной копии" : cloudSyncStatus === "SAVED" ? "Облачная копия подтверждена" : "Облачное сохранение не выполнено"}</p>
+            <p className="text-muted-foreground">{cloudSyncMessage}</p>
+            {cloudSyncStatus === "ERROR" && <p className="mt-1 text-muted-foreground">Ход уже сохранён локально. Облачная копия не подтверждена.</p>}
+          </div>
+          {cloudSyncStatus === "ERROR" && (cloudSyncMessage?.includes("В облаке уже есть другая версия") ? (
+            <Button asChild type="button" variant="secondary" className="touch-target">
+              <Link to="/settings">Загрузить актуальную версию</Link>
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" className="touch-target" onClick={() => void retryCloudSnapshot()}>
+              Повторить сохранение
+            </Button>
+          ))}
+        </section>
+      )}
+
+      <section className="panel-surface flex flex-wrap items-center justify-between gap-3 border-primary/30 p-3">
+        <div><p className="text-sm font-semibold text-foreground">Основное окно кампании — игровой чат</p><p className="text-xs text-muted-foreground">Здесь остаются журнал, ручная проверка и резервные инструменты.</p></div>
+        <Link to="/game" className="touch-target inline-flex items-center rounded-md bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground">Открыть игровой чат</Link>
+      </section>
+
+      <section className="panel-surface space-y-3 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Игровой мастер · живой ход</h2>
-            <p className="text-xs text-muted-foreground">Модель получает полный ОБСИДИАН 4.1, актуальное состояние и релевантные фрагменты Экдрасиля.</p>
+            <h2 className="text-base font-semibold text-foreground">Игровой мастер · ручной резервный режим</h2>
+            <p className="text-xs text-muted-foreground">Для обычной игры открой отдельную вкладку «Играть». Здесь оставлен ручной резервный интерфейс и инструменты журнала.</p>
           </div>
           <span className="mono-code rounded border border-primary/30 px-2 py-1 text-[10px] text-primary">AI GM</span>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="gm-api-key">OpenAI API-ключ</Label>
-          <Input id="gm-api-key" type="password" autoComplete="off" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-…" className="touch-target" />
-          <p className="text-[11px] text-muted-foreground">Ключ хранится только в памяти этой страницы и не записывается в кампанию или localStorage. В OpenAI отправляются полный текст ОБСИДИАН 4.1, досье персонажа, релевантные фрагменты канона и состояние кампании. Запрос идёт напрямую в OpenAI API; использование тарифицируется отдельно от ChatGPT.</p>
-        </div>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_180px]">
-          <div className="space-y-1.5">
-            <Label htmlFor="gm-model">Модель</Label>
-            <Input id="gm-model" value={gmModel} onChange={(e) => setGmModel(e.target.value)} className="touch-target" />
-          </div>
-          <div className="flex items-end">
-            <span className="text-[11px] text-muted-foreground">По умолчанию: gpt-4.1-mini</span>
-          </div>
+        <div className="rounded-md border border-border bg-background/50 p-3 text-xs text-muted-foreground">
+          Резервный интерфейс использует ту же защищённую серверную модель, что и игровой чат. API-ключ не вводится: используется твоя активная сессия приложения, а модель выбирается сервером.
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
           <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
-        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !apiKey.trim() || !campaignActive} onClick={handleResolveAction}>
+        <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !session?.access_token || !worldState.setup.confirmed} onClick={() => void handleResolveAction()}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
         </Button>
-        {!campaignActive && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
+        {!worldState.setup.confirmed && <p className="text-xs text-status-approx">Игровой процесс заблокирован до завершения подготовки кампании.</p>}
         {gmError && <div role="alert" className="rounded border border-status-danger/50 bg-status-danger-bg/40 p-3 text-sm text-status-danger">{gmError}</div>}
         {gmTurn && (
           <div className="space-y-3 rounded-md border border-primary/30 bg-background/60 p-3">
-            <div className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{gmTurn.narration}</div>
+            <pre className="whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-foreground">{formattedGmAnswer}</pre>
             {gmTurn.needsClarification && (
               <div className="space-y-2 rounded border border-status-approx/40 p-3">
                 <p className="text-xs font-semibold text-status-approx">Нужно уточнение · ход и время не зафиксированы</p>
@@ -283,28 +303,12 @@ function TurnsPage() {
             {gmTurn.rolls.length > 0 && (
               <div className="space-y-1 rounded border border-border p-3">
                 <p className="text-xs font-semibold">Проверки и броски</p>
-                {gmTurn.rolls.map((roll, index) => (
-                  <div key={index} className="space-y-1 rounded border border-border/60 p-2">
-                    <p className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>
-                    {roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && (
-                      <Input inputMode="numeric" value={rollAnswers[gmTurn.rolls.filter((item) => item.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").findIndex((item) => item === roll)] ?? ""}
-                        onChange={(e) => {
-                          const pendingIndex = gmTurn.rolls.filter((item) => item.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").findIndex((item) => item === roll);
-                          setRollAnswers((current) => ({ ...current, [pendingIndex]: e.target.value }));
-                        }}
-                        placeholder="Твой результат броска"
-                        className="touch-target mono-code" />
-                    )}
-                  </div>
-                ))}
-                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
-                  <div className="space-y-2 pt-2">
-                    <p className="text-xs text-status-approx">Бросок выполняешь ты. Мастер не подставляет случайный результат и не двигает время до ответа.</p>
-                    <Button type="button" variant="outline" className="touch-target w-full"
-                      disabled={gmTurn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").some((_, index) => !rollAnswers[index]?.trim())}
-                      onClick={handleSubmitRolls}>Передать результаты мастеру и продолжить</Button>
-                  </div>
-                )}
+                {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
+                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
+                  <p className="text-xs text-status-approx">Бросок выполняешь ты физически или любым своим кубиком. Введи итоговое значение с модификатором, если он применим. Мастер не бросает за тебя.</p>
+                  <Input type="number" step="1" value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
+                  <Button type="button" className="touch-target w-full" disabled={!pendingRollResult.trim() || gmBusy} onClick={handleSubmitPendingRoll}>Передать результат и продолжить разрешение</Button>
+                </div>}
               </div>
             )}
             {!gmTurn.needsClarification && !gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && (
@@ -315,16 +319,12 @@ function TurnsPage() {
                 {gmTurn.characterChanges.resources.map((change, index) => <p key={`res-${index}`}>Ресурс · {change.name}: {change.current ?? "?"}/{change.max ?? "?"}</p>)}
                 {gmTurn.characterChanges.conditions.map((change, index) => <p key={`cond-${index}`}>Состояние · {change.action}: {change.name}</p>)}
                 {Object.entries(gmTurn.characterChanges.currencyDelta).filter(([, delta]) => delta !== 0).map(([coin, delta]) => <p key={coin}>Валюта · {coin.toUpperCase()}: {delta > 0 ? "+" : ""}{delta}</p>)}
-                {gmTurn.newLocationId && <p>Переход в зарегистрированную локацию: {locations.find((location) => location.id === gmTurn.newLocationId)?.name ?? gmTurn.newLocationId}</p>}
-                {gmTurn.newLocationKey && <p>Новая локация: {gmTurn.worldChanges.newLocations.find((location) => location.tempId === gmTurn.newLocationKey)?.name ?? gmTurn.newLocationKey}</p>}
-                {gmTurn.worldChanges.facts.map((fact, index) => <p key={`fact-${index}`}>Факт · {fact.layer}/{fact.certainty}: {fact.title} — {fact.statement}</p>)}
-                {gmTurn.worldChanges.npcUpdates.map((update, index) => <p key={`npc-update-${index}`}>NPC · изменение {update.npcId}: {update.reason}</p>)}
-                {gmTurn.worldChanges.npcKnowledgeAdditions.map((entry, index) => <p key={`npc-knowledge-${index}`}>Знание NPC · {entry.npcId}: {entry.factSummary} (путь: {entry.acquisitionPath})</p>)}
-                {gmTurn.worldChanges.newNpcs.map((npc) => <p key={npc.tempId}>Новый NPC · {npc.name} — {npc.role}</p>)}
-                {gmTurn.worldChanges.factionUpdates.map((update, index) => <p key={`faction-update-${index}`}>Фракция · изменение {update.factionId}: {update.reason}</p>)}
-                {gmTurn.worldChanges.newFactions.map((faction) => <p key={faction.tempId}>Новая фракция · {faction.name}</p>)}
-                {gmTurn.worldChanges.newLocations.map((location) => <p key={location.tempId}>Новая локация · {location.name} ({location.region}); расстояние: {location.distanceFromCurrent}, время: {location.travelTimeHours ?? "UNKNOWN"} ч.</p>)}
-                {gmTurn.worldChanges.delayedEvents.map((event, index) => <p key={`event-${index}`}>Отложенное событие · {event.title}: {event.triggerInGameDate} — {event.consequence}</p>)}
+                {gmTurn.npcChanges.map((change, index) => <div key={`npc-${index}`} className="rounded border border-border/60 p-2">
+                  <p className="font-semibold">NPC · {change.action === "CREATE" ? "новый" : "обновление"} · {change.name}</p>
+                  <p>{change.role} · Цели: {change.goals}</p>
+                  <p>Отношение к персонажу: {change.attitudeToPlayer}</p>
+                  {change.knowledgeAdditions.map((knowledge, k) => <p key={k} className="text-muted-foreground">Знание NPC: {knowledge.factSummary} · источник получения: {knowledge.acquisitionPath}</p>)}
+                </div>)}
                 {gmTurn.stateNotes.map((note, index) => <p key={`note-${index}`}>· {note}</p>)}
               </div>
             )}
@@ -363,7 +363,7 @@ function TurnsPage() {
           </span>
         </div>
 
-        {!campaignActive ? (
+        {!worldState.setup.confirmed ? (
           <div className="flex items-center gap-2 rounded border border-border bg-background/60 p-3 text-xs text-muted-foreground">
             <Lock className="h-4 w-4 shrink-0 text-status-approx" />
             Создание и commit игровых ходов заблокированы до завершения Мастера подготовки кампании.

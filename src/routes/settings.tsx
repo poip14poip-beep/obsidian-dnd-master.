@@ -4,11 +4,23 @@ import { useEffect, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { CloudCampaignPanel } from "@/components/CloudCampaignPanel";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useObsidianStore } from "@/store/obsidian-store";
 import { buildCampaignStateMarkdown, buildPlayerCharacterStateMarkdown, buildSessionLogMarkdown } from "@/domain/save-files";
+import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
+import { generateRandomStart } from "@/domain/random-start";
+
+function resolveCampaignPreferences(value: typeof DEFAULT_CAMPAIGN_PREFERENCES | undefined) {
+  return Object.fromEntries(
+    Object.entries(DEFAULT_CAMPAIGN_PREFERENCES).map(([key, fallback]) => {
+      const current = value?.[key as keyof typeof DEFAULT_CAMPAIGN_PREFERENCES];
+      return [key, typeof current === "string" && current.trim() ? current : fallback];
+    }),
+  ) as typeof DEFAULT_CAMPAIGN_PREFERENCES;
+}
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -37,25 +49,60 @@ function SettingsPage() {
     worldState,
     character,
     updateCampaignParameters,
+    applyGeneratedStart,
     confirmCampaignSetup,
+    resetForTrialCampaign,
     exportBackupJson,
     importBackupJson,
   } = useObsidianStore();
 
-  const [campaignName, setCampaignName] = useState(worldState.campaignName);
-  const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem);
-  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode ?? "UNSET");
+  const [campaignName, setCampaignName] = useState(worldState.campaignName || "Экдрасиль — свободная кампания");
+  const [calendarSystem, setCalendarSystem] = useState(worldState.calendarSystem === "UNKNOWN" ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN" : worldState.calendarSystem);
+  const [encumbranceMode, setEncumbranceMode] = useState(worldState.encumbranceMode === "UNSET" || !worldState.encumbranceMode ? "STANDARD" : worldState.encumbranceMode);
+  const [campaignPreferences, setCampaignPreferences] = useState(resolveCampaignPreferences(worldState.campaignPreferences));
   const [startInGameDate, setStartInGameDate] = useState(worldState.startInGameDate);
   const [startLocationName, setStartLocationName] = useState(worldState.startLocationName);
+  const [startNarrative, setStartNarrative] = useState(worldState.startNarrative ?? "");
   const [importError, setImportError] = useState<string | null>(null);
+  const [backupAcknowledged, setBackupAcknowledged] = useState(false);
 
   useEffect(() => {
-    setCampaignName(worldState.campaignName);
-    setCalendarSystem(worldState.calendarSystem);
-    setEncumbranceMode(worldState.encumbranceMode ?? "UNSET");
+    setCampaignName(worldState.campaignName || "Экдрасиль — свободная кампания");
+    setCalendarSystem(worldState.calendarSystem === "UNKNOWN" ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN" : worldState.calendarSystem);
+    setEncumbranceMode(worldState.encumbranceMode === "UNSET" || !worldState.encumbranceMode ? "STANDARD" : worldState.encumbranceMode);
+    setCampaignPreferences(resolveCampaignPreferences(worldState.campaignPreferences));
     setStartInGameDate(worldState.startInGameDate);
     setStartLocationName(worldState.startLocationName);
+    setStartNarrative(worldState.startNarrative ?? "");
   }, [worldState]);
+
+  function handleGenerateRandomStart() {
+    try {
+      const generated = generateRandomStart(character.hpMax ?? 0);
+      const result = applyGeneratedStart({
+        city: generated.city,
+        placeName: generated.placeName,
+        date: generated.date,
+        narrative: generated.narrative,
+        locationDescription: generated.location.description,
+        generationRecord: generated.generationRecord,
+        characterPatch: generated.characterPatch,
+        inventory: generated.inventory,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      setCampaignName("Экдрасиль — свободная кампания");
+      setCalendarSystem("Хронология Экдрасиля; точная календарная система UNKNOWN");
+      setStartInGameDate(generated.date);
+      setStartLocationName(generated.city.name);
+      setStartNarrative(generated.narrative);
+      toast.success(`Случайный старт создан: ${generated.city.name} · ${generated.hpCurrent}/${character.hpMax ?? "UNKNOWN"} HP. Задания не назначены.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось создать случайный старт.");
+    }
+  }
 
   function handleSaveParams() {
     const res = updateCampaignParameters({
@@ -64,6 +111,7 @@ function SettingsPage() {
       startInGameDate: startInGameDate.trim() || "UNKNOWN",
       startLocationName: startLocationName.trim() || "UNKNOWN",
       encumbranceMode,
+      campaignPreferences,
     });
     if (res.ok) {
       toast.success("Параметры подготовки сохранены.");
@@ -92,15 +140,14 @@ function SettingsPage() {
   }
 
   function handleConfirmSetup() {
-    // Save current input values first, then confirm
-    updateCampaignParameters({
-      campaignName: campaignName.trim() || worldState.campaignName,
-      calendarSystem: calendarSystem.trim() || worldState.calendarSystem,
-      startInGameDate: startInGameDate.trim() || worldState.startInGameDate,
-      startLocationName: startLocationName.trim() || worldState.startLocationName,
+    const res = confirmCampaignSetup({
+      campaignName: campaignName.trim(),
+      calendarSystem: calendarSystem.trim() || "UNKNOWN",
+      startInGameDate: startInGameDate.trim() || "UNKNOWN",
+      startLocationName: startLocationName.trim() || "UNKNOWN",
       encumbranceMode,
+      campaignPreferences,
     });
-    const res = confirmCampaignSetup();
     if (res.ok) {
       toast.success("Подготовка кампании подтверждена! Раздел «Ходы и журнал» разблокирован.");
     } else {
@@ -116,6 +163,20 @@ function SettingsPage() {
     a.download = fileName;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function handleResetForTrialCampaign() {
+    if (!backupAcknowledged) {
+      toast.error("Сначала скачай резервную копию и подтверди её сохранение.");
+      return;
+    }
+    const result = resetForTrialCampaign();
+    if (result.ok) {
+      setBackupAcknowledged(false);
+      toast.success("Создана чистая пробная кампания. Источники и лист персонажа сохранены; старый игровой журнал не перенесён. Импортируй досье заново перед подтверждением подготовки.");
+    } else {
+      toast.error(result.error);
+    }
   }
 
   function handleExportCampaignState() {
@@ -178,16 +239,40 @@ function SettingsPage() {
         </p>
       </header>
 
+      <CloudCampaignPanel
+        worldState={worldState}
+        exportBackupJson={exportBackupJson}
+        importBackupJson={importBackupJson}
+      />
+
       <section className="panel-surface space-y-3 p-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">Файлы непрерывности кампании</h2>
-          <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа.</p>
+          <p className="text-xs text-muted-foreground">Экспортируй три раздельных Markdown-файла в папку Obsidian Campaign Saves. CAMPAIGN_STATE не содержит лист персонажа. Приложение сохраняет локальные коллекции с обратным чтением и проверкой контрольных сумм, но не может автоматически перезаписать файлы в Библиотеке ChatGPT. После каждого завершённого игрового хода скачай все три файла и замени соответствующие версии в Library; до этого обновление Library не подтверждено.</p>
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCampaignState}>Скачать CAMPAIGN_STATE.md</Button>
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportSessionLog}>Скачать SESSION_LOG.md</Button>
           <Button type="button" variant="secondary" className="touch-target" onClick={handleExportCharacterState}>Скачать PLAYER_CHARACTER_STATE.md</Button>
         </div>
+      </section>
+
+      <section className="panel-surface space-y-3 p-4">
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Чистая пробная кампания</h2>
+          <p className="text-xs text-muted-foreground">Сбросит только состояние кампании в этом приложении: старые ходы, NPC, фракции, локации, факты и события не попадут в пробный запуск. Остаются ОБСИДИАН 4.1, Хроника Экдрасиля и проверенный SRD 5.2.1; старые дополнительные источники кампании удаляются из активного набора. Состояние выбранного персонажа, HP, ресурсы, инвентарь, деньги и местоположение сбрасываются. После очистки загрузи карточку нужного персонажа в разделе «Играть». Файлы в библиотеке не изменяются.</p>
+        </div>
+        <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleExportBackup}>
+          <Download className="mr-1.5 h-4 w-4" />
+          Скачать резервную копию текущего состояния
+        </Button>
+        <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
+          <Checkbox checked={backupAcknowledged} onCheckedChange={(v) => setBackupAcknowledged(v === true)} />
+          <span>Я сохранил резервную копию и разрешаю очистить текущее состояние кампании</span>
+        </label>
+        <Button type="button" variant="destructive" className="touch-target w-full" disabled={!backupAcknowledged} onClick={handleResetForTrialCampaign}>
+          Создать чистую пробную кампанию
+        </Button>
       </section>
 
       {/* Setup Wizard */}
@@ -216,7 +301,7 @@ function SettingsPage() {
               Открыть источники
             </Link>
           </div>
-          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье Лии или другого персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
+          <p className="text-[11px] text-muted-foreground">Для фактического запуска ОБСИДИАН 4.1 и Хроника Экдрасиля должны быть прикреплены. Досье выбранного персонажа остаётся отдельным источником и не переносится в канон мира.</p>\n          <ul className="space-y-1 text-xs text-muted-foreground">
             {sources.slice(0, 3).map((src) => (
               <li key={src.id}>
                 • <strong className="text-foreground">{src.title}</strong> ({src.targetPartition}) —{" "}
@@ -248,15 +333,53 @@ function SettingsPage() {
               />
             </div>
             <div className="space-y-1">
+              <Label htmlFor="cfg-load">Учёт переносимого веса</Label>
+              <select
+                id="cfg-load"
+                value={encumbranceMode}
+                onChange={(e) => setEncumbranceMode(e.target.value as typeof encumbranceMode)}
+                className="touch-target w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"
+                disabled={s.confirmed}
+              >
+                <option value="UNSET">Не выбран — старт заблокирован</option>
+                <option value="STANDARD">Стандартные пределы переносимого веса</option>
+                <option value="VARIANT">Вариантные пороги перегрузки</option>
+                <option value="ABSTRACT">Абстрактный режим без расчёта веса</option>
+              </select>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Стандартный режим использует грузоподъёмность по Силе и размеру; вариантный добавляет пороги перегрузки. Если размер персонажа неизвестен, точная грузоподъёмность останется UNKNOWN. Не выбирай режим за счёт догадки.</p>
+            </div>
+            <div className="space-y-1">
               <Label htmlFor="cfg-cal">Календарная система</Label>
               <Input
                 id="cfg-cal"
                 value={calendarSystem}
                 onChange={(e) => setCalendarSystem(e.target.value)}
-                placeholder="Например: Календарь Экдрасиля"
+                placeholder="Единая письменная эра; год 0 — начало общей письменной эры"
                 className="touch-target"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Если не хочешь менять случайный результат, оставь город как сгенерирован. Досье не фиксирует предыдущий маршрут персонажа.</p>
             </div>
+          </div>
+          <div className="space-y-3 rounded-md border border-border bg-background/40 p-3">
+            <h3 className="text-sm font-semibold text-foreground">Открытые настройки кампании — Приложение B ОБСИДИАН 4.1</h3>
+            <p className="text-xs text-muted-foreground">Каждый пункт требует явного решения. Неиспользуемое правило отметь словами «Не используется». Пустые поля блокируют старт.</p>
+            {([
+              ["allowedBooksAndOptions", "Разрешённые книги и опциональные правила"],
+              ["diceMethod", "Способ броска кубиков"],
+              ["advancement", "Прогрессия персонажа: XP или Milestone"],
+              ["foodAndWater", "Питание, вода и жажда"],
+              ["randomEncounters", "Случайные встречи и используемые таблицы"],
+              ["pvp", "Отношение к PvP"],
+              ["deathAndResurrection", "Смерть и воскрешение сверх базовых правил"],
+              ["economyDetail", "Степень детализации экономики и торговли"],
+              ["contentBoundaries", "Допустимые темы и границы содержания"],
+              ["houseRules", "Домашние правила и дополнительные механики"],
+            ] as const).map(([key, label]) => (
+              <div className="space-y-1" key={key}>
+                <Label htmlFor={`pref-${key}`}>{label}</Label>
+                <Input id={`pref-${key}`} value={campaignPreferences[key]} onChange={(e) => setCampaignPreferences((prev) => ({ ...prev, [key]: e.target.value }))} placeholder="Укажи решение или «Не используется»" className="touch-target" disabled={s.confirmed} />
+              </div>
+            ))}
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
             <Checkbox
@@ -271,30 +394,46 @@ function SettingsPage() {
         {/* Step 3: Start point & date */}
         <div className="space-y-2.5 rounded-md border border-border bg-background/50 p-3">
           <h3 className="text-sm font-semibold text-foreground">
-            Шаг 3. Явная стартовая точка и дата
+            Шаг 3. Случайное начало свободной кампании
           </h3>
+          <p className="text-xs text-muted-foreground">Мастер сам выбирает один из 16 канонических главных городов Экдрасиля, бытовую стартовую сцену и начальное состояние здоровья. Выбор использует криптографический генератор браузера; это новая стартовая ситуация, а не изменение биографии персонажа. Задания, обязательные встречи и сюжетные цели не назначаются.</p>
+          <Button type="button" variant="secondary" className="touch-target w-full" onClick={handleGenerateRandomStart} disabled={s.confirmed || !sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED")}>
+            Сгенерировать случайную стартовую ситуацию
+          </Button>
+          {!sources.some((source) => source.type === "PLAYER_DOSSIER" && source.contentStatus === "ATTACHED") && (
+            <p className="text-[11px] text-status-approx">Сначала прикрепи досье выбранного персонажа в разделе «Источники», чтобы мастер не создавал биографию без исходного документа.</p>
+          )}
+          {startNarrative && (
+            <div className="space-y-2 rounded-md border border-primary/30 bg-background p-3">
+              <h4 className="text-sm font-semibold text-foreground">Сгенерированное начало</h4>
+              <p className="whitespace-pre-line text-xs leading-relaxed text-foreground">{startNarrative}</p>
+              <p className="text-[11px] text-muted-foreground">Проверь результат и отметь подтверждение стартовой точки и персонажа ниже. Повторная генерация заменит ещё не начатый старт.</p>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label htmlFor="cfg-date">Стартовая внутриигровая дата (не UNKNOWN)</Label>
+              <Label htmlFor="cfg-date">Стартовый год и точность даты</Label>
               <Input
                 id="cfg-date"
                 value={startInGameDate}
                 onChange={(e) => setStartInGameDate(e.target.value)}
-                placeholder="Например: День 1, 08:00"
+                placeholder="2000 год (APPROXIMATE; точный день и время UNKNOWN)"
                 disabled={s.confirmed}
                 className="touch-target mono-code"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Год 2000 указан в досье. Точный день и время остаются UNKNOWN; генератор их не выдумывает.</p>
             </div>
             <div className="space-y-1">
-              <Label htmlFor="cfg-loc">Стартовая локация (не UNKNOWN)</Label>
+              <Label htmlFor="cfg-loc">Сгенерированная стартовая локация (можно изменить)</Label>
               <Input
                 id="cfg-loc"
                 value={startLocationName}
                 onChange={(e) => setStartLocationName(e.target.value)}
-                placeholder="Укажите стартовую локацию вручную"
+                placeholder="UNKNOWN — выбери город или место"
                 disabled={s.confirmed}
                 className="touch-target"
               />
+              <p className="text-[11px] leading-relaxed text-muted-foreground">Генератор не предполагает предыдущий маршрут или причину прибытия персонажа. Если исходное досье не подтверждает эти сведения, они остаются UNKNOWN.</p>
             </div>
           </div>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
@@ -330,9 +469,10 @@ function SettingsPage() {
           <p className="text-xs text-muted-foreground">
             Персонаж: <strong className="text-foreground">{character.name}</strong> · Класс/вид:{" "}
             {character.speciesAndClass} · Статус параметров: {character.statsCertainty}. Контур
-            player_character_state изолирован от world_state. Перед стартом имя должно быть
-            заполнено (не UNKNOWN).
+            player_character_state изолирован от world_state. Перед стартом имя и базовые боевые параметры должны быть заполнены. Досье задаёт максимум 184 HP; текущее значение устанавливается генератором случайного старта.
           </p>
+          {character.hpCurrent === null && <p className="rounded border border-status-approx/40 bg-background/60 p-2 text-xs text-status-approx">Текущие HP: UNKNOWN. В досье указано только 184 максимальных HP. Сначала создай случайный старт — генератор установит текущее значение.</p>}
+          <p className="text-[11px] text-muted-foreground">Готовность: HP {character.hpCurrent ?? "UNKNOWN"}/{character.hpMax ?? "UNKNOWN"} · КД {character.armorClass ?? "UNKNOWN"} · PB {character.proficiencyBonus ?? "UNKNOWN"} · характеристики {character.abilityScores ? "есть" : "UNKNOWN"}.</p>
           <label className="touch-target flex cursor-pointer items-center gap-2.5 text-xs text-foreground">
             <Checkbox
               checked={s.characterConfirmed}

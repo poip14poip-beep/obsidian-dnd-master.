@@ -1,29 +1,59 @@
-# Welcome to your Lovable project
+# Obsidian D&D Master
 
-This project was built with [Lovable](https://lovable.dev).
+Мобильное приложение для ведения кампаний D&D 5e (2024) в мире Экдрасиля. Проект развивается через GitHub; Lovable не используется.
 
-## Build with Lovable
+## Запуск
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Публичные сборки:
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- [GitHub Pages](https://poip14poip-beep.github.io/obsidian-dnd-master./)
+- [Supabase static host](https://dbchfgkdrqpjspptoezh.supabase.co/functions/v1/obsidian-app/)
 
-## Development
+Обе сборки автоматически публикуются из ветки `cloud-api-client` средствами GitHub Actions.
 
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
+Рабочая ветка: `cloud-api-client`.
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
+git clone https://github.com/poip14poip-beep/obsidian-dnd-master..git
+cd obsidian-dnd-master.
+bun install --frozen-lockfile
+bun run dev
 ```
 
-## Built with
+## Проверка
 
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
+```sh
+bun run test
+bunx tsc --noEmit
+bun run build
+```
+
+GitHub Actions запускает эти три проверки при каждом push в `main` и `cloud-api-client`. Публикация GitHub Pages выполняется из `cloud-api-client`.
+
+## Сохранения
+
+- Локальное состояние кампании сохраняется в браузере с обратным чтением и проверкой целостности.
+- В разделе «Настройки» можно создать облачную кампанию и связать её с этим браузером.
+- После каждого подтверждённого локального игрового хода приложение автоматически создаёт полный облачный снимок всех 11 локальных коллекций.
+- Облачные снимки append-only: каждая версия получает номер ревизии, SHA-256 и серверную проверку обратного чтения.
+- Если другая копия кампании уже сохранила более новую ревизию, приложение блокирует перезапись. Сначала нужно загрузить и восстановить актуальный снимок.
+- При восстановлении перед заменой локальных данных автоматически скачивается резервная копия текущего состояния.
+- Если облачная кампания не связана, приложение продолжает работать в локальном режиме.
+
+**Техническая граница текущего этапа:** облачные снимки являются полными резервными копиями. Они ещё не заменяют транзакционное применение каждого изменения к нормализованным таблицам `obsidian` и не делают серверный `commit_turn` основным игровым путём. Это следующий этап разработки.
+
+## Источники и игровые инварианты
+
+- ОБСИДИАН 4.1 — процедура ведения игры.
+- D&D 2024 / SRD 5.2.1 — механические правила.
+- Хроника Экдрасиля — канон мира.
+- Карточка любого импортированного персонажа — отдельный источник, не канон мира.
+- Состояние мира, состояние персонажа и журнал ходов хранятся раздельно.
+- Неизвестные сведения не заполняются догадками.
+
+## Инфраструктура
+
+- GitHub — исходный код, проверки и публикация.
+- Supabase — авторизация, закрытая база и Edge Functions.
+- RouterAI — маршрутизация запросов игровых моделей.
+- Ключи и секреты остаются только на сервере; никаких service-role ключей в браузере.

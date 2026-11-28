@@ -1,5 +1,11 @@
 import type { CertaintyStatus } from "./types";
 
+/**
+ * @deprecated Legacy prototype only. The canonical persisted and active model is PlayerCharacterState
+ * in types.ts, used by the store, importer and character route. Do not create or persist CharacterSheetV2;
+ * migrate any future fields into PlayerCharacterState instead.
+ */
+
 export type CharacterOriginMode = "GENERATED" | "PLAYER_DOSSIER";
 export type CanonFitStatus = "PENDING_REVIEW" | "COMPATIBLE" | "CONFLICT" | "UNKNOWN";
 export type InventoryLocation = "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER";

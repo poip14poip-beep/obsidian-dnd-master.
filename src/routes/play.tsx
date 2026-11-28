@@ -1,19 +1,30 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { AlertTriangle, CheckCircle2, Dice5, FileText, Lock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useObsidianStore } from "@/store/obsidian-store";
+import { DEFAULT_CAMPAIGN_PREFERENCES } from "@/domain/defaults";
 import { generateRandomStart } from "@/domain/random-start";
-import { generateRandomCharacter, type RandomCharacterResult } from "@/domain/random-character";
+import { EKDRASIL_CALENDAR_NAME } from "@/domain/ekdrasil-calendar";
+import { generateRandomCharacter, type RandomCharacterProfile, type RandomCharacterResult } from "@/domain/random-character";
 import { extractDossierBasics } from "@/domain/dossier-parser";
 import { extractDocxText } from "@/domain/docx-text";
+import { processSourceContent } from "@/domain/source-processing";
 import type { CharacterBiography } from "@/domain/types";
 import { getSupabaseAuthClient, readSupabaseEnv } from "@/lib/supabase-auth";
 
 export const Route = createFileRoute("/play")({ component: PlayPage });
 
 type Mode = "DOSSIER" | "RANDOM" | null;
-type StartStage = "CHARACTER" | "PARAMETERS" | "CONFIRM" | null;
+
+type CharacterCompatibilityReport = {
+  status: "COMPATIBLE" | "COMPATIBLE_WITH_NOTES";
+  summary: string;
+  conflicts: string[];
+  unknowns: string[];
+  requiredChanges: string[];
+  supportedFacts: string[];
+};
 
 function secureIndex(length: number): number {
   if (!Number.isInteger(length) || length < 1 || !globalThis.crypto?.getRandomValues) {
@@ -27,25 +38,65 @@ function secureIndex(length: number): number {
   return value % length;
 }
 function PlayPage() {
-  const { sources, updatePlayerCharacter, attachSourceContent, updateCampaignParameters, worldState, sessionLog, character, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
+  const { sources, updatePlayerCharacter, attachSourceContent, worldState, sessionLog, character, applyGeneratedStart, confirmCampaignSetup, resetForTrialCampaign } = useObsidianStore();
   const navigate = useNavigate();
   const [mode, setMode] = useState<Mode>(null);
   const [candidate, setCandidate] = useState<RandomCharacterResult | null>(null);
   const [confirmed, setConfirmed] = useState(false);
-  const [resourceCurrentInputs, setResourceCurrentInputs] = useState<Record<string, string>>({});
   const [importError, setImportError] = useState<string | null>(null);
+  const [compatibilityReport, setCompatibilityReport] = useState<CharacterCompatibilityReport | null>(null);
   const [startPending, setStartPending] = useState(false);
-  const [pendingStart, setPendingStart] = useState<ReturnType<typeof generateRandomStart> | null>(null);
-  const [startStage, setStartStage] = useState<StartStage>(null);
+  const [startBusy, setStartBusy] = useState(false);
+  const startInFlightRef = useRef(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [serverReadiness, setServerReadiness] = useState<"CHECKING" | "READY" | "FAILED">("CHECKING");
+  const [serverReadinessError, setServerReadinessError] = useState<string | null>(null);
+  const [serverReadinessInfo, setServerReadinessInfo] = useState<{ canon?: { edition?: string; sourceVersion?: number | null; sha256?: string | null }; checks?: Record<string, boolean> } | null>(null);
   const [dossierUploadBusy, setDossierUploadBusy] = useState(false);
   const [biographyBusy, setBiographyBusy] = useState(false);
-  const [biographyConsent, setBiographyConsent] = useState(false);
-  const [dossierReviewed, setDossierReviewed] = useState(false);
-  const [dossierContextEnabled, setDossierContextEnabled] = useState(false);
+  const [biographyReady, setBiographyReady] = useState(false);
+  const [generationSeed, setGenerationSeed] = useState<string | null>(null);
   const dossier = sources.find(s => s.type === "PLAYER_DOSSIER" && s.contentStatus === "ATTACHED");
   const parsed = useMemo(() => dossier?.content ? extractDossierBasics(dossier.content) : null, [dossier?.content]);
   const locked = worldState.setup.confirmed || sessionLog.lastTurnNumber > 0;
+  useEffect(() => {
+    let cancelled = false;
+    async function checkServerReadiness() {
+      setServerReadiness("CHECKING");
+      setServerReadinessError(null);
+      setServerReadinessInfo(null);
+      try {
+        const env = readSupabaseEnv();
+        const { client, envResult } = getSupabaseAuthClient();
+        if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+        const { data: sessionData, error: sessionError } = await client.auth.getSession();
+        if (sessionError || !sessionData.session?.access_token) throw new Error("Войдите в приложение, чтобы проверить серверные документы.");
+        const { data, error } = await client.functions.invoke("obsidian-gm", { body: { operation: "CHECK_SERVER_READINESS" } });
+        if (error) {
+          let detail = error.message || "Не удалось проверить серверные документы.";
+          if ("context" in error && error.context instanceof Response) {
+            const payload = await error.context.clone().json().catch(() => null) as { error?: string } | null;
+            detail = payload?.error ?? detail;
+          }
+          throw new Error(detail);
+        }
+        if (!data?.ready) {
+          if (!cancelled && data) setServerReadinessInfo(data);
+          const failed = Object.entries((data?.checks ?? {}) as Record<string, boolean>).filter(([, ok]) => !ok).map(([key]) => key).join(", ");
+          throw new Error(failed ? `Серверный мастер не готов. Не пройдены проверки: ${failed}.` : "Серверный мастер не готов: проверь ОБСИДИАН 4.1, D&D 2024 / SRD 5.2.1, канон Экдрасиля 2.4 и ключ модели.");
+        }
+        if (!cancelled) { setServerReadinessInfo(data); setServerReadiness("READY"); }
+      } catch (error) {
+        if (!cancelled) {
+          setServerReadiness("FAILED");
+          setServerReadinessError(error instanceof Error ? error.message : "Проверка серверных документов не выполнена.");
+        }
+      }
+    }
+    void checkServerReadiness();
+    return () => { cancelled = true; };
+  }, []);
+
   const characterReady = Boolean(
     character.name.trim() && character.name !== "UNKNOWN" &&
     character.hpMax !== null && character.armorClass !== null &&
@@ -55,10 +106,12 @@ function PlayPage() {
     character.weaponAttacks?.length && character.classFeaturesByLevel?.length
   );
   const requiredSourceTypes = character.sourceDossierId === "GENERATED_RANDOM" ? ["GOVERNING_DOC", "WORLD_CANON"] as const : ["GOVERNING_DOC", "WORLD_CANON", "PLAYER_DOSSIER"] as const;
-  const verifiedCoreSourcesReady = requiredSourceTypes.every((type) =>
+  const verifiedCoreSourcesReady = serverReadiness === "READY" && requiredSourceTypes.every((type) =>
     sources.some((source) =>
-      source.type === type && source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
-        (type !== "PLAYER_DOSSIER" || (dossierReviewed && dossierContextEnabled))
+      source.type === type && ((type === "GOVERNING_DOC" || type === "WORLD_CANON")
+        ? source.serverManaged === true
+        : source.contentStatus === "ATTACHED" && source.content.trim().length > 0 &&
+          source.processing?.status === "PROCESSED" && source.reviewStatus === "VERIFIED" && source.contextEnabled === true)
     )
   );
 
@@ -75,152 +128,338 @@ function PlayPage() {
     setImportError(null);
     setStartError(null);
     setStartPending(false);
-    setPendingStart(null);
-    setStartStage(null);
   }
 
-  function handleStartCampaign() {
-    setStartError(null);
-    if (locked || startPending) return;
+  async function handleStartCampaign() {
+    if (startInFlightRef.current || startBusy || startPending || locked) return;
+    // Validate before acquiring the in-flight lock. Early validation returns
+    // must never leave the start button permanently busy.
     if (!verifiedCoreSourcesReady) {
-      setStartError("Перед запуском прикрепи оригиналы ОБСИДИАН 4.1 и Хроники Экдрасиля, а для загруженного персонажа отдельно подтверди его проверку и доступ мастера.");
+      setStartError(serverReadiness === "CHECKING" ? "Автоматическая проверка сервера ещё выполняется. Подожди несколько секунд." : serverReadinessError ?? "Автоматическая проверка серверных источников не пройдена. Обнови страницу или войди заново.");
       return;
     }
     if (!characterReady) {
-      setStartError("Лист персонажа ещё не готов. Сначала проверь характеристики, классовые особенности, навыки, атаки и снаряжение.");
+      setStartError("Лист персонажа ещё не готов. Для случайной заготовки сначала требуется завершить характеристики, классовые особенности, навыки, атаки и снаряжение.");
       return;
     }
-
+    startInFlightRef.current = true;
+    setStartBusy(true);
+    setStartError(null);
     try {
-      setPendingStart(generateRandomStart());
-      setStartStage("CHARACTER");
+      const generated = generateRandomStart(character.hpMax ?? 0, undefined, {
+        ...(character.background ? { background: character.background } : {}),
+        retainedInventory: character.inventory,
+        generateStartingSupplies: character.sourceDossierId !== "GENERATED_RANDOM",
+      });
+      const env = readSupabaseEnv();
+      const { client, envResult } = getSupabaseAuthClient();
+      if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент сервера не готов.");
+      const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) throw new Error("Войди в приложение перед созданием предыстории.");
+      const sourceText = character.sourceDossierId === "GENERATED_RANDOM" ? "" : (sources.find(source => source.id === character.sourceDossierId)?.content ?? "").slice(0, 14000);
+      const { data: historyData, error: historyError } = await client.functions.invoke("obsidian-gm", {
+        body: {
+          operation: "GENERATE_CHARACTER_STORY",
+          model: "obsidian-free",
+          instructions: "Напиши на русском языке отдельную персональную предысторию ПОСЛЕДНЕГО МЕСЯЦА перед началом кампании. Это не биография всей жизни и не пересказ прошлого персонажа. Опиши последовательную цепочку событий примерно за 30 дней: где персонаж находился, чем занимался, что стало причиной отправиться в указанную точку старта, как он добрался туда и почему оказался именно там к указанной дате. Используй факты и характер из досье, не противоречь канону. Допускаются небольшие бытовые связующие детали, но не придумывай важные встречи, NPC, фракции, преступления, долги, квесты или события мирового масштаба без основания. 3–5 абзацев, 180–260 слов. Верни текст в поле biography; остальные поля заполни кратко на русском.",
+          input: JSON.stringify({ action: "Создать хронику последнего месяца перед стартом кампании", character: { ...character, sourceDossier: sourceText }, start: { city: generated.city, date: generated.date, locationDescription: generated.location.description, startNarrative: generated.narrative } }),
+        },
+      });
+      if (historyError) {
+        let detail = historyError.message || "Не удалось создать предысторию последнего месяца.";
+        if ("context" in historyError && historyError.context instanceof Response) {
+          const payload = await historyError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+          detail = payload?.error?.message ?? detail;
+        }
+        throw new Error(detail);
+      }
+      if (!historyData?.output_text) throw new Error("Мастер не вернул предысторию последнего месяца.");
+      const historyResult = JSON.parse(historyData.output_text) as { biography?: string };
+      const recentHistory = historyResult.biography?.trim();
+      if (!recentHistory || recentHistory.length < 250) throw new Error("Предыстория последнего месяца получилась слишком короткой. Кампания не запущена.");
+      const historySaved = updatePlayerCharacter({ recentPreCampaignHistory: recentHistory });
+      if (!historySaved.ok) throw new Error(historySaved.error);
+      const result = applyGeneratedStart({
+        city: generated.city,
+        placeName: generated.placeName,
+        date: generated.date,
+        narrative: generated.narrative,
+        locationDescription: generated.location.description,
+        generationRecord: generated.generationRecord,
+        characterPatch: generated.characterPatch,
+        inventory: generated.inventory,
+        replaceInventory: generated.replaceInventory,
+      });
+      if (!result.ok) {
+        setStartError(result.error);
+        return;
+      }
       setStartPending(true);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : "Не удалось создать старт кампании.");
+    } finally {
+      startInFlightRef.current = false;
+      setStartBusy(false);
     }
   }
 
   useEffect(() => {
-    if (!pendingStart || !startStage) return;
-
-    if (startStage === "CHARACTER") {
-      const result = updatePlayerCharacter({
-        ...pendingStart.characterPatch,
-        inventory: pendingStart.inventory,
-      });
-      if (!result.ok) {
-        setStartError(result.error);
-        setPendingStart(null);
-        setStartStage(null);
-        setStartPending(false);
-        return;
-      }
-      setStartStage("PARAMETERS");
-      return;
-    }
-
-    if (startStage === "PARAMETERS") {
-      const result = updateCampaignParameters({
-        campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
-        calendarSystem: worldState.calendarSystem === "UNKNOWN"
-          ? "Хронология Экдрасиля; год 2000 подтверждён; месяц, день и время UNKNOWN"
-          : worldState.calendarSystem,
-        startInGameDate: pendingStart.date,
-        startLocationName: pendingStart.city.name,
-        encumbranceMode: "STANDARD",
-        setupPatch: {
-          sourcesConfirmed: true,
-          parametersConfirmed: true,
-          startPointConfirmed: true,
-          characterConfirmed: true,
-          noAutoImportAcknowledged: true,
-        },
-      });
-      if (!result.ok) {
-        setStartError(result.error);
-        setPendingStart(null);
-        setStartStage(null);
-        setStartPending(false);
-        return;
-      }
-      setStartStage("CONFIRM");
-      return;
-    }
-
-    const result = confirmCampaignSetup();
-    if (!result.ok) {
-      setStartError(result.error);
-      setPendingStart(null);
-      setStartStage(null);
-      setStartPending(false);
-      return;
-    }
-    setPendingStart(null);
-    setStartStage(null);
+    if (!startPending || !worldState.startGeneration || character.hpCurrent === null) return;
+    const result = confirmCampaignSetup({
+      campaignName: worldState.campaignName || "Экдрасиль — свободная кампания",
+      calendarSystem: worldState.calendarSystem === "UNKNOWN"
+        ? `${EKDRASIL_CALENDAR_NAME}: 365 дней, 12 месяцев по 30 дней, 5 межгодовых дней и шестой день в каждом четвёртом году`
+        : worldState.calendarSystem,
+      startInGameDate: worldState.startInGameDate,
+      startLocationName: worldState.startLocationName,
+      startNarrative: worldState.startNarrative ?? "",
+      startGeneration: worldState.startGeneration,
+      encumbranceMode: "STANDARD",
+      campaignPreferences: DEFAULT_CAMPAIGN_PREFERENCES,
+      setupPatch: {
+        sourcesConfirmed: true,
+        parametersConfirmed: true,
+        startPointConfirmed: true,
+        characterConfirmed: true,
+        noAutoImportAcknowledged: true,
+      },
+    });
     setStartPending(false);
-    void navigate({ to: "/game" });
+    if (!result.ok) setStartError(result.error);
+    else void navigate({ to: "/game" });
   }, [
-    pendingStart, startStage, worldState.campaignName, worldState.calendarSystem,
-    updatePlayerCharacter, updateCampaignParameters, confirmCampaignSetup, navigate,
+    startPending, worldState.startGeneration, worldState.startInGameDate,
+    worldState.startLocationName, worldState.startNarrative, worldState.campaignName,
+    worldState.calendarSystem, character.hpCurrent, confirmCampaignSetup, navigate,
   ]);
+  async function validateCharacterCompatibility(characterData: unknown) {
+    const env = readSupabaseEnv();
+    const { client, envResult } = getSupabaseAuthClient();
+    if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    const sessionToken = sessionData.session?.access_token;
+    if (sessionError || !sessionToken) throw new Error("Для автоматической проверки персонажа войдите в приложение.");
+    const { data: payload, error: invokeError } = await client.functions.invoke<{
+      output_text?: string;
+      error?: { code?: string; message?: string };
+    }>("obsidian-gm", {
+      body: {
+        operation: "VALIDATE_CHARACTER_COMPATIBILITY",
+        model: "obsidian-free",
+        instructions: "Проверь только соответствие биографии и мировых фактов загруженного персонажа канону Экдрасиля по Хронике и руководству мира. Не проверяй механику D&D: характеристики, навыки, атаки, классовые особенности и инвентарь не оценивай и не изменяй. Сверяй происхождение, народ, предысторию, географию, исторические даты, организации, имена, NPC и необычные предметы с каноном. Неизвестное не считай конфликтом. Верни только краткий структурированный отчёт на русском.",
+        input: JSON.stringify({
+          action: "Проверка биографии и фактов персонажа на соответствие канону Экдрасиля",
+          ...((characterData && typeof characterData === "object") ? characterData as Record<string, unknown> : { character: characterData }),
+        }),
+      },
+    });
+    if (invokeError) {
+      let detail = invokeError.message || "Supabase не смог выполнить запрос к мастеру.";
+      const context = (invokeError as { context?: unknown }).context;
+      if (context instanceof Response) {
+        const responseBody = await context.clone().json().catch(() => null) as {
+          error?: { code?: string; message?: string };
+        } | null;
+        if (responseBody?.error?.message) {
+          detail = [responseBody.error.code, responseBody.error.message].filter(Boolean).join(": ");
+        } else {
+          detail = `HTTP ${context.status}: ${detail}`;
+        }
+      }
+      throw new Error(detail);
+    }
+    if (!payload?.output_text) throw new Error("Мастер не вернул результат проверки совместимости.");
+    let report: { status: string; summary: string; conflicts: string[]; unknowns: string[]; requiredChanges: string[]; supportedFacts: string[] };
+    try { report = JSON.parse(payload.output_text); }
+    catch { throw new Error("Мастер вернул некорректный отчёт проверки. Персонаж не импортирован."); }
+    if (!["COMPATIBLE", "COMPATIBLE_WITH_NOTES", "INCOMPATIBLE", "INSUFFICIENT_DATA"].includes(report.status)) throw new Error("Некорректный статус проверки персонажа.");
+    if (typeof report.summary !== "string" ||
+        !Array.isArray(report.conflicts) || !Array.isArray(report.unknowns) ||
+        !Array.isArray(report.requiredChanges) || !Array.isArray(report.supportedFacts) ||
+        [...report.conflicts, ...report.unknowns, ...report.requiredChanges, ...report.supportedFacts].some((item) => typeof item !== "string")) {
+      throw new Error("Отчёт проверки персонажа имеет неполную структуру.");
+    }
+    if (report.status === "INCOMPATIBLE" || report.status === "INSUFFICIENT_DATA") {
+      throw new Error("Проверка совместимости: " + report.summary + (report.conflicts?.length ? " Конфликты: " + report.conflicts.join("; ") : "") + (report.unknowns?.length ? " Неизвестно: " + report.unknowns.join("; ") : ""));
+    }
+    return report;
+  }
   const randomize = () => {
+    if (biographyBusy || locked) return;
     try {
-      const generated = generateRandomCharacter(secureIndex);
-      setCandidate(generated);
+      const seed = Array.from(globalThis.crypto.getRandomValues(new Uint32Array(4))).join("-");
+      setGenerationSeed(seed);
+      setCandidate(null);
       setMode("RANDOM");
       setConfirmed(false);
+      setBiographyReady(false);
+      setImportError(null);
+      void generateRandomCharacterWithMaster(seed);
     } catch (error) {
       setStartError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     }
   };
-  async function generateBiographyWithMaster() {
-    if (!candidate || biographyBusy || !biographyConsent || locked) return;
+  async function generateRandomCharacterWithMaster(seed: string) {
+    if (biographyBusy || locked) return;
     setBiographyBusy(true);
+    setBiographyReady(false);
     setImportError(null);
     try {
       const env = readSupabaseEnv();
       const { client, envResult } = getSupabaseAuthClient();
       if (!env.ok || !envResult.ok || !client) throw new Error(!env.ok ? env.error : "Клиент Supabase не готов.");
-      const { data, error } = await client.auth.getSession();
-      if (error || !data.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
-      const response = await fetch(env.config.url + "/functions/v1/obsidian-gm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: "Bearer " + data.session.access_token, apikey: env.config.publishableKey },
-        body: JSON.stringify({
-          operation: "GENERATE_CHARACTER_BIOGRAPHY",
+      const { data: sessionData, error: sessionError } = await client.auth.getSession();
+      if (sessionError || !sessionData.session?.access_token) throw new Error("Требуется активная сессия. Войди в приложение заново.");
+      const { data: identityData, error: identityError } = await client.functions.invoke("obsidian-gm", {
+        body: {
+          operation: "GENERATE_RANDOM_CHARACTER_IDENTITY",
           model: "obsidian-free",
-          instructions: "Создай полную индивидуальную биографию персонажа Экдрасиля по закрытым источникам. Верни только структурированный JSON по схеме сервера. Не меняй механику персонажа.",
-          input: JSON.stringify({
-            action: "Создание биографии случайного персонажа Экдрасиля",
-            character: candidate.character,
-            mechanicalSummary: candidate.summary,
-            randomRolls: candidate.rolls,
-          }),
-        }),
+          instructions: "Выбери только основу личности нового персонажа Экдрасиля: имя, народ, класс, предысторию, возраст, подтверждённый город рождения, гендерное представление, семью, воспитание, два-три события жизни, черты, идеал, привязанность, слабость, мотивацию и конкретное личное желание перед началом кампании. Используй только варианты строгой схемы и факты закрытой хроники. Не создавай внешность и длинную биографию на этом этапе. Не придумывай канонические факты, города, организации, NPC и исторические события. Возраст 18–80. Избегай клише. Все поля на русском, кратко и конкретно.",
+          input: JSON.stringify({ action: "Выбор личности случайного персонажа Экдрасиля", generationSeed: seed }),
+        },
       });
-      const payload = await response.json().catch(() => null) as { output_text?: string; error?: { message?: string } } | null;
-      if (!response.ok || !payload?.output_text) throw new Error(payload?.error?.message ?? "Мастер не вернул биографию.");
-      const biography = JSON.parse(payload.output_text) as CharacterBiography;
-      if (!biography || typeof biography.biography !== "string" ||
-          biography.birthplace !== candidate.character.biography?.birthplace ||
-          biography.birthplaceSource !== candidate.character.biography?.birthplaceSource ||
-          JSON.stringify(biography.canonBasis) !== JSON.stringify(candidate.character.biography?.canonBasis) ||
-          !Array.isArray(biography.lifeEvents) || biography.lifeEvents.length < 2 ||
-          !Array.isArray(biography.personalityTraits) || biography.personalityTraits.length < 2 ||
-          !Array.isArray(biography.skillOrigins) || biography.skillOrigins.length !== (candidate.character.skillBonuses?.length ?? 0) ||
-          typeof biography.preCampaignDesire !== "string" || biography.preCampaignDesire.trim().length < 20 ||
-          typeof biography.weaponBackground !== "string" || biography.weaponBackground.trim().length < 30 ||
-          typeof biography.equipmentBackground !== "string" || biography.equipmentBackground.trim().length < 30) {
-        throw new Error("Досье мастера не прошло проверку: нужны объяснения всех навыков, оружия и снаряжения. Механика не изменена.");
+      if (identityError) {
+        let detail = identityError.message || "Не удалось вызвать мастера.";
+        if ("context" in identityError && identityError.context instanceof Response) {
+          const payload = await identityError.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+          detail = payload?.error?.message ?? detail;
+        }
+        throw new Error(detail);
       }
-      setCandidate({ ...candidate, character: { ...candidate.character, biography } });
+      if (!identityData?.output_text) throw new Error("Мастер не вернул личность персонажа.");
+      const identity = JSON.parse(identityData.output_text) as RandomCharacterProfile & Partial<CharacterBiography>;
+      const supportedSpecies = ["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"];
+      const supportedClasses = ["Fighter","Rogue","Barbarian"];
+      const supportedBackgrounds = ["Acolyte","Criminal","Sage","Soldier"];
+      const supportedBirthplaces = ["Вальдгард","Элион","Аэлиндор","Кхар-Дорн","Крейнхольм","Тар-Нер","Равенск","Морвейн","Греймарк","Азра-Кал","Рахимар","Ша-Мер","Вальдрум","Скайнхейм","Эйргард","Морнхольд"];
+      if (!identity || typeof identity.name !== "string" || identity.name.trim().length < 2 ||
+          !supportedSpecies.includes(identity.species) || !supportedClasses.includes(identity.className) ||
+          !supportedBackgrounds.includes(identity.background) || !supportedBirthplaces.includes(identity.birthplace) ||
+          !Number.isInteger(identity.ageYears) || identity.ageYears! < 18 || identity.ageYears! > 80 ||
+          typeof identity.family !== "string" || identity.family.length < 20 ||
+          typeof identity.upbringing !== "string" || identity.upbringing.length < 20 ||
+          !Array.isArray(identity.lifeEvents) || identity.lifeEvents.length < 2 ||
+          !Array.isArray(identity.personalityTraits) || identity.personalityTraits.length < 2 ||
+          typeof identity.ideal !== "string" || identity.ideal.length < 8 ||
+          typeof identity.bond !== "string" || identity.bond.length < 8 ||
+          typeof identity.flaw !== "string" || identity.flaw.length < 8 ||
+          typeof identity.motivation !== "string" || identity.motivation.length < 15 ||
+          typeof identity.preCampaignDesire !== "string" || identity.preCampaignDesire.length < 15) {
+        throw new Error("Личность персонажа не прошла проверку. Мастер должен выбрать имя, народ, класс, предысторию и заполнить личную историю.");
+      }
+      const generated = { ...generateRandomCharacter(secureIndex, identity), generationSeed: seed };
+      const invokeDossierPart = async (operation: string, action: string, extraInstructions: string) => {
+        const { data, error } = await client.functions.invoke("obsidian-gm", {
+          body: {
+            operation,
+            model: "obsidian-free",
+            instructions: extraInstructions,
+            input: JSON.stringify({
+              action,
+              generationSeed: seed,
+              character: generated.character,
+              mechanicalSummary: generated.summary,
+              randomRolls: generated.rolls,
+            }),
+          },
+        });
+        if (error) {
+          let detail = error.message || "Не удалось вызвать мастера.";
+          if ("context" in error && error.context instanceof Response) {
+            const payload = await error.context.clone().json().catch(() => null) as { error?: { message?: string } } | null;
+            detail = payload?.error?.message ?? detail;
+          }
+          throw new Error(detail);
+        }
+        if (!data?.output_text) throw new Error("Мастер не вернул часть досье: " + action);
+        return JSON.parse(data.output_text) as Record<string, unknown>;
+      };
+      const appearancePart = await invokeDossierPart(
+        "GENERATE_CHARACTER_APPEARANCE",
+        "Подробная внешность персонажа",
+        "Опиши внешность по 11 полям: рост, телосложение, кожа, волосы, глаза, лицо, одежда, обувь, аксессуары, отличительные особенности, первое впечатление. Согласуй с народом, возрастом, происхождением, профессией и снаряжением. Без магических особенностей."
+      );
+      const storyPart = await invokeDossierPart(
+        "GENERATE_CHARACTER_STORY",
+        "Биография персонажа до начала кампании",
+        "Напиши индивидуальную биографию на русском 220–280 слов, 3–4 абзаца. Добавь короткий источник места рождения, ровно 2 подтверждённых пункта канона и короткую отметку о вымышленных личных деталях. Не меняй личность и не выдумывай мировой канон."
+      );
+      const originsPart = await invokeDossierPart(
+        "GENERATE_CHARACTER_ORIGINS",
+        "Происхождение навыков, оружия и снаряжения",
+        "Объясни происхождение каждого уже имеющегося навыка, переданного оружия и каждого предмета инвентаря. Не добавляй и не меняй механические данные. Для навыков используй формат 'точное имя навыка — содержательное происхождение'."
+      );
+      const biography = {
+        ageYears: identity.ageYears,
+        ageCertainty: "KNOWN",
+        genderPresentation: identity.genderPresentation,
+        birthplace: identity.birthplace,
+        family: identity.family,
+        upbringing: identity.upbringing,
+        lifeEvents: identity.lifeEvents,
+        personalityTraits: identity.personalityTraits,
+        ideal: identity.ideal,
+        bond: identity.bond,
+        flaw: identity.flaw,
+        motivation: identity.motivation,
+        preCampaignDesire: identity.preCampaignDesire,
+        appearance: String(appearancePart["appearance"] ?? ""),
+        appearanceDetails: appearancePart["appearanceDetails"],
+        biography: String(storyPart["biography"] ?? ""),
+        birthplaceSource: String(storyPart["birthplaceSource"] ?? ""),
+        canonBasis: storyPart["canonBasis"],
+        inventedDetailsNotice: String(storyPart["inventedDetailsNotice"] ?? ""),
+        skillOrigins: originsPart["skillOrigins"],
+        weaponBackground: String(originsPart["weaponBackground"] ?? ""),
+        equipmentBackground: String(originsPart["equipmentBackground"] ?? ""),
+      } as CharacterBiography;
+      const skillNames = generated.character.skillBonuses?.map((skill) => skill.name) ?? [];
+      const skillOriginMap = new Map(biography["skillOrigins"].map((entry) => {
+        const separator = entry.indexOf(" — ");
+        return [separator < 0 ? "" : entry.slice(0, separator).trim(), separator < 0 ? "" : entry.slice(separator + 3).trim()];
+      }));
+      const skillOrigins = skillNames.map((name) => skillOriginMap.get(name) ?? "");
+      if (skillOrigins.some((origin) => origin.length < 20) ||
+          !biography.appearanceDetails || Object.values(biography.appearanceDetails).some((value) => typeof value !== "string" || value.length < 25) ||
+          typeof biography["biography"] !== "string" || biography["biography"].length < 200 ||
+          !Array.isArray(biography["canonBasis"]) || biography["canonBasis"].length < 1) {
+        throw new Error("Полное досье не прошло проверку внешности, биографии, навыков или канона. Ничего не сохранено.");
+      }
+      const completeBiography: CharacterBiography = { ...biography, skillOrigins };
+      await validateCharacterCompatibility({
+        ...generated.character,
+        summary: generated.summary,
+        biography: completeBiography,
+        generationBasis: { species: identity.species, className: identity.className, background: identity.background, birthplace: identity.birthplace },
+      });
+      const verifiedBiography = { ...completeBiography, inventedDetailsNotice: completeBiography.inventedDetailsNotice + " Проверка совместимости с каноном Экдрасиля и SRD 5.2.1 пройдена автоматически." };
+      setCandidate({ ...generated, character: { ...generated.character, biography: verifiedBiography } });
+      setBiographyReady(true);
     } catch (error) {
-      setImportError(error instanceof Error ? error.message : "Не удалось сформировать биографию.");
+      setImportError(error instanceof Error ? error.message : "Не удалось создать случайного персонажа.");
     } finally {
       setBiographyBusy(false);
     }
   }
-  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setResourceCurrentInputs({}); setImportError(null); };
+  const loadDossier = () => { setMode("DOSSIER"); setCandidate(null); setConfirmed(false); setImportError(null); };
+  const clearDossier = () => {
+    if (!dossier || locked || dossierUploadBusy || biographyBusy) return;
+    const result = attachSourceContent(dossier.id, {
+      fileName: null,
+      content: "",
+      originLabel: "Лист персонажа удалён пользователем",
+      notes: "Предыдущий файл удалён. Можно загрузить другой лист персонажа.",
+    });
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    setCandidate(null);
+    setConfirmed(false);
+    setBiographyReady(false);
+    setImportError(null);
+    setCompatibilityReport(null);
+  };
   async function handleDossierUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file || dossierUploadBusy) return;
@@ -233,15 +472,18 @@ function PlayPage() {
       if (!content.trim()) throw new Error("Файл пуст или текст не удалось извлечь.");
       const source = sources.find((item) => item.type === "PLAYER_DOSSIER");
       if (!source) throw new Error("Не найден отдельный источник листа персонажа.");
+      const processed = await processSourceContent(
+        { id: source.id, title: "Лист персонажа текущей кампании", type: "PLAYER_DOSSIER", fileName: file.name },
+        content,
+      );
       const attached = attachSourceContent(source.id, {
         fileName: file.name,
         content,
         originLabel: "Загружено для текущей кампании: " + file.name,
         notes: "Лист персонажа относится только к этой кампании. Он не является частью канона Экдрасиля или правил мастера.",
+        processing: processed.processing,
       });
       if (!attached.ok) throw new Error(attached.error);
-      setDossierReviewed(false);
-      setDossierContextEnabled(false);
       setImportError(null);
     } catch (error) {
       setImportError(error instanceof Error ? error.message : "Не удалось загрузить лист персонажа.");
@@ -250,34 +492,25 @@ function PlayPage() {
       event.target.value = "";
     }
   }
-  function verifyDossierSource() {
-    if (!dossier || !parsed) return;
-    if (!dossier.content.trim()) {
-      setImportError("В листе персонажа нет текста для проверки.");
+  const confirmDossier = async () => {
+    if (!parsed || !dossier || biographyBusy) return;
+    setBiographyBusy(true);
+    setImportError(null);
+    setCompatibilityReport(null);
+    try {
+      // The lore audit is a required gate: never import a dossier without a completed report.
+      // The original file is included as evidence so the master can check Ekdrasil lore context.
+      const report = await validateCharacterCompatibility({ parsedDossier: parsed, fileName: dossier.fileName, sourceText: dossier.content, sourceTextTail: dossier.content.slice(-10_000) });
+      setCompatibilityReport(report as CharacterCompatibilityReport);
+    } catch (error) {
+      setCompatibilityReport(null);
+      setImportError(error instanceof Error ? error.message : "Проверка соответствия лору Экдрасиля не пройдена.");
+      setBiographyBusy(false);
       return;
     }
-    setDossierReviewed(true);
-    setImportError(null);
-  }
-  function enableDossierContext() {
-    if (!dossierReviewed) return;
-    setDossierContextEnabled(true);
-    setImportError(null);
-  }
-  const confirmDossier = () => {
-    if (!parsed || !dossier) return;
-    if (!dossierReviewed || !dossierContextEnabled) {
+    setBiographyBusy(false);
+    if (dossier.reviewStatus !== "VERIFIED" || dossier.contextEnabled !== true) {
       setImportError("Сначала проверь лист персонажа и отдельно разреши мастеру учитывать его в этой кампании.");
-      return;
-    }
-    const invalidResource = parsed.resources.find((resource) => {
-      const raw = resourceCurrentInputs[resource.name];
-      if (raw === undefined || raw.trim() === "") return false;
-      const value = Number(raw);
-      return !Number.isInteger(value) || value < 0 || value > resource.max;
-    });
-    if (invalidResource) {
-      setImportError(`Текущее количество ресурса «${invalidResource.name}» должно быть целым числом от 0 до ${invalidResource.max}.`);
       return;
     }
     setImportError(null);
@@ -289,12 +522,14 @@ function PlayPage() {
       level: parsed.level,
       classLevel: parsed.classLevel,
       epicCampaignLevels: parsed.epicCampaignLevels,
-      hpCurrent: null,
+      hpCurrent: parsed.hitPointMaximum,
       hpMax: parsed.hitPointMaximum,
+      hpTemp: 0,
       armorClass: parsed.armorClass,
       ...(parsed.abilityScores ? { abilityScores: parsed.abilityScores } : {}),
       proficiencyBonus: parsed.proficiencyBonus,
       speedFeet: parsed.speedFeet,
+      size: /gnome/i.test(parsed.speciesAndClass ?? "") ? "SMALL" : "MEDIUM",
       ...(parsed.hitDice ? { hitDice: parsed.hitDice } : {}),
       ...(parsed.baseSavingThrowBonuses ? { baseSavingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
       ...(parsed.baseSavingThrowBonuses ? { savingThrowBonuses: parsed.baseSavingThrowBonuses } : {}),
@@ -302,9 +537,13 @@ function PlayPage() {
       classFeaturesByLevel: parsed.classFeaturesByLevel,
       weaponAttacks: parsed.weaponAttacks,
       statsCertainty: parsed.abilityScores && parsed.hitPointMaximum !== null ? "KNOWN" : "APPROXIMATE",
-      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: item.startPolicy, ...(item.attunement ? { attunement: "UNKNOWN" } : {}) })),
-      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: resourceCurrentInputs[item.name]?.trim() ? Number(resourceCurrentInputs[item.name]) : item.current, max: item.max, recovery: item.recovery, certainty: item.certainty })),
-      notes: "Загружено из досье после отдельного просмотра. Текущие HP, деньги и местоположение UNKNOWN. Неуказанные в досье сведения и настройки предметов остаются UNKNOWN.",
+      ...(parsed.background ? { background: parsed.background } : {}),
+      inventory: parsed.inventory.map((item, i) => ({ id: "dossier-review-"+i, name: item.name, quantity: item.quantity, notes: item.notes, certainty: item.certainty, location: item.location, startPolicy: "KEEP_FROM_DOSSIER" as const, ...(item.attunement ? { attunement: "UNKNOWN" as const } : {}) })),
+      resources: parsed.resources.map((item,i) => ({ id: "dossier-resource-"+i, name: item.name, current: item.max, max: item.max, recovery: item.recovery, certainty: item.certainty })),
+      conditions: [],
+      // Starting money is generated from the character's background at campaign start.
+      currentLocationLabel: "Будет определено при запуске кампании",
+      notes: "Загружено из проверенного досье. Новая кампания автоматически начинает персонажа с полными HP, нулевыми временными HP, восстановленными классовыми ресурсами, без состояний и со случайным стартовым балансом по предыстории. Стартовая локация назначается при запуске кампании.",
     });
     if (result.ok) setConfirmed(true);
   };
@@ -320,49 +559,50 @@ function PlayPage() {
   };
   return <main className="mx-auto max-w-3xl space-y-4 p-4 pb-20">
     <header className="space-y-1"><p className="text-xs uppercase tracking-wider text-primary">ОБСИДИАН 4.1 · подготовка</p><h1 className="text-2xl font-bold">Новая кампания</h1><p className="text-sm text-muted-foreground">Выбери, как создать персонажа.</p></header>
+    <section className="rounded-lg border border-border bg-card p-3 text-xs">
+      {serverReadiness === "CHECKING" && <p className="text-muted-foreground">Проверяю серверные источники мастера…</p>}
+      {serverReadiness === "READY" && <div className="space-y-1"><p className="font-semibold text-emerald-500"><CheckCircle2 className="mr-1 inline h-4 w-4"/>Серверный мастер готов</p><p className="text-muted-foreground">ОБСИДИАН 4.1 · D&D 2024 / SRD 5.2.1 · Экдрасиль {serverReadinessInfo?.canon?.edition ?? "2.4"} · ключ модели настроен</p>{serverReadinessInfo?.canon && <p className="break-all font-mono text-[10px] text-muted-foreground">Редакция 2.4 · запись v{serverReadinessInfo.canon.sourceVersion ?? "?"} · SHA-256 {serverReadinessInfo.canon.sha256?.slice(0,16) ?? "—"}…</p>}</div>}
+      {serverReadiness === "FAILED" && <p role="alert" className="text-destructive"><AlertTriangle className="mr-1 inline h-4 w-4"/>{serverReadinessError ?? "Проверка сервера не пройдена."}</p>}
+    </section>
     {locked && <div className="rounded border border-amber-500/40 p-3 text-sm"><Lock className="mr-2 inline h-4 w-4"/>Кампания уже подтверждена или содержит игровые ходы. Изменение стартового персонажа заблокировано. <Button type="button" variant="destructive" size="sm" className="mt-3 w-full" onClick={handleResetCampaign}>Очистить активную кампанию и начать заново</Button></div>}{startError && locked && <p role="alert" className="text-sm text-destructive">{startError}</p>}
     <section className="grid gap-3 sm:grid-cols-2">
-      <button disabled={locked} onClick={loadDossier} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><FileText className="mb-2 h-6 w-6"/><h2 className="font-semibold">Загрузить персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Распознать подтверждённые поля, показать неизвестные данные и только затем предложить импорт.</p></button>
-      <button disabled={locked} onClick={randomize} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><Dice5 className="mb-2 h-6 w-6"/><h2 className="font-semibold">Создать случайного персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Сгенерировать первичную заготовку с бросками характеристик, видом и классом.</p></button>
+      <button disabled={locked} onClick={loadDossier} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><FileText className="mb-2 h-6 w-6"/><h2 className="font-semibold">Загрузить персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Распознать параметры листа. Стартовые HP, классовые ресурсы, состояния, баланс и местоположение подготовятся автоматически при запуске кампании.</p></button>
+      <button disabled={locked || biographyBusy} onClick={randomize} className="rounded-lg border border-border p-4 text-left hover:bg-accent disabled:opacity-50"><Dice5 className="mb-2 h-6 w-6"/><h2 className="font-semibold">Создать случайного персонажа</h2><p className="mt-1 text-sm text-muted-foreground">Криптографические броски D&D 2024, затем мастер автоматически создаст биографию по канону Экдрасиля через RouterAI.</p></button>
     </section>
     {mode === "DOSSIER" && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Проверка досье перед импортом</h2>
       {!parsed ? <div className="space-y-2"><p className="text-sm text-muted-foreground">Лист персонажа загружается отдельно для этой кампании. Он не входит в канон Экдрасиля и не является частью системных правил мастера.</p><label className="block space-y-1.5 text-sm font-medium"><span>Файл персонажа (.docx, .txt, .md)</span><input type="file" accept=".docx,.txt,.md,.json,.csv" disabled={dossierUploadBusy || locked} onChange={handleDossierUpload} className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-primary-foreground" /></label>{dossierUploadBusy && <p className="text-xs text-muted-foreground">Читаю и обрабатываю лист персонажа…</p>}</div> : <>
-        <p className="text-sm">Файл: <strong>{dossier?.fileName ?? "UNKNOWN"}</strong> · статус: {dossierReviewed ? "Проверен" : "Требует проверки"}</p>{!dossierReviewed && <Button type="button" variant="outline" onClick={verifyDossierSource}>Подтвердить проверку листа</Button>}{dossierReviewed && !dossierContextEnabled && <Button type="button" variant="outline" onClick={enableDossierContext}>Разрешить мастеру учитывать этот лист</Button>}{dossierContextEnabled && <p className="text-xs text-emerald-500">Лист проверен и разрешён для контекста текущей кампании.</p>}
+        <p className="text-sm">Файл: <strong>{dossier?.fileName ?? "UNKNOWN"}</strong> · статус: {dossier?.reviewStatus ?? "UNKNOWN"}</p>{dossier?.reviewStatus === "VERIFIED" && dossier.contextEnabled === true && <p className="text-xs text-emerald-500">✓ Лист автоматически обработан и подключён к проверке мастера.</p>}
         <dl className="grid grid-cols-2 gap-2 text-sm">{[
           ["Имя",parsed.name],["Вид и класс",parsed.speciesAndClass],["Уровень",parsed.level],["Макс. HP",parsed.hitPointMaximum],["КД без плаща",parsed.armorClass === null ? null : parsed.armorClass - 1],["КД с настроенным плащом",parsed.armorClass],["Бонус мастерства",parsed.proficiencyBonus],["Скорость",parsed.speedFeet],["Навыков",parsed.skillBonuses.length],["Атак",parsed.weaponAttacks.length],["Классовых уровней с особенностями",parsed.classFeaturesByLevel.length],["Предметов",parsed.inventory.length],["Ресурсов",parsed.resources.length]
         ].map(([k,v])=><div className="rounded bg-muted/40 p-2" key={String(k)}><dt className="text-xs text-muted-foreground">{k}</dt><dd className="font-medium">{v ?? "UNKNOWN"}</dd></div>)}</dl>
-        <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Текущие HP, деньги, местоположение, активные состояния и фактические остатки ресурсов не выводятся автоматически. После импорта потребуется отдельная подготовка старта.</div>
+        <div className="rounded bg-muted/30 p-3 text-sm"><AlertTriangle className="mr-2 inline h-4 w-4"/>Новая кампания автоматически подготовит стартовое состояние персонажа: полные HP, восстановленные классовые ресурсы, отсутствие временных HP и состояний, случайный стартовый капитал по предыстории и стартовую локацию.</div>
         <p className="text-xs text-muted-foreground">Подтверждённые характеристики: {parsed.abilityScores ? Object.entries(parsed.abilityScores).map(([k,v])=>k.toUpperCase()+" "+v).join(" · ") : "UNKNOWN"}</p>
-        <div className="space-y-2 rounded-md border border-border p-3">
-          <p className="text-xs font-semibold">Фактические остатки классовых ресурсов</p>
-          <p className="text-[11px] text-muted-foreground">Оставь поле пустым, если текущее количество неизвестно. Не будет автоматически подставлено максимальное значение.</p>
-          {parsed.resources.map((resource) => (
-            <div key={resource.name} className="grid grid-cols-[1fr_100px] items-center gap-2">
-              <label htmlFor={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`} className="text-xs">{resource.name} · максимум {resource.max}</label>
-              <input
-                id={`resource-${resource.name.replace(/[^a-z0-9]/gi, "-")}`}
-                type="number" min={0} max={resource.max} step={1}
-                value={resourceCurrentInputs[resource.name] ?? ""}
-                onChange={(event) => setResourceCurrentInputs((current) => ({ ...current, [resource.name]: event.target.value }))}
-                placeholder="UNKNOWN"
-                className="touch-target w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm"
-              />
-            </div>
-          ))}
-        </div>
         {importError && <p className="text-xs text-destructive">{importError}</p>}
-        <Button disabled={locked || !parsed || confirmed} onClick={confirmDossier}>Подтвердить импорт досье</Button>
+        {compatibilityReport && <div className="space-y-2 rounded border border-primary/30 p-3 text-sm" role="status">
+          <p className="font-medium">{compatibilityReport.status === "COMPATIBLE" ? "Проверка совместимости пройдена" : "Персонаж совместим с замечаниями"}</p>
+          <p>{compatibilityReport.summary}</p>
+          {compatibilityReport.conflicts.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Замечания проверки</p><ul className="list-disc pl-5">{compatibilityReport.conflicts.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+          {compatibilityReport.unknowns.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Неизвестные данные</p><ul className="list-disc pl-5">{compatibilityReport.unknowns.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+          {compatibilityReport.requiredChanges.length > 0 && <div><p className="text-xs font-semibold text-muted-foreground">Рекомендованные изменения — не применяются автоматически</p><ul className="list-disc pl-5">{compatibilityReport.requiredChanges.map((item,index)=><li key={index}>{item}</li>)}</ul></div>}
+        </div>}
+        {biographyBusy && <p className="text-sm text-primary">Мастер автоматически сверяет персонажа с хроникой Экдрасиля и SRD 5.2.1…</p>}
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Button disabled={locked || !parsed || confirmed || biographyBusy} onClick={() => void confirmDossier()}>{biographyBusy ? "Проверяю совместимость…" : "Проверить и импортировать персонажа"}</Button>
+          <Button type="button" variant="outline" disabled={locked || dossierUploadBusy || biographyBusy} onClick={clearDossier}>Удалить файл и загрузить другой</Button>
+        </div>
       </>}
     </section>}
-    {mode === "RANDOM" && candidate && <section className="space-y-3 rounded-lg border p-4">
+    {mode === "RANDOM" && biographyBusy && <section className="rounded-lg border border-primary/30 p-4 text-sm"><p className="font-semibold">Мастер Экдрасиля создаёт персонажа</p><p className="mt-2 text-muted-foreground">Проверяет канон, формирует биографию и сверяет детали с правилами D&D 2024. Карточка появится только после завершения генерации.</p></section>}
+    {mode === "RANDOM" && !biographyBusy && !biographyReady && importError && <section className="rounded-lg border border-destructive/40 p-4 text-sm"><p className="font-semibold text-destructive">Не удалось создать персонажа</p><p className="mt-2 text-muted-foreground">{importError}</p><Button type="button" className="mt-3 w-full" disabled={locked} onClick={() => generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></section>}
+    {mode === "RANDOM" && candidate && biographyReady && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-lg font-semibold">Досье персонажа · 1 уровень</h2>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">1. Имя и основные данные</h3>
         <div className="overflow-hidden rounded-lg border">
           {[
-            ["Имя",candidate.summary.name],["Народ",candidate.summary.species],
-            ["Класс и уровень",candidate.summary.className+" · 1"],["Предыстория",candidate.summary.background],
+            ["Имя",candidate.summary.name],["Народ",candidate.summary.speciesRu],
+            ["Класс и уровень",candidate.summary.classNameRu+" · 1"],["Предыстория",candidate.summary.backgroundRu],
             ["Очки здоровья",String(candidate.summary.hitPoints)],["Класс доспеха",String(candidate.summary.armorClass)],
             ["Скорость",String(candidate.character.speedFeet ?? "UNKNOWN")+" футов"],
             ["Бонус мастерства",String(candidate.character.proficiencyBonus ?? "UNKNOWN")],
@@ -382,38 +622,44 @@ function PlayPage() {
       </section>
             <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">3. Предыстория и жизнь до кампании</h3>
-        <div className="space-y-3 rounded-lg border p-3 text-sm">
-          <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character.biography?.birthplace ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character.biography?.family ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character.biography?.upbringing ?? "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character.biography?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
-          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character.biography?.preCampaignDesire ?? "Будет сформулировано мастером."}</p></div>
-          <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character.biography?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
-        </div>
+        {biographyReady ? <div className="space-y-3 rounded-lg border p-3 text-sm">
+          <div><p className="text-xs text-muted-foreground">Место рождения</p><p className="font-medium">{candidate.character["biography"]?.birthplace ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Семья и происхождение</p><p>{candidate.character["biography"]?.family ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Детство и воспитание</p><p>{candidate.character["biography"]?.upbringing ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">События до начала кампании</p><p>{candidate.character["biography"]?.lifeEvents.join(" ") || "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Чего хотел в Экдрасиле перед началом кампании</p><p className="font-medium">{candidate.character["biography"]?.preCampaignDesire ?? "UNKNOWN"}</p></div>
+          <div><p className="text-xs text-muted-foreground">Черты характера</p><p>{candidate.character["biography"]?.personalityTraits.join(", ") || "UNKNOWN"}</p></div>
+        </div> : <p className="rounded-lg border p-3 text-sm text-muted-foreground">Мастер создаёт биографию по канону Экдрасиля. Шаблонная история пока не показывается.</p>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">Внешность персонажа</h3>
-        {candidate.character.biography?.appearanceDetails ? (
+        {biographyReady && candidate.character["biography"]?.["appearance"] && (
+          <div className="rounded-lg border border-primary/25 bg-primary/5 p-3">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-primary">Общий портрет</p>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{candidate.character["biography"]["appearance"]}</p>
+          </div>
+        )}
+        {biographyReady && candidate.character["biography"]?.appearanceDetails ? (
           <div className="overflow-hidden rounded-lg border">
             {([
-              ["Рост", candidate.character.biography.appearanceDetails.height],
-              ["Телосложение", candidate.character.biography.appearanceDetails.build],
-              ["Кожа", candidate.character.biography.appearanceDetails.skin],
-              ["Волосы", candidate.character.biography.appearanceDetails.hair],
-              ["Глаза", candidate.character.biography.appearanceDetails.eyes],
-              ["Лицо", candidate.character.biography.appearanceDetails.face],
-              ["Одежда", candidate.character.biography.appearanceDetails.clothing],
-              ["Обувь", candidate.character.biography.appearanceDetails.footwear],
-              ["Аксессуары", candidate.character.biography.appearanceDetails.accessories],
-              ["Отличительные особенности", candidate.character.biography.appearanceDetails.distinctiveFeatures],
-              ["Первое впечатление", candidate.character.biography.appearanceDetails.firstImpression],
+              ["Рост", candidate.character["biography"].appearanceDetails.height],
+              ["Телосложение", candidate.character["biography"].appearanceDetails.build],
+              ["Кожа", candidate.character["biography"].appearanceDetails.skin],
+              ["Волосы", candidate.character["biography"].appearanceDetails.hair],
+              ["Глаза", candidate.character["biography"].appearanceDetails.eyes],
+              ["Лицо", candidate.character["biography"].appearanceDetails.face],
+              ["Одежда", candidate.character["biography"].appearanceDetails.clothing],
+              ["Обувь", candidate.character["biography"].appearanceDetails.footwear],
+              ["Аксессуары", candidate.character["biography"].appearanceDetails.accessories],
+              ["Отличительные особенности", candidate.character["biography"].appearanceDetails.distinctiveFeatures],
+              ["Первое впечатление", candidate.character["biography"].appearanceDetails.firstImpression],
             ] as const).map(([label, value]) => (
               <div key={label} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-3 border-b last:border-b-0 px-3 py-2 text-sm">
                 <span className="text-muted-foreground">{label}</span><span className="text-right">{value || "UNKNOWN"}</span>
               </div>
             ))}
           </div>
-        ) : <p className="rounded-lg border p-3 text-sm text-muted-foreground">{candidate.character.biography?.appearance ?? "Внешность будет подробно создана мастером вместе с биографией."}</p>}
+         ) : <p className="rounded-lg border p-3 text-sm text-muted-foreground">Мастер подробно создаёт внешность по народу, происхождению, возрасту и жизненному пути персонажа.</p>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">4. Инвентарь и снаряжение</h3>
@@ -424,12 +670,12 @@ function PlayPage() {
           <div className="space-y-2">{candidate.character.inventory?.filter((item)=>!/меч|топор|кинжал|лук|арбалет|копь|секир|цеп|стрел|болт/i.test(item.name)).map((item)=><div key={item.id} className="flex items-start justify-between gap-3 border-b pb-2 text-sm last:border-b-0"><span>{item.name}<span className="block text-xs text-muted-foreground">{item.notes}</span></span><strong className="shrink-0">× {item.quantity}</strong></div>)}</div>
           <div className="mt-3 border-t pt-3 text-sm">Деньги: <strong>{candidate.character.currency?.gp ?? 0} зм</strong></div>
         </div>
-        <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character.biography?.weaponBackground || "Будет описано мастером."}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character.biography?.equipmentBackground || "Будет описано мастером."}</p></div>
+        {biographyReady && <div className="rounded-lg border p-3 text-sm"><p className="text-xs text-muted-foreground">Происхождение оружия</p><p>{candidate.character["biography"]?.["weaponBackground"] || "UNKNOWN"}</p><p className="mb-1 mt-3 text-xs text-muted-foreground">Происхождение снаряжения</p><p>{candidate.character["biography"]?.["equipmentBackground"] || "UNKNOWN"}</p></div>}
       </section>
       <section className="space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-primary">5. Навыки</h3>
         <div className="rounded-lg border p-3">{candidate.character.skillBonuses?.map((skill)=><div key={skill.name} className="flex items-center justify-between gap-3 border-b py-2 text-sm last:border-b-0"><span>{skill.name}</span><strong className="tabular-nums">+{skill.bonus}</strong></div>)}</div>
-        {candidate.character.biography?.skillOrigins?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
+        {candidate.character["biography"]?.["skillOrigins"]?.length ? <div className="rounded-lg border p-3"><p className="mb-2 text-xs font-semibold text-muted-foreground">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p key={index} className="border-b py-2 text-sm last:border-b-0"><strong>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}:</strong> {entry}</p>)}</div> : null}
         <p className="text-xs text-muted-foreground">Навыки отражают обучение и практику. Они сами по себе не дают магических способностей или защиты от магии.</p>
       </section>
       <section className="space-y-2">
@@ -442,22 +688,23 @@ function PlayPage() {
       </section>
       <div className="rounded border border-primary/30 p-3 space-y-2">
         <p className="text-sm font-medium">Биография мастера Экдрасиля</p>
-        <p className="text-xs text-muted-foreground">Мастер создаст индивидуальную историю и объяснит происхождение каждого навыка, оружия и предмета снаряжения. Броски и механические параметры останутся неизменными.</p>
-        <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={biographyConsent} onChange={(event) => setBiographyConsent(event.target.checked)} className="mt-0.5"/>Я разрешаю отправить параметры этого персонажа в RouterAI. Запрос может расходовать баланс подключённого сервиса.</label>
-        <Button type="button" variant="outline" disabled={locked || biographyBusy || !biographyConsent} onClick={() => void generateBiographyWithMaster()}>{biographyBusy ? "Мастер пишет биографию…" : "Сформировать биографию мастером"}</Button>
-        {candidate.character.biography && candidate.character.biography.lifeEvents.length > 1 && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character.biography.ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character.biography.ageYears}</p><p>{candidate.character.biography.biography}</p><p className="text-xs text-muted-foreground">События: {candidate.character.biography.lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character.biography.skillOrigins.map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character.biography.weaponBackground}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character.biography.equipmentBackground}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character.biography.canonBasis.join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
+        <p className="text-xs text-muted-foreground">После случайных бросков приложение автоматически отправляет только параметры сгенерированного персонажа в RouterAI. Ключ хранится на сервере Supabase и не попадает в браузер. Запрос может расходовать баланс RouterAI.</p>
+        {biographyBusy && <p className="text-sm text-primary">Мастер Экдрасиля одновременно создаёт личность, полную историю, подробную внешность и досье…</p>}
+        {!biographyBusy && !biographyReady && <div className="space-y-2"><p className="text-xs text-destructive">{importError || "Биография ещё не создана. Персонажа нельзя подтвердить без ответа мастера."}</p><Button type="button" variant="outline" disabled={locked} onClick={() => generationSeed ? void generateRandomCharacterWithMaster(generationSeed) : randomize()}>Повторить генерацию через API</Button></div>}
+        {biographyReady && candidate.character["biography"] && <div className="space-y-1 rounded bg-muted/30 p-3 text-sm"><p className="font-medium">{candidate.character["biography"].ageYears === null ? "Возраст UNKNOWN" : "Возраст: " + candidate.character["biography"].ageYears}</p><p>{candidate.character["biography"]["biography"]}</p><p className="text-xs text-muted-foreground">События: {candidate.character["biography"].lifeEvents.join(" · ")}</p><div className="space-y-1 border-t pt-2"><p className="font-medium">Как освоены навыки</p>{candidate.character["biography"]["skillOrigins"].map((entry,index)=><p className="text-xs text-muted-foreground" key={index}>{candidate.character.skillBonuses?.[index]?.name ?? "Навык"}: {entry}</p>)}</div><div className="space-y-1 border-t pt-2"><p className="font-medium">Оружие</p><p className="text-xs text-muted-foreground">{candidate.character["biography"]["weaponBackground"]}</p><p className="font-medium">Снаряжение</p><p className="text-xs text-muted-foreground">{candidate.character["biography"]["equipmentBackground"]}</p></div><p className="text-xs text-muted-foreground">Основа канона: {candidate.character["biography"]["canonBasis"].join("; ")}</p><p className="text-xs text-emerald-500">Досье мастера получено и проверено. Механические параметры сохранены без изменений.</p></div>}
       </div>
       <details className="rounded border p-2"><summary className="cursor-pointer text-xs font-medium">Результаты бросков характеристик</summary><ul className="mt-2 space-y-1 text-xs text-muted-foreground">{candidate.rolls.map((roll)=><li key={roll}>{roll}</li>)}</ul></details>
       <p className="text-xs text-muted-foreground">Сейчас доступны 7 народов Экдрасиля: люди, эльфы, тёмные эльфы, гномы, краснолюды, полуэльфы и зверолюди. Классы и предыстории выбираются из реализованных профилей; места рождения — из 16 подтверждённых городов хроники. Механические параметры рассчитываются генератором, а мастер пишет индивидуальное досье и объясняет происхождение навыков, оружия и снаряжения. Мутации и проклятия не добавляются автоматически.</p>
       {importError && <p role="alert" className="text-xs text-destructive">{importError}</p>}
-      <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={randomize}>Создать другого</Button><Button disabled={locked || confirmed} onClick={confirmRandom}>Подтвердить персонажа</Button></div>
+      <div className="flex flex-wrap gap-2"><Button variant="outline" disabled={locked || biographyBusy} onClick={randomize}>Создать другого</Button><Button disabled={locked || confirmed || biographyBusy || !biographyReady} onClick={confirmRandom}>Подтвердить персонажа</Button></div>
     </section>}
     {confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Досье персонажа импортировано и сохранено отдельно от канона мира.</div>}
     {characterReady && !locked && <section className="space-y-3 rounded-lg border border-primary/40 p-4">
       <div><h2 className="text-lg font-semibold">Персонаж готов к кампании</h2><p className="text-sm text-muted-foreground">{character.name} · {character.speciesAndClass} · HP будут определены случайной стартовой ситуацией; неизвестные остатки ресурсов останутся UNKNOWN.</p></div>
       <p className="text-xs text-muted-foreground">Применится профиль ОБСИДИАН 4.1 / D&D 2024: SRD 5.2.1, броски через Web Crypto с показом результатов, XP, стандартный учёт нагрузки, базовые правила выживания, региональные встречи без универсальных таблиц, без PvP и без дополнительных правил смерти, кроме отдельно согласованных правил текущей кампании. Профиль можно изменить в настройках до первого игрового хода.</p>
+      <p className="text-xs text-muted-foreground">{serverReadiness === "CHECKING" ? "Автоматически проверяю ОБСИДИАН 4.1, SRD 5.2.1, Хронику Экдрасиля и руководство генерации…" : serverReadiness === "READY" ? "✓ Серверные документы автоматически проверены." : "Автоматическая проверка сервера не пройдена: " + (serverReadinessError ?? "неизвестная ошибка")}</p>
       {startError && <p role="alert" className="text-sm text-destructive">{startError}</p>}
-      <Button className="w-full touch-target" disabled={startPending} onClick={handleStartCampaign}>{startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
+      <Button className="w-full touch-target" disabled={startBusy || startPending || serverReadiness !== "READY"} onClick={handleStartCampaign}>{startBusy ? "Создаю хронику старта…" : startPending ? "Подготавливаю Экдрасиль…" : "Начать кампанию"}</Button>
     </section>}
     {!characterReady && mode === "RANDOM" && confirmed && <p className="rounded border border-amber-500/40 p-3 text-xs text-amber-200">Случайный персонаж ещё не подтверждён. Проверь его параметры и нажми «Подтвердить персонажа».</p>}
     {worldState.setup.confirmed && <div className="rounded border border-emerald-500/40 p-3 text-sm"><CheckCircle2 className="mr-2 inline h-4 w-4"/>Кампания подготовлена. <Link className="underline font-semibold" to="/game">Перейти к игре</Link></div>}
