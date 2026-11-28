@@ -92,3 +92,23 @@ Useful patterns identified: bounded turn orchestration, engine/narration boundar
 2. Open a PR to `cloud-api-client`; merge only after checks pass.
 3. GitHub Pages deploys from `cloud-api-client`. Do not merge into `main` as part of this work.
 4. Test with a disposable campaign before using the user's main campaign.
+
+
+## Implementation update — 28 November 2026 — server dice and NPC combat
+
+The status above is superseded where it conflicts with the implementation below.
+
+- NPC-owned attack and damage rolls are now executed with cryptographically secure server RNG inside the bounded tool loop. They are not returned as pending player rolls.
+- The loop feeds the completed server roll back into the next tool call. A verified NPC attack hit unlocks its damage roll; a miss does not. Natural 1/20 attack handling and critical damage-dice doubling are applied by deterministic code.
+- The final JSON is still validated against the strict model schema first. Only then are server-generated NPC roll records appended, so the language model cannot invent numeric NPC results.
+- The player UI now uses the signed `ROLL_DICE` challenge flow instead of accepting a manually typed number. The client verifies the returned formula/dice/arithmetic, submits the signed proof with the same action, and preserves multiple completed checks during a multi-step action.
+- Added the atomic `gm_dice_nonce_consumptions` table and service-role-only RPC. The migration `20261128160000_add_one_time_gm_dice_nonces.sql` was applied to Supabase project `dbchfgkdrqpjspptoezh`; the table and RPC were verified present.
+- Added the missing Edge Function nonce-consumption helper and deployed `obsidian-gm` version 73 with the current `main` source.
+- GitHub Actions validation completed successfully for the implementation commits: Vitest, TypeScript `--noEmit`, and production build all passed.
+
+### Remaining release blockers
+
+- A durable pending-turn record and reload/resume path are still required. The current pending challenge and completed player-roll state live in the active page until the action is continued; a reload can lose that in-memory state.
+- The complete autonomous combat pipeline still needs broader deterministic support (initiative, multiple targets, conditions, reactions, saves, movement, and all relevant D&D 2024 action economy), plus tests for each supported mechanic.
+- The current NPC server roller supports the verified attack/damage paths implemented by the existing SRD tools; it does not claim to simulate every NPC ability or encounter rule.
+- Run a disposable Android campaign end-to-end against the deployed function before using an important campaign.
