@@ -1669,6 +1669,17 @@ Deno.serve(async (req: Request) => {
         parsed.rolls = [...pendingPlayerRolls, ...serverRollEntries];
         content = JSON.stringify(parsed);
       }
+      if (isGameTurnRequest && isRecord(parsed) && modelCall.combatEvents.length > 0) {
+        // Only the deterministic tool loop can produce these events: the
+        // completed attack and damage rolls were verified against signed
+        // one-time challenges before the model was called.
+        parsed.combatEvents = modelCall.combatEvents;
+        const damageToPlayer = modelCall.combatEvents
+          .filter((event) => event.targetType === "PLAYER")
+          .reduce((sum, event) => sum + event.damage, 0);
+        if (damageToPlayer > 0) parsed.hpDelta = -damageToPlayer;
+        content = JSON.stringify(parsed);
+      }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       let rollChallenge: SignedDiceChallenge | null = null;
       let pendingTurnId: string | null = null;
