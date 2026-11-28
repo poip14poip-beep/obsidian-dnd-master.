@@ -146,3 +146,11 @@ The integrated engine is materially more capable, but it is **not yet a fully ac
 5. Complete Android end-to-end acceptance on a disposable campaign: non-combat check, player die, travel, social interaction, combat, save/read-back, reload and interrupted-turn recovery.
 
 The v94 deployment is an integration milestone, not final acceptance of the complete autonomous master.
+
+## Condition lifecycle foundation — 2026-11-28
+
+- Added `src/domain/conditions.ts` with canonical Russian/English aliases for the 15 standard D&D conditions, while preserving Ekdrasil-specific custom conditions such as curses and mutations.
+- Added deterministic, backward-compatible ADD/REMOVE handling for the existing string-based character state. Duplicate ADD operations are idempotent; exhaustion is stored as one explicit level; stale numbered exhaustion removals are rejected.
+- Wired the resolver into turn-draft validation and the actual `commitTurnDraft` persistence path. Existing saved campaigns continue to use the current `conditions: string[]` shape.
+- Added unit coverage for aliases, custom states, exhaustion levels, invalid removals, and store commit/read-back.
+- **Not yet accepted or deployed:** no CI result is available for these direct branch commits. Mechanical effects beyond the existing exhaustion penalty (for example poisoned checks and condition-based attack restrictions/advantage) are still a separate server-engine task. No round-based expiry is claimed because encounter-round state is not implemented.
