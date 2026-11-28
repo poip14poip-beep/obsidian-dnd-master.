@@ -404,7 +404,7 @@ function resolveCompletedAttack(
 }
 
 function doubleDamageDice(formula: string): string {
-  return formula.replace(/(\\d*)d(\\d+)/gi, (_match, count: string, sides: string) =>
+  return formula.replace(/(\d*)d(\d+)/gi, (_match, count: string, sides: string) =>
     String(Number(count || 1) * 2) + "d" + sides,
   );
 }
@@ -440,7 +440,7 @@ function preparePlayerDamage(
   if (!resolution.hit) {
     return { ok: true, attackResolution: { ...resolution, outcome: "MISS" }, preparedRoll: null, note: "Атака промахнулась. Бросок урона не требуется." };
   }
-  const formula = resolution.critical ? doubleDamageDice(entry.damage) : entry.damage.replace(/\\s+/g, "");
+  const formula = resolution.critical ? doubleDamageDice(entry.damage) : entry.damage.replace(/\s+/g, "");
   const parsed = parseDiceFormula(formula);
   if (!parsed) return { ok: false, error: "Формула урона не поддерживается серверным генератором." };
   return {
