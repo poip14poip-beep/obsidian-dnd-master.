@@ -10,6 +10,8 @@ import {
 
 import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
 import { applyConditionChanges } from "@/domain/conditions";
+import { calculateRest, createInitialHitDicePool, type RestKind } from "@/domain/rest";
+import { rollDie } from "@/domain/dice";
 import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
 import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
@@ -42,6 +44,7 @@ import type {
   FactionRecord,
   GameTurnEntry,
   IntegrityReport,
+  HitDicePool,
   InventoryItem,
   LocationRecord,
   NpcKnowledgeEntry,
@@ -99,6 +102,7 @@ export interface ObsidianStoreValue {
   cloudSyncStatus: "IDLE" | "SAVING" | "SAVED" | "ERROR";
   cloudSyncMessage: string | null;
   retryCloudSnapshot: () => Promise<void>;
+  takeRest: (kind: RestKind, hitDiceToSpend?: number) => PersistVerifyResult;
 
   // Sources
   attachSourceContent: (
@@ -957,6 +961,67 @@ export function ObsidianStoreProvider({
     [collections.player_character_state.inventory, updatePlayerCharacter],
   );
 
+  const takeRest: ObsidianStoreValue["takeRest"] = useCallback((kind, hitDiceToSpend = 0) => {
+    const ws = collections.world_state;
+    const pc = collections.player_character_state;
+    if (!ws.setup.confirmed) {
+      return { ok: false, error: "Отдых доступен только после запуска кампании.", report: lastIntegrityReport };
+    }
+    if (kind !== "SHORT" && kind !== "LONG") {
+      return { ok: false, error: "Неизвестный тип отдыха.", report: lastIntegrityReport };
+    }
+    const pool = pc.hitDicePool ?? createInitialHitDicePool(pc.hitDice, pc.classLevel);
+    const rolls: number[] = [];
+    if (kind === "SHORT" && Number.isInteger(hitDiceToSpend) && hitDiceToSpend > 0) {
+      let remaining = hitDiceToSpend;
+      for (const entry of pool ?? []) {
+        const count = Math.min(entry.current, remaining);
+        const sides = Number(entry.die.replace(/^d/i, ""));
+        for (let i = 0; i < count; i++) rolls.push(rollDie(sides));
+        remaining -= count;
+        if (remaining <= 0) break;
+      }
+    }
+    const calculation = calculateRest({ ...pc, hitDicePool: pool }, kind, hitDiceToSpend, rolls);
+    if (!calculation.ok) {
+      return { ok: false, error: calculation.error ?? "Не удалось рассчитать отдых.", report: lastIntegrityReport };
+    }
+
+    const nextElapsedMinutes = ws.elapsedMinutes + calculation.elapsedMinutes;
+    const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(ws.calendarSystem);
+    const isTechnicalCalendar = /технический календарь мастера экдрасиля 1\.0|technical calendar 1\.0/i.test(ws.calendarSystem);
+    const calculatedDate = isEkdrasilCalendar
+      ? advanceEkdrasilDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes)
+      : isTechnicalCalendar ? advanceTechnicalDateByElapsedMinutes(ws.startInGameDate, nextElapsedMinutes) : null;
+    if ((isEkdrasilCalendar || isTechnicalCalendar) && !calculatedDate) {
+      return { ok: false, error: "Не удалось продвинуть календарь во время отдыха. Состояние персонажа не изменено.", report: lastIntegrityReport };
+    }
+
+    const now = new Date().toISOString();
+    const nextWorld: WorldState = {
+      ...ws, stateVersion: ws.stateVersion + 1, updatedAt: now,
+      elapsedMinutes: nextElapsedMinutes,
+      ...(calculatedDate ? { currentInGameDate: calculatedDate } : {}),
+    };
+    const nextCharacter: PlayerCharacterState = {
+      ...pc, stateVersion: pc.stateVersion + 1, updatedAt: now,
+      hpCurrent: calculation.hpCurrent,
+      conditions: calculation.conditions,
+      resources: calculation.resources,
+      ...(calculation.hitDicePool ? { hitDicePool: calculation.hitDicePool } : {}),
+    };
+    const diceSummary = rolls.length ? `; броски костей хитов: ${rolls.join(", ")}` : "";
+    const healingSummary = calculation.healingFromHitDice > 0 ? `; восстановлено HP костями: ${calculation.healingFromHitDice}` : "";
+    const resourceSummary = calculation.resources
+      .filter((resource, index) => resource.current !== pc.resources[index]?.current)
+      .map((resource) => resource.name).join(", ");
+    const details = `${kind === "SHORT" ? "Короткий" : "Продолжительный"} отдых: ${calculation.elapsedMinutes / 60} ч.; HP ${pc.hpCurrent ?? "?"} → ${calculation.hpCurrent ?? "?"}${healingSummary}${diceSummary}; восстановленные ресурсы: ${resourceSummary || "нет"}; кости хитов: -${calculation.hitDiceSpent}/+${calculation.hitDiceRecovered}.${calculation.warnings.length ? " Предупреждения: " + calculation.warnings.join(" ") : ""}`;
+    const nextAudit = appendAudit(collections.audit_log, "REST_TAKEN", "OK", details, nextWorld, nextCharacter, collections.session_log.lastTurnNumber || null);
+    return commitCollections({
+      ...collections, world_state: nextWorld, player_character_state: nextCharacter, audit_log: nextAudit,
+    });
+  }, [appendAudit, collections, commitCollections, lastIntegrityReport]);
+
   const applyGeneratedStart: ObsidianStoreValue["applyGeneratedStart"] = useCallback((input) => {
     if (collections.world_state.setup.confirmed || collections.session_log.lastTurnNumber > 0) {
       return { ok: false, error: "Случайный старт можно создать только до подтверждения кампании и первого игрового хода.", report: lastIntegrityReport };
@@ -977,6 +1042,13 @@ export function ObsidianStoreProvider({
     const nextCharacter: PlayerCharacterState = {
       ...previousCharacter,
       ...input.characterPatch,
+      ...(!input.characterPatch.hitDicePool && createInitialHitDicePool(
+        input.characterPatch.hitDice ?? previousCharacter.hitDice,
+        input.characterPatch.classLevel ?? previousCharacter.classLevel,
+      ) ? { hitDicePool: createInitialHitDicePool(
+        input.characterPatch.hitDice ?? previousCharacter.hitDice,
+        input.characterPatch.classLevel ?? previousCharacter.classLevel,
+      ) } : {}),
       stateVersion: previousCharacter.stateVersion + 1,
       currentLocationLabel: input.city.name,
       inventory: (input.replaceInventory ?? input.inventory.length > 0) ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
@@ -1767,6 +1839,8 @@ export function ObsidianStoreProvider({
       cloudSyncStatus,
       cloudSyncMessage,
       retryCloudSnapshot,
+      takeRest,
+      takeRest,
       attachSourceContent,
       addSupplementalSource,
       verifySource,
