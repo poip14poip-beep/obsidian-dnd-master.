@@ -1068,10 +1068,12 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       },
       canon,
       completedRolls,
+      rollRandom: () => 3,
     });
-    expect(result.preparedRoll).toMatchObject({
-      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", kind: "NPC_DAMAGE",
-    });
+    expect(result.preparedRoll).toBeNull();
+    expect(result.serverRolls).toMatchObject([{
+      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", kind: "NPC_DAMAGE", total: 5,
+    }]);
     const toolRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     const toolMessage = toolRequest.messages.find((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "damage-1");
     expect(JSON.parse(toolMessage.content)).toMatchObject({
