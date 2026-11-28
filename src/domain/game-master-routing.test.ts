@@ -29,9 +29,9 @@ describe("Obsidian GM model routing", () => {
     ]);
   });
 
-  it("keeps a separate high-impact route with an independent fallback", () => {
+  it("keeps high-impact game turns on the reliable DeepSeek/Gemini route", () => {
     expect(selectGameMasterModelOrder({ ...normalTurn, highImpactTurn: true })).toEqual([
-      "anthropic/claude-sonnet-5.5",
+      "deepseek/deepseek-v4.1-flash",
       "google/gemini-4-argon",
     ]);
   });
@@ -40,7 +40,7 @@ describe("Obsidian GM model routing", () => {
     expect(selectGameMasterModelOrder({ ...normalTurn, isGameTurnRequest: false, isStoryRequest: true }))
       .toEqual(["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"]);
     expect(selectGameMasterModelOrder({ ...normalTurn, isGameTurnRequest: false, isCompatibilityRequest: true }))
-      .toEqual(["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"]);
+      .toEqual(["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"]);
   });
 
   it("does not add extra providers to identity and biography generation", () => {
@@ -51,7 +51,7 @@ describe("Obsidian GM model routing", () => {
   });
 
   it("gives game JSON enough output tokens without spending them on hidden reasoning", () => {
-    expect(GAME_TURN_MAX_OUTPUT_TOKENS).toBe(8192);
+    expect(GAME_TURN_MAX_OUTPUT_TOKENS).toBe(4096);
     expect(DEEPSEEK_GAME_TURN_REASONING_EFFORT).toBe("none");
   });
 
