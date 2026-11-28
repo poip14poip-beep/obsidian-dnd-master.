@@ -163,3 +163,14 @@ The v94 deployment is an integration milestone, not final acceptance of the comp
 - Static app publication run `46185654807`: SUCCESS — build and publish to the static-site branch completed.
 - Supabase Edge Function `obsidian-gm` deployed as **version 95**, ACTIVE, with JWT verification still enabled. This deployment includes the current `cloud-api-client` sources.
 - **Android runtime acceptance is still pending.** The new server effects have not yet been exercised through a live campaign on the Android app. Context-dependent condition effects and round-based expiry remain incomplete; do not treat this as full D&D condition coverage.
+## Rest mechanics implementation — 2026-11-28
+
+- Added `src/domain/rest.ts` with deterministic short-rest and long-rest calculations and tests.
+- Character sheet now exposes short rest (60 minutes) and long rest (480 minutes) actions. The store advances the Ekdrasil calendar, updates player state, and records a `REST_TAKEN` audit event.
+- Short rest can spend confirmed Hit Dice. The app rolls each die using the cryptographically secure dice helper and applies the Constitution modifier, capped at maximum HP.
+- Long rest restores confirmed maximum HP, restores resources explicitly tagged for long rest (including short/long rest), reduces Exhaustion by one level, and recovers Hit Dice up to half the total pool (minimum one when any are spent).
+- New characters receive a Hit Dice pool only when die size and class level are confirmed. Legacy saves without a tracked pool are not assumed to have all dice available; spending/recovery is withheld rather than inventing a current count.
+- Unknown resource values are not silently filled. Resources without an explicit rest recovery rule are not changed.
+- CI on `cloud-api-client` commit `4e348d8b73832bfe28da628ab0d747a5893c8aa2`: SUCCESS — 232 tests passed, TypeScript check passed, production build passed.
+- GitHub Pages deployment and Supabase static-host publication both completed successfully (workflow runs `46186181906` and `46186181905`).
+- **Not yet accepted:** Android end-to-end test in a live campaign. Rest interruptions, food/water requirements, multiclass hit-die selection, and old-save Hit Dice reconciliation remain follow-up tasks. Supabase `obsidian-gm` function was not redeployed because this slice changes the app-side state/store, not the Edge Function.
