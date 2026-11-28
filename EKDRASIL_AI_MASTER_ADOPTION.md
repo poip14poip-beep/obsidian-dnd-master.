@@ -101,3 +101,13 @@ Current status: **PARTIAL INTEGRATION — NOT READY FOR PLAYER TESTING AS A COMP
 - Character sheet and campaign state remain separate.
 - The interface works on Android; no desktop-only or local-model requirement is introduced.
 - Existing manual mode and saved campaigns remain usable.
+
+
+### Implementation log — 28 November 2026 — two-stage game-turn pipeline
+- Added a distinct first-stage analyst request to `supabase/functions/obsidian-gm/index.ts`: DeepSeek reads the submitted action, campaign/character context, Obsidian 4.1 instructions, D&D 2024 / SRD 5.2.1 excerpts, and Ekdrasil 2.4 excerpts through the bounded read-only retrieval tools.
+- The analyst returns a compact validated JSON report: action class, player checks, NPC checks, rule findings, canon findings, campaign-state findings, mutation permission, and unresolved facts.
+- A separate second-stage model (Claude Sonnet, with Gemini as a bounded fallback) receives that report and produces the existing strict game-turn schema. The second model does not repeat canon/rules retrieval.
+- Corrected request classification so the two-stage pipeline runs only for `operation: GAME_TURN`, not character appearance/story/origin generation.
+- Added a server-side acceptance gate: when the analyst identifies a required player-character roll, the final response must request the player roll and must not change HP, time, inventory, resources, currency, conditions, NPC/world facts, or location before the roll result exists.
+- Request budgets are bounded to 20 seconds for analysis, 42 seconds for the primary narration model, and 18 seconds for the Gemini fallback. This is intended to keep the ordinary path within the mobile request window; real provider latency still requires live testing.
+- This is an incremental implementation, not yet a complete autonomous engine. Deterministic D&D 2024 attack/check resolution, server RNG for NPC rolls, durable pending-roll persistence/resume, idempotent commit, and full end-to-end tests remain required.
