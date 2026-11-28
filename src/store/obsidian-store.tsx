@@ -976,7 +976,7 @@ export function ObsidianStoreProvider({
     if (kind !== "SHORT" && kind !== "LONG") {
       return { ok: false, error: "Неизвестный тип отдыха.", report: lastIntegrityReport };
     }
-    const pool = pc.hitDicePool ?? createInitialHitDicePool(pc.hitDice, pc.classLevel);
+    const pool = pc.hitDicePool;
     const rolls: number[] = [];
     if (kind === "SHORT" && Number.isInteger(hitDiceToSpend) && hitDiceToSpend > 0) {
       let remaining = hitDiceToSpend;
