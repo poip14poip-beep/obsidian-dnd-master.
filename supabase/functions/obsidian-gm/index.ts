@@ -56,6 +56,59 @@ function stableSerialize(value: unknown): string {
   return JSON.stringify(value) ?? "undefined";
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function base64ToBytes(value: string): Uint8Array | null {
+  try {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  } catch { return null; }
+}
+function diceProofPayload(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string;
+}): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dice: value.dice,
+    modifier: value.modifier, total: value.total, issuedAt: value.issuedAt, nonce: value.nonce,
+  };
+}
+async function signDiceProof(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string;
+}): Promise<string> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server signing key is not configured.");
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC", key, new TextEncoder().encode(stableSerialize(diceProofPayload(value))),
+  );
+  return bytesToBase64(new Uint8Array(signature));
+}
+async function verifyDiceProof(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; signature: string;
+}): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY || !Number.isInteger(value.issuedAt) ||
+      Date.now() - value.issuedAt > 120_000 || value.issuedAt - Date.now() > 15_000 ||
+      !value.nonce || value.nonce.length > 80) return false;
+  const signature = base64ToBytes(value.signature);
+  if (!signature) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+  return crypto.subtle.verify(
+    "HMAC", key, signature,
+    new TextEncoder().encode(stableSerialize(diceProofPayload(value))),
+  );
+}
+
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -367,7 +420,20 @@ Deno.serve(async (req: Request) => {
       return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
     }
     try {
-      return json({ formula: body.formula, ...rollDiceFormula(body.formula) }, 200, cors);
+      if (!SUPABASE_SERVICE_ROLE_KEY) {
+        return json({ error: { code: "DICE_SIGNING_NOT_CONFIGURED", message: "Серверная подпись результатов бросков не настроена." } }, 503, cors);
+      }
+      const rolled = rollDiceFormula(body.formula);
+      const proof = {
+        userId: authData.user.id,
+        issuedAt: Date.now(),
+        nonce: crypto.randomUUID(),
+      };
+      const signature = await signDiceProof({
+        ...proof, formula: body.formula, dice: rolled.dice,
+        modifier: rolled.modifier, total: rolled.total,
+      });
+      return json({ formula: body.formula, ...rolled, proof: { ...proof, signature } }, 200, cors);
     } catch {
       return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
     }
@@ -468,6 +534,43 @@ Deno.serve(async (req: Request) => {
       const maxInputLength = isCompatibilityRequest ? 34_000 : 12_000;
       if (inputText.length > maxInputLength) inputText = inputText.slice(0, maxInputLength);
     } catch { /* keep the original input so malformed dossiers are reported accurately */ }
+  }
+  if (requestBody.operation === "GAME_TURN") {
+    let parsedTurnInput: unknown;
+    try { parsedTurnInput = JSON.parse(inputText); }
+    catch { return json({ error: { code: "INVALID_GAME_TURN_INPUT", message: "Контекст игрового хода повреждён." } }, 400, cors); }
+    const completedRolls = isRecord(parsedTurnInput) && Array.isArray(parsedTurnInput.completedRolls)
+      ? parsedTurnInput.completedRolls : [];
+    if (completedRolls.length > 5) {
+      return json({ error: { code: "TOO_MANY_COMPLETED_ROLLS", message: "За один ход можно передать не более пяти результатов бросков." } }, 400, cors);
+    }
+    for (const item of completedRolls) {
+      if (!isRecord(item) || typeof item.formula !== "string" || !Array.isArray(item.dice) ||
+          !Number.isInteger(item.modifier) || !Number.isInteger(item.total) || !isRecord(item.proof)) {
+        return json({ error: { code: "INVALID_COMPLETED_ROLL", message: "Структура завершённого броска повреждена." } }, 400, cors);
+      }
+      const proof = item.proof;
+      const formula = item.formula;
+      const parsedFormula = parseDiceFormula(formula);
+      const dice = item.dice;
+      const diceValid = parsedFormula !== null && dice.length === parsedFormula.totalDice &&
+        dice.every((die) => isRecord(die) && Number.isInteger(die.value) &&
+          Number.isInteger(die.sides) && typeof die.kept === "boolean" &&
+          (die.value as number) >= 1 && (die.value as number) <= (die.sides as number));
+      const arithmeticValid = diceValid && parsedFormula !== null &&
+        item.modifier === parsedFormula.modifier &&
+        item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + item.modifier;
+      const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
+        typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
+        typeof proof.signature === "string" && await verifyDiceProof({
+          userId: proof.userId, issuedAt: proof.issuedAt, nonce: proof.nonce,
+          signature: proof.signature, formula, dice, modifier: item.modifier as number,
+          total: item.total as number,
+        });
+      if (!arithmeticValid || !proofValid) {
+        return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
+      }
+    }
   }
   const instructionText = requestBody.instructions as string;
   const selectedSchema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
