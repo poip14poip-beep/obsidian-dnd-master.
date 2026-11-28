@@ -36,7 +36,9 @@ describe("deterministic rest mechanics", () => {
   });
 
   it("rejects spending unconfirmed or unavailable hit dice", () => {
-    expect(calculateRest(character({ hitDicePool: undefined }), "SHORT", 1, [6])).toMatchObject({ ok: false });
+    const withoutPool = character();
+    delete withoutPool.hitDicePool;
+    expect(calculateRest(withoutPool, "SHORT", 1, [6])).toMatchObject({ ok: false });
     expect(calculateRest(character(), "SHORT", 3, [6, 4, 5])).toMatchObject({ ok: false });
   });
 
