@@ -287,7 +287,7 @@ function applySocialCheckOutcomes(parsed: JsonRecord, inputText: string): boolea
   const socialRolls = completed.filter((roll) =>
     roll.roller === "PLAYER" && roll.targetType === "DC" &&
     typeof roll.label === "string" && roll.label.startsWith("Социальная проверка — ") &&
-    Number.isInteger(roll.total) && Number.isInteger(roll.dc),
+    Number.isInteger(roll.total) && Number.isInteger(roll.dc) && typeof roll.success === "boolean",
   );
   if (!socialRolls.length) return false;
   const npcChanges = Array.isArray(parsed.npcChanges)
