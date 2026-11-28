@@ -355,6 +355,50 @@ describe("hit point changes on committed turns", () => {
     expect(result.current.sessionLog.lastTurnNumber).toBe(1);
   });
 
+
+  it("applies verified player damage to a tracked NPC combat profile and persists it", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.npcs = [{
+      id: "npc-target", name: "Страж", role: "Городской стражник", locationId: null, factionId: null,
+      goals: "Охраняет ворота",
+      gmProfile: {
+        biography: "", appearance: "", personality: "", motivation: "", longTermGoal: "",
+        secrets: "", relationships: "", skillsAndAbilities: "",
+        combatProfile: {
+          status: "SRD_VERIFIED", source: "SRD 5.2.1 lines 10-20",
+          armorClass: 13, hitPointsCurrent: 11, hitPointsMax: 11, speed: "30 ft",
+          attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+        },
+      },
+      attitudeToPlayer: "Враждебное", certainty: "KNOWN", sourceId: "MANUAL_GM_ENTRY",
+      locked: false, knowledge: [], version: 1, history: [],
+    }];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result, unmount } = await renderCampaignStore(storage);
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Удар по стражнику",
+        worldOutcome: "Подтверждённый удар наносит 5 единиц колющего урона",
+        combatEvents: [{
+          targetType: "NPC", targetName: "Страж", damage: 5, damageType: "piercing",
+          critical: false, source: "PLAYER", formula: "1d8+2", rollLabel: "Урон мечом по Страж",
+        }],
+      });
+    });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok).toBe(true);
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok).toBe(true);
+    expect(result.current.npcs[0]?.gmProfile?.combatProfile.hitPointsCurrent).toBe(6);
+    unmount();
+    const reloaded = await renderCampaignStore(storage);
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.combatProfile.hitPointsCurrent).toBe(6);
+  });
+
   it("creates and persists an NPC private dossier automatically with the committed turn", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
