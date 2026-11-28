@@ -880,10 +880,17 @@ export function ObsidianStoreProvider({
   const updatePlayerCharacter: ObsidianStoreValue["updatePlayerCharacter"] = useCallback(
     (patch) => {
       const now = new Date().toISOString();
+      const previousCharacter = collections.player_character_state;
+      const importedHitDicePool = patch.hitDicePool ?? previousCharacter.hitDicePool ?? (
+        patch.hitDice || patch.classLevel
+          ? createInitialHitDicePool(patch.hitDice ?? previousCharacter.hitDice, patch.classLevel ?? previousCharacter.classLevel)
+          : undefined
+      );
       const nextCharacter: PlayerCharacterState = {
-        ...collections.player_character_state,
+        ...previousCharacter,
         ...patch,
-        stateVersion: collections.player_character_state.stateVersion + 1,
+        ...(importedHitDicePool ? { hitDicePool: importedHitDicePool } : {}),
+        stateVersion: previousCharacter.stateVersion + 1,
         updatedAt: now,
       };
       const nextAudit = appendAudit(
