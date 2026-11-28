@@ -30,6 +30,25 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "check_notice",
+      description: "Пассивная проверка обнаружения скрытой детали, которую герой НЕ ищет активно. Сервер сравнит пассивное значение Восприятия, Проницательности или Расследования с DC. Это не бросок кубика игрока. Для активного поиска используй request_roll. Не вызывай для обычных очевидных объектов или если скрытой детали в сцене нет.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          sense: { type: "string", enum: ["perception", "insight", "investigation"], description: "Что именно может заметить герой: perception — скрытая угроза/звук/ловушка; insight — ложь или скрытый мотив; investigation — скрытый механизм или улика." },
+          difficulty: { type: "string", enum: ["very_easy", "easy", "moderate", "hard", "very_hard", "nearly_impossible"] },
+          dc: { type: "integer", minimum: 1, maximum: 40, description: "Точная DC, только если она задана источником или статблоком." },
+          advantage: { type: "string", enum: ["none", "advantage", "disadvantage"], description: "Ситуативное преимущество/помеха пассивной проверке, если оно подтверждено правилами и обстоятельствами." },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "social_check",
       description: "Проверка попытки повлиять на уже известного NPC словами: убедить, обмануть или запугать. Вызывай ДО описания ответа NPC. Сервер найдёт отношение NPC к герою и назначит DC по правилам социального взаимодействия: friendly 10, indifferent 15, hostile 20. Обычный разговор, приветствие, вопрос или слушание не требуют броска.",
       parameters: {
@@ -352,6 +371,62 @@ function preparePlayerCheck(
       roller: "PLAYER", label, formula, dc: dc as number, targetType: "DC", modifier,
       kind: kind as PreparedRoll["kind"], reason,
     },
+  };
+}
+
+function prepareCheckNotice(
+  args: JsonRecord,
+  playerCharacter: JsonRecord | null,
+): JsonRecord {
+  if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" || !Array.isArray(playerCharacter.skillBonuses)) {
+    return { ok: false, error: "Лист персонажа не содержит подтверждённых бонусов пассивных навыков. Не выдумывай пассивное значение." };
+  }
+  const sense = typeof args.sense === "string" ? args.sense : "perception";
+  if (!["perception", "insight", "investigation"].includes(sense)) {
+    return { ok: false, error: "sense должен быть perception, insight или investigation." };
+  }
+  const difficulty = typeof args.difficulty === "string" ? ROLL_DIFFICULTY_DC[args.difficulty] : undefined;
+  const dc = Number.isInteger(args.dc) ? args.dc : difficulty;
+  if (!Number.isInteger(dc) || (dc as number) < 1 || (dc as number) > 40) {
+    return { ok: false, error: "Для check_notice укажи difficulty или точную DC от 1 до 40." };
+  }
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  if (reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для check_notice нужна краткая причина длиной от 3 до 200 символов." };
+  }
+  const entry = (playerCharacter.skillBonuses as unknown[]).find((item) =>
+    item && typeof item === "object" && typeof (item as JsonRecord).name === "string" &&
+    normalizeSkillKey((item as JsonRecord).name as string) === sense,
+  ) as JsonRecord | undefined;
+  if (!entry || !Number.isInteger(entry.bonus)) {
+    return { ok: false, error: "Подтверждённый бонус навыка " + sense + " отсутствует в листе. Не подменяй его модификатором характеристики." };
+  }
+  const advantageMap: Record<string, number> = { none: 0, advantage: 5, disadvantage: -5 };
+  const advantage = typeof args.advantage === "string" ? advantageMap[args.advantage] : 0;
+  if (advantage === undefined) {
+    return { ok: false, error: "advantage должен быть none, advantage или disadvantage." };
+  }
+  const conditions = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
+  const exhaustionMatch = /(?:exhaustion(?:\\s+level)?|истощение(?:\\s+уровень)?)\\s*[:(]?\\s*([1-6])/i.exec(conditions);
+  const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
+  const passiveScore = 10 + Number(entry.bonus) + advantage - exhaustionPenalty;
+  const noticed = passiveScore >= (dc as number);
+  const skillLabel = SKILL_RULES[sense]!.labelRu;
+  return {
+    ok: true,
+    notice: {
+      sense,
+      skill: skillLabel,
+      dc,
+      passiveScore,
+      noticed,
+      margin: passiveScore - (dc as number),
+      result: noticed ? "ОБНАРУЖЕНО" : "НЕ ОБНАРУЖЕНО",
+      reason,
+    },
+    note: noticed
+      ? "Пассивное значение достигло DC. Можно описать только то, что герой действительно способен заметить."
+      : "Пассивное значение ниже DC. Не раскрывай скрытую деталь персонажу.",
   };
 }
 
@@ -766,6 +841,9 @@ export function executeEkdrasilReadTool(
   catch { return { ok: false, error: "Аргументы инструмента должны быть корректным JSON." }; }
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
+  }
+  if (name === "check_notice") {
+    return prepareCheckNotice(args as JsonRecord, playerCharacter);
   }
   if (name === "social_check") {
     return prepareSocialCheck(args as JsonRecord, playerCharacter, npcProfiles, alreadyPrepared);
