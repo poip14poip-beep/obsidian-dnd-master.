@@ -48,6 +48,7 @@ describe("server-authoritative dice", () => {
       dice: [{ value: 20, sides: 20, kept: true }],
       modifier: 4,
       total: 24,
+      proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==" },
     }), { status: 200 });
 
     await expect(rollDiceAtServer("test-session-token", "1d20+5", {
