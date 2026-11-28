@@ -607,7 +607,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
       throw new GameMasterError("Результат броска главного героя должен поступить только через подписанное серверное задание.", "GM_INVENTED_DICE_RESULT");
     }
     if (roll["roller"] === "GM" &&
-        (typeof roll["result"] !== "string" || !/=\\s*-?\\d+/.test(roll["result"]))) {
+        (typeof roll["result"] !== "string" || !/=\s*-?\d+/.test(roll["result"]))) {
       throw new GameMasterError("Результат броска NPC должен быть сформирован серверным генератором.", "GM_INVENTED_DICE_RESULT");
     }
     if (!["PLAYER", "GM"].includes(String(roll["roller"]))) {
