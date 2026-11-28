@@ -124,7 +124,7 @@ async function issueDiceChallenge(userId: string, prepared: {
   return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
 }
 async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean> {
-  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 600_000 ||
       value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
       !value.formula || !value.label || value.label.length > 180 ||
       !["DC", "AC", "NONE"].includes(value.targetType) ||
@@ -612,7 +612,8 @@ Deno.serve(async (req: Request) => {
         item.modifier === parsedFormula.modifier &&
         item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
       const challenge = isRecord(item.challenge) ? item.challenge as unknown as SignedDiceChallenge : null;
-      const challengeMatchesRoll = challenge !== null &&
+      const challengeMatchesRoll = challenge !== null && isRecord(proof.challenge) &&
+        stableSerialize(challenge) === stableSerialize(proof.challenge) &&
         challenge.userId === authData.user.id && challenge.formula === formula &&
         challenge.dc === item.dc && challenge.targetType === item.targetType &&
         challenge.roller === item.roller && challenge.label === item.label &&
