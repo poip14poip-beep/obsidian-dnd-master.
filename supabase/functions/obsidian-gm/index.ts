@@ -1546,6 +1546,68 @@ Deno.serve(async (req: Request) => {
         parsed.rolls = [...pendingPlayerRolls, ...serverRollEntries];
         content = JSON.stringify(parsed);
       }
+      if (isGameTurnRequest && isRecord(parsed)) {
+        const reactions = modelCall.serverRolls.filter((roll) =>
+          roll.kind === "NPC_REACTION" && typeof roll.npcName === "string" &&
+          ["hostile", "indifferent", "friendly"].includes(String(roll.npcAttitude)),
+        );
+        if (reactions.length) {
+          const npcChanges = Array.isArray(parsed.npcChanges)
+            ? parsed.npcChanges.filter(isRecord)
+            : [];
+          for (const reaction of reactions) {
+            const name = reaction.npcName!.trim();
+            const normalizedName = name.normalize("NFKC").toLocaleLowerCase();
+            const existing = npcChanges.find((change) =>
+              typeof change.name === "string" &&
+              change.name.normalize("NFKC").trim().toLocaleLowerCase() === normalizedName,
+            );
+            if (existing) {
+              existing.attitudeToPlayer = reaction.npcAttitude;
+            } else {
+              npcChanges.push({
+                action: "CREATE",
+                name,
+                role: "Незнакомец",
+                goals: "Пока неизвестны",
+                resources: "Пока неизвестны",
+                attitudeToPlayer: reaction.npcAttitude,
+                playerVisible: true,
+                locationName: reaction.npcLocation ?? null,
+                factionName: null,
+                certainty: "UNKNOWN",
+                reason: "Первая реакция определена серверным броском 2d6.",
+                gmProfile: {
+                  biography: "",
+                  appearance: "",
+                  personality: reaction.npcTrait ?? "",
+                  motivation: "",
+                  longTermGoal: "",
+                  secrets: "",
+                  relationships: "",
+                  skillsAndAbilities: "",
+                  combatProfile: {
+                    status: "NOT_REQUIRED",
+                    source: "",
+                    armorClass: null,
+                    hitPointsCurrent: null,
+                    hitPointsMax: null,
+                    speed: "",
+                    attacks: [],
+                    resistances: [],
+                    vulnerabilities: [],
+                    immunities: [],
+                  },
+                },
+                knowledgeAdditions: [],
+                playerKnowledgeAdditions: [],
+              });
+            }
+          }
+          parsed.npcChanges = npcChanges;
+          content = JSON.stringify(parsed);
+        }
+      }
       if (isGameTurnRequest && isRecord(parsed) && modelCall.combatEvents.length > 0) {
         // Only the deterministic tool loop can produce these events: the
         // completed attack and damage rolls were verified against signed
