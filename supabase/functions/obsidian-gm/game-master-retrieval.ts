@@ -677,13 +677,71 @@ export function executeEkdrasilReadTool(
   return { ok: false, error: "Инструмент не разрешён. Доступны только поиск правил и канона." };
 }
 
+export interface ServerCompletedRoll extends JsonRecord {
+  roller: "GM";
+  label: string;
+  formula: string;
+  dc: number | null;
+  targetType: "DC" | "AC" | "NONE";
+  modifier: number;
+  dice: Array<{ value: number; sides: number; kept: boolean }>;
+  total: number;
+  success: boolean | null;
+  result: string;
+  kind: PreparedRoll["kind"];
+}
+
+/** Resolve a GM-owned roll immediately on the server; never expose a pending GM roll to the player UI. */
+export function executePreparedServerRoll(
+  prepared: PreparedRoll,
+  random?: (sides: number) => number,
+): ServerCompletedRoll {
+  if (prepared.roller !== "GM") throw new Error("Игроком управляемый бросок нельзя выполнять на сервере.");
+  const rolled = rollDiceFormula(prepared.formula, random);
+  const keptD20 = rolled.dice.filter((die) => die.sides === 20 && die.kept);
+  const naturalD20 = keptD20.length === 1 ? keptD20[0]!.value : null;
+  let success: boolean | null = null;
+  if (prepared.targetType !== "NONE") {
+    if (prepared.dc === null || !Number.isInteger(prepared.dc)) {
+      throw new Error("Для серверной проверки отсутствует подтверждённая DC/AC.");
+    }
+    success = prepared.kind === "NPC_ATTACK" && naturalD20 !== null
+      ? naturalD20 === 20 || (naturalD20 !== 1 && rolled.total >= prepared.dc)
+      : rolled.total >= prepared.dc;
+  }
+  const diceText = rolled.dice.map((die) =>
+    die.kept ? String(die.value) : `(${die.value})`
+  ).join(" + ");
+  const arithmetic = `${diceText}${rolled.modifier === 0 ? "" : rolled.modifier > 0 ? ` + ${rolled.modifier}` : ` - ${Math.abs(rolled.modifier)}`} = ${rolled.total}`;
+  const outcome = prepared.kind === "NPC_ATTACK"
+    ? naturalD20 === 20 ? " · КРИТИЧЕСКОЕ ПОПАДАНИЕ"
+      : success ? " · ПОПАДАНИЕ" : " · ПРОМАХ"
+    : success === null ? "" : success ? " · УСПЕХ" : " · ПРОВАЛ";
+  return {
+    roller: "GM",
+    label: prepared.label,
+    formula: prepared.formula,
+    dc: prepared.dc,
+    targetType: prepared.targetType,
+    modifier: rolled.modifier,
+    dice: rolled.dice,
+    total: rolled.total,
+    success,
+    result: arithmetic + outcome,
+    kind: prepared.kind,
+  };
+}
+
 export interface RetrievalLoopResult {
   response: Response;
   payload: unknown;
   toolCalls: number;
   exhausted: boolean;
+  /** Only a player-owned pending roll; it must receive a signed challenge. */
   preparedRoll: PreparedRoll | null;
-  /** Read-only tool conversation retained for the post-generation engine boundary. */
+  /** NPC and other GM-owned rolls completed by server RNG during this request. */
+  serverRolls: ServerCompletedRoll[];
+  /** Read-only and deterministic tool conversation retained for the engine boundary. */
   conversation: JsonRecord[];
 }
 
@@ -709,6 +767,8 @@ export async function callWithEkdrasilReadTools(options: {
   const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 6, 6));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedRoll: PreparedRoll | null = null;
+  const serverRolls: ServerCompletedRoll[] = [];
+  const completedRolls = [...(options.completedRolls ?? [])];
   const retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [];
 
   const send = async (body: JsonRecord): Promise<{ response: Response; payload: unknown }> => {
@@ -731,7 +791,7 @@ export async function callWithEkdrasilReadTools(options: {
 
   if (!options.enabled) {
     const result = await send(options.requestBody);
-    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null, conversation: messages };
+    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null, serverRolls, conversation: messages };
   }
 
   let toolCalls = 0;
@@ -747,7 +807,7 @@ export async function callWithEkdrasilReadTools(options: {
     delete toolBody.response_format;
     delete toolBody.structured_outputs;
     const result = await send(toolBody);
-    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, conversation: messages };
+    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
       return { ...result, toolCalls, exhausted: false, preparedRoll, conversation: messages };
     }
@@ -764,10 +824,10 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       const finalResult = await send(finalBody);
-      return { ...finalResult, toolCalls, exhausted: false, preparedRoll, conversation: messages };
+      return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
-      return { ...result, toolCalls, exhausted: true, preparedRoll, conversation: messages };
+      return { ...result, toolCalls, exhausted: true, preparedRoll, serverRolls, conversation: messages };
     }
 
     messages.push(message);
@@ -777,8 +837,8 @@ export async function callWithEkdrasilReadTools(options: {
       const id = typeof call.id === "string" ? call.id : "";
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
-      const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, options.completedRolls ?? [], options.npcProfiles ?? [])
+      let toolResult: JsonRecord = id
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [])
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
@@ -791,9 +851,27 @@ export async function callWithEkdrasilReadTools(options: {
           }
         }
       }
-      if (toolResult && typeof toolResult === "object" && "preparedRoll" in toolResult) {
-        const prepared = (toolResult as JsonRecord).preparedRoll;
-        if (prepared && typeof prepared === "object") preparedRoll = prepared as PreparedRoll;
+      if ("preparedRoll" in toolResult) {
+        const rawPrepared = toolResult.preparedRoll;
+        if (rawPrepared && typeof rawPrepared === "object") {
+          const prepared = rawPrepared as PreparedRoll;
+          if (prepared.roller === "PLAYER") {
+            preparedRoll = prepared;
+          } else if (prepared.roller === "GM") {
+            try {
+              const completed = executePreparedServerRoll(prepared);
+              serverRolls.push(completed);
+              completedRolls.push(completed);
+              toolResult = { ...toolResult, preparedRoll: null, serverRoll: completed };
+            } catch (error) {
+              toolResult = {
+                ok: false,
+                error: error instanceof Error ? error.message : "Серверный бросок NPC не выполнен.",
+                preparedRoll: null,
+              };
+            }
+          }
+        }
       }
       messages.push({
         role: "tool",
