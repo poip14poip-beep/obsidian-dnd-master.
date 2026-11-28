@@ -489,6 +489,27 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(save).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kl1+2" } });
   });
 
+  it("applies exhaustion to attack rolls and poisoned disadvantage to passive checks", () => {
+    const excerpts = [{ text: "Goblin\nArmor Class 15 (leather armor, shield)\nHit Points 7", lines: "120–122" }];
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+      skillBonuses: [{ name: "Восприятие", bonus: 5, basis: "WISDOM + владение" }],
+      conditions: ["Истощение 2"],
+    };
+    const attack = executeEkdrasilReadTool("prepare_player_attack", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", targetAC: 15,
+      advantage: "NONE", reason: "Атаковать гоблина",
+    }), rules, canon, character, false, excerpts);
+    expect(attack).toMatchObject({ ok: true, preparedRoll: { formula: "1d20+1" } });
+
+    character.conditions = ["Отравлен"];
+    const notice = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "perception", dc: 15, advantage: "none", reason: "Заметить засаду",
+    }), rules, canon, character);
+    expect(notice).toMatchObject({ ok: true, notice: { passiveScore: 10, noticed: false } });
+  });
+
   it("automatically fails Strength and Dexterity saves under paralyzed, stunned, petrified or unconscious", () => {
     const character = {
       statsCertainty: "KNOWN",
