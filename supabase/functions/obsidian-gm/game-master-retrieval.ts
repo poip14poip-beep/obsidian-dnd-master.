@@ -398,8 +398,8 @@ function prepareCheckNotice(
     item && typeof item === "object" && typeof (item as JsonRecord).name === "string" &&
     normalizeSkillKey((item as JsonRecord).name as string) === sense,
   ) as JsonRecord | undefined;
-  if (!entry || !Number.isInteger(entry.bonus)) {
-    return { ok: false, error: "Подтверждённый бонус навыка " + sense + " отсутствует в листе. Не подменяй его модификатором характеристики." };
+  if (!entry || !Number.isInteger(entry.bonus) || Number(entry.bonus) < -10 || Number(entry.bonus) > 30) {
+    return { ok: false, error: "Подтверждённый бонус навыка " + sense + " отсутствует или некорректен в листе. Не подменяй его модификатором характеристики." };
   }
   const advantageMap: Record<string, number> = { none: 0, advantage: 5, disadvantage: -5 };
   const advantage = typeof args.advantage === "string" ? advantageMap[args.advantage] : 0;
