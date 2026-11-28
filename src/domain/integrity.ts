@@ -1,7 +1,6 @@
 import type {
   BackupEnvelope,
   CollectionName,
-  CombatDamageEvent,
   GameTurnEntry,
   IntegrityCheckItem,
   IntegrityReport,
