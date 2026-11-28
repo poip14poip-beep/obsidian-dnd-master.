@@ -283,6 +283,39 @@ describe("game master resolver", () => {
     expect(npc.history).toHaveLength(12);
   });
 
+  it("attaches only the server-signed challenge to a prepared pending roll", async () => {
+    const challenge = {
+      userId: "test-user",
+      formula: "1d20+4",
+      dc: 15,
+      targetType: "DC" as const,
+      roller: "PLAYER" as const,
+      label: "Проверка Восприятия",
+      issuedAt: 1_798_000_000_000,
+      nonce: "challenge-pending-test",
+      signature: "Y2hhbGxlbmdl",
+    };
+    const pendingTurn = {
+      ...validTurn,
+      timeDeltaMinutes: 0,
+      rolls: [{
+        roller: "PLAYER" as const,
+        label: challenge.label,
+        formula: challenge.formula,
+        dc: challenge.dc,
+        targetType: challenge.targetType,
+        result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+      }],
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(pendingTurn),
+      rollChallenge: challenge,
+    }), { status: 200 }));
+    const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
+    expect(result.turn.rolls).toHaveLength(1);
+    expect(result.turn.rolls[0].challenge).toEqual(challenge);
+  });
+
   it("passes completed dice as structured records separate from free-form action text", async () => {
     const completedRoll = {
       id: "gm-roll-test",
