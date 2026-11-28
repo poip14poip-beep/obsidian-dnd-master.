@@ -738,6 +738,17 @@ export function executePreparedServerRoll(
   };
 }
 
+export interface CombatDamageEvent {
+  targetType: "PLAYER" | "NPC";
+  targetName: string;
+  damage: number;
+  damageType: string | null;
+  critical: boolean;
+  source: "PLAYER" | "NPC";
+  formula: string;
+  rollLabel: string;
+}
+
 export interface RetrievalLoopResult {
   response: Response;
   payload: unknown;
@@ -747,6 +758,8 @@ export interface RetrievalLoopResult {
   preparedRoll: PreparedRoll | null;
   /** NPC and other GM-owned rolls completed by server RNG during this request. */
   serverRolls: ServerCompletedRoll[];
+  /** Damage events derived only from verified completed attack and damage rolls. */
+  combatEvents: CombatDamageEvent[];
   /** Read-only and deterministic tool conversation retained for the engine boundary. */
   conversation: JsonRecord[];
 }
@@ -776,6 +789,7 @@ export async function callWithEkdrasilReadTools(options: {
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedRoll: PreparedRoll | null = null;
   const serverRolls: ServerCompletedRoll[] = [];
+  const combatEvents: CombatDamageEvent[] = [];
   const completedRolls = [...(options.completedRolls ?? [])];
   const retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [];
 
@@ -799,7 +813,7 @@ export async function callWithEkdrasilReadTools(options: {
 
   if (!options.enabled) {
     const result = await send(options.requestBody);
-    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null, serverRolls, conversation: messages };
+    return { ...result, toolCalls: 0, exhausted: false, preparedRoll: null, serverRolls, combatEvents, conversation: messages };
   }
 
   let toolCalls = 0;
@@ -827,7 +841,7 @@ export async function callWithEkdrasilReadTools(options: {
     delete toolBody.response_format;
     delete toolBody.structured_outputs;
     const result = await send(toolBody);
-    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
+    if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, combatEvents, conversation: messages };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
       return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     }
@@ -846,7 +860,7 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tool_choice;
       let finalResult = await send(finalBody);
       if (!finalResult.response.ok || preparedRoll !== null) {
-        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
+        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, combatEvents, conversation: messages };
       }
 
       const finalRoot = finalResult.payload && typeof finalResult.payload === "object"
@@ -999,7 +1013,7 @@ export async function callWithEkdrasilReadTools(options: {
       return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
-      return { ...result, toolCalls, exhausted: true, preparedRoll, serverRolls, conversation: messages };
+      return { ...result, toolCalls, exhausted: true, preparedRoll, serverRolls, combatEvents, conversation: messages };
     }
 
     messages.push(message);
@@ -1028,6 +1042,38 @@ export async function callWithEkdrasilReadTools(options: {
               retrievedRuleExcerpts.push({ text: excerpt.text, lines: excerpt.lines });
             }
           }
+        }
+      }
+      if (toolResult.ok === true && toolResult.hit === true &&
+          toolResult.damageResolution && typeof toolResult.damageResolution === "object") {
+        const damage = toolResult.damageResolution as JsonRecord;
+        const damageTotal = damage.total;
+        const damageFormula = damage.formula;
+        const isPlayerAttack = name === "prepare_player_damage";
+        const isNpcAttack = name === "prepare_npc_damage";
+        const targetName = isPlayerAttack && typeof toolResult.target === "string"
+          ? toolResult.target
+          : isNpcAttack ? "PLAYER" : "";
+        if ((isPlayerAttack || isNpcAttack) && targetName &&
+            Number.isInteger(damageTotal) && (damageTotal as number) >= 0 &&
+            typeof damageFormula === "string" && parseDiceFormula(damageFormula)) {
+          const attackResolution = toolResult.attackResolution && typeof toolResult.attackResolution === "object"
+            ? toolResult.attackResolution as JsonRecord : {};
+          const event: CombatDamageEvent = {
+            targetType: isPlayerAttack ? "NPC" : "PLAYER",
+            targetName,
+            damage: damageTotal as number,
+            damageType: typeof toolResult.damageType === "string" ? toolResult.damageType : null,
+            critical: attackResolution.critical === true,
+            source: isPlayerAttack ? "PLAYER" : "NPC",
+            formula: damageFormula,
+            rollLabel: isPlayerAttack ? "Урон " + String(toolResult.weapon ?? "") : String(toolResult.damageLabel ?? ""),
+          };
+          const duplicate = combatEvents.some((item) =>
+            item.targetType === event.targetType && item.targetName === event.targetName &&
+            item.source === event.source && item.formula === event.formula && item.damage === event.damage
+          );
+          if (!duplicate) combatEvents.push(event);
         }
       }
       if ("preparedRoll" in toolResult) {
