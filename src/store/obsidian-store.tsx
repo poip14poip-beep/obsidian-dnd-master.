@@ -13,6 +13,7 @@ import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calenda
 import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
   applyHitPointDelta,
+  applyNpcHitPointDamage,
   buildBackupEnvelope,
   computeChecksum,
   runIntegrityAudit,
@@ -1429,6 +1430,45 @@ export function ObsidianStoreProvider({
         }
       }
 
+      // Apply only server-derived damage events to tracked NPC combat HP.
+      for (const event of activeDraft.combatEvents ?? []) {
+        if (event.targetType !== "NPC") continue;
+        const npcIndex = nextNpcs.findIndex((npc) =>
+          npc.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
+        );
+        if (npcIndex < 0) {
+          return { ok: false, error: `Цель «${event.targetName}» не найдена в реестре NPC. Урон не сохранён.`, report: lastIntegrityReport };
+        }
+        const npc = nextNpcs[npcIndex]!;
+        const profile = npc.gmProfile;
+        const combat = profile?.combatProfile;
+        if (!profile || !combat || combat.status !== "SRD_VERIFIED") {
+          return { ok: false, error: `У NPC «${event.targetName}» нет подтверждённого боевого профиля. Урон не сохранён.`, report: lastIntegrityReport };
+        }
+        const damage = applyNpcHitPointDamage(
+          combat.hitPointsCurrent, combat.hitPointsMax, event.damage, event.damageType,
+          combat.resistances, combat.vulnerabilities, combat.immunities,
+        );
+        if (damage.error || damage.hpCurrent === null) {
+          return { ok: false, error: damage.error ?? "Не удалось применить урон NPC.", report: lastIntegrityReport };
+        }
+        nextNpcs[npcIndex] = {
+          ...npc,
+          gmProfile: {
+            ...profile,
+            combatProfile: { ...combat, hitPointsCurrent: damage.hpCurrent },
+          },
+          version: npc.version + 1,
+          history: [...npc.history, {
+            version: npc.version,
+            changedAt: now,
+            inGameDate: nextDate,
+            summary: `Боевые HP: ${combat.hitPointsCurrent} → ${damage.hpCurrent} (урон ${damage.appliedDamage})`,
+            reason: `Подтверждённый бросок: ${event.rollLabel} / ${event.formula}`,
+          }],
+        };
+      }
+
       const nextFacts =
         activeDraft.newFactTitle.trim() && activeDraft.newFactStatement.trim()
           ? [
@@ -1572,6 +1612,7 @@ export function ObsidianStoreProvider({
         questChanges: activeDraft.questChanges ?? [],
         characterChanges,
         npcChanges: activeDraft.npcChanges ?? [],
+        combatEvents: activeDraft.combatEvents ?? [],
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,
