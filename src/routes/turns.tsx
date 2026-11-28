@@ -381,11 +381,28 @@ function TurnsPage() {
               <div className="space-y-1 rounded border border-border p-3">
                 <p className="text-xs font-semibold">Проверки и броски</p>
                 {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
+                {completedRolls.map((roll) => <p key={roll.id} className="mono-code text-xs text-status-verified">Сохранённый бросок: {roll.label} · {roll.result}</p>)}
                 {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
-                  <p className="text-xs text-status-approx">Бросок выполняется защищённым сервером по подписанному заданию мастера. Результат нельзя ввести вручную или подменить.</p>
-                  <Button type="button" className="touch-target w-full" disabled={pendingRollBusy || gmBusy} onClick={handleRollPendingCheck}>
-                    <Dices className="mr-2 h-4 w-4" /> {pendingRollBusy ? "Кубик бросается…" : "Бросить кубик и продолжить"}
-                  </Button>
+                  {(() => {
+                    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+                    const alreadyRolled = pending && completedRolls.some((item) => item.label === pending.label && item.formula === pending.formula);
+                    return alreadyRolled ? (
+                      <>
+                        <p className="text-xs text-status-verified">Результат уже сохранён на сервере. Можно безопасно продолжить то же действие.</p>
+                        <Button type="button" className="touch-target w-full" disabled={gmBusy}
+                          onClick={() => void handleResolveAction(playerAction, completedRolls)}>
+                          Продолжить сохранённое действие
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-status-approx">Бросок выполняется защищённым сервером по подписанному заданию мастера. Результат нельзя ввести вручную или подменить.</p>
+                        <Button type="button" className="touch-target w-full" disabled={pendingRollBusy || gmBusy} onClick={handleRollPendingCheck}>
+                          <Dices className="mr-2 h-4 w-4" /> {pendingRollBusy ? "Кубик бросается…" : "Бросить кубик и продолжить"}
+                        </Button>
+                      </>
+                    );
+                  })()}
                 </div>}
               </div>
             )}
