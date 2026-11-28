@@ -56,9 +56,9 @@ describe("Obsidian GM model routing", () => {
   });
 
   it("bounds the two game-turn provider attempts to the mobile request window", () => {
-    expect(gameTurnAttemptTimeoutMs(0)).toBe(60_000);
-    expect(gameTurnAttemptTimeoutMs(1)).toBe(42_000);
-    expect(gameTurnAttemptTimeoutMs(2)).toBe(42_000);
+    expect(gameTurnAttemptTimeoutMs(0)).toBe(35_000);
+    expect(gameTurnAttemptTimeoutMs(1)).toBe(20_000);
+    expect(gameTurnAttemptTimeoutMs(2)).toBe(20_000);
   });
 });
 
