@@ -319,6 +319,26 @@ function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
   }
   return String(value);
 }
+
+/** Keep the structured character sheet intact while bounding the free-form
+ * dossier repeated on every game turn. Preserve the beginning and ending. */
+function compactGameTurnInput(inputText: string): string {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || typeof parsed.playerDossier !== "string") return inputText;
+    const dossier = parsed.playerDossier;
+    const maxChars = 14_000;
+    if (dossier.length <= maxChars) return inputText;
+    const headChars = 10_000;
+    const tailChars = maxChars - headChars;
+    parsed.playerDossier = dossier.slice(0, headChars) +
+      "\\n\\n[СРЕДНЯЯ ЧАСТЬ ДЛИННОГО ДОСЬЕ СОКРАЩЕНА; ПОЛНЫЙ ИСТОЧНИК СОХРАНЁН В БАЗЕ]\\n\\n" +
+      dossier.slice(-tailChars);
+    return JSON.stringify(parsed);
+  } catch {
+    return inputText;
+  }
+}
 function validateSchema(value: unknown, schema: JsonRecord): boolean {
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
   const type = schema.type;
@@ -1092,23 +1112,19 @@ Deno.serve(async (req: Request) => {
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const isGameTurnRequest = requestBody.operation === "GAME_TURN";
-  const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
+  const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|стрел|выстрел|бой|урон|ранен|смерт|спасброс|заклин|оруж|лук|меч|щит|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
-  const requestedModelOrder: GameMasterModelId[] = isGameTurnRequest
-    // DeepSeek and Gemini have already reviewed canon/state and rules/character;
-    // Claude performs the first synthesis pass, with the other providers as fallbacks.
-    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"]
-    : selectGameMasterModelOrder({
-      isCompatibilityRequest,
-      isStoryRequest,
-      isIdentityRequest,
-      isBiographyRequest,
-      highImpactTurn,
-      isGameTurnRequest,
-    });
+  const requestedModelOrder: GameMasterModelId[] = selectGameMasterModelOrder({
+    isCompatibilityRequest,
+    isStoryRequest,
+    isIdentityRequest,
+    isBiographyRequest,
+    highImpactTurn,
+    isGameTurnRequest,
+  });
   const orderedModelAttempts = requestedModelOrder.map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
     .filter((attempt): attempt is ModelAttempt => Boolean(attempt));
   const characterGuideContext = isCharacterGeneration
@@ -1170,9 +1186,10 @@ Deno.serve(async (req: Request) => {
       "Не создавай новые города, страны, организации, исторические события или NPC. Сведения о происхождении должны соответствовать переданным подтверждённым данным.",
     ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
+  const modelInputText = isGameTurnRequest ? compactGameTurnInput(inputText) : inputText;
   const messages = [
     { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
-    { role: "user", content: inputText },
+    { role: "user", content: modelInputText },
   ];
 
   const isOpeningGameTurn = (() => {
@@ -1182,7 +1199,9 @@ Deno.serve(async (req: Request) => {
       return isRecord(parsed) && parsed.mode === "OPENING";
     } catch { return false; }
   })();
-  if (isGameTurnRequest && !isOpeningGameTurn) {
+  // Extra specialist calls are reserved for consequential actions. Routine
+  // narration uses the coordinator directly to reduce cost and latency.
+  if (isGameTurnRequest && !isOpeningGameTurn && highImpactTurn) {
     let compactCampaignInput = inputText;
     try { compactCampaignInput = JSON.stringify(compactAuditValue(JSON.parse(inputText))); }
     catch { compactCampaignInput = inputText.slice(0, 36_000); }
@@ -1220,7 +1239,7 @@ Deno.serve(async (req: Request) => {
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
       const attemptStartedAt = Date.now();
-      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
+      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: modelInputText.length, dossierCompacted: modelInputText.length < inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
       const requestHeaders = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
