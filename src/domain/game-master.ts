@@ -519,13 +519,21 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         !roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
     }
-    if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
-        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      throw new GameMasterError("Мастер попытался подставить результат броска или не указал, кто бросает. Число должен генерировать игрок или защищённый сервер согласно владельцу броска.", "GM_INVENTED_DICE_RESULT");
+    if (roll["roller"] === "PLAYER" && roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      throw new GameMasterError("Результат броска главного героя должен быть получен через экранный кубик, а не сгенерирован мастером.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (roll["roller"] === "GM" &&
+        (typeof roll["result"] !== "string" || !/^СЕРВЕРНЫЙ БРОСОК: -?\\d+/.test(roll["result"]))) {
+      throw new GameMasterError("Результат броска NPC должен быть сформирован защищённым сервером.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (!["PLAYER", "GM"].includes(String(roll["roller"]))) {
+      throw new GameMasterError("Не указан владелец броска.", "GM_INVENTED_DICE_RESULT");
     }
   }
   const rolls = turn["rolls"] as Array<Record<string, unknown>>;
-  const hasPendingRoll = rolls.length > 0;
+  const hasPendingRoll = rolls.some((roll) =>
+    roll["roller"] === "PLAYER" && roll["result"] === "ОЖИДАЕТСЯ БРОСОК ИГРОКА"
+  );
   if (rolls.length > 1) throw new GameMasterError("Для надёжного разрешения мастер запрашивает только один бросок за раз.", "MULTIPLE_PENDING_ROLLS");
   if (turn["needsClarification"] && !(turn["clarificationQuestion"] as string).trim()) {
     throw new GameMasterError("Мастер отметил необходимость уточнения, но не задал вопрос.", "MISSING_CLARIFICATION_QUESTION");
