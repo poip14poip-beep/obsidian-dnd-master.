@@ -523,7 +523,7 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
       throw new GameMasterError("Результат броска главного героя должен быть получен через экранный кубик, а не сгенерирован мастером.", "GM_INVENTED_DICE_RESULT");
     }
     if (roll["roller"] === "GM" &&
-        (typeof roll["result"] !== "string" || !/^СЕРВЕРНЫЙ БРОСОК: -?\\d+/.test(roll["result"]))) {
+        (typeof roll["result"] !== "string" || !/^СЕРВЕРНЫЙ БРОСОК: -?\d+/.test(roll["result"]))) {
       throw new GameMasterError("Результат броска NPC должен быть сформирован защищённым сервером.", "GM_INVENTED_DICE_RESULT");
     }
     if (!["PLAYER", "GM"].includes(String(roll["roller"]))) {
