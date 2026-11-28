@@ -1107,7 +1107,7 @@ function prepareNpcDamage(
       reason,
     },
     damageLabel,
-    damageType: /\\)\\s*([a-z]+)\\s+damage/i.exec(sourceExcerpt.text)?.[1] ?? null,
+    damageType: /\)\s*([a-z]+)\s+damage/i.exec(sourceExcerpt.text)?.[1] ?? null,
     damageTarget: "PLAYER",
     damageSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
     critical,
