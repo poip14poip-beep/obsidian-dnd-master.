@@ -330,6 +330,65 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("recovers a pending non-combat check through an engine-selected tool, without parsing its label", async () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Perception", bonus: 5, basis: "WISDOM + владение" }],
+      conditions: [],
+    };
+    const pendingTurn = {
+      narration: "Ты прислушиваешься к шуму за дверью.",
+      rolls: [{
+        roller: "PLAYER", label: "Проверка Мудрости (Восприятие)",
+        formula: "1d20+5", dc: 13, targetType: "DC",
+        result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+      }],
+    };
+    const noTool = { choices: [{ message: { role: "assistant", content: "Нужна проверка." } }] };
+    const finalPending = { choices: [{ message: { role: "assistant", content: JSON.stringify(pendingTurn) } }] };
+    const prepare = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "prepare-check", type: "function",
+        function: { name: "prepare_player_check", arguments: JSON.stringify({
+          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 13,
+          advantage: "NONE", reason: "Прислушаться к шуму за дверью",
+        }) },
+      }] } }],
+    };
+    const preparedFinal = { choices: [{ message: { role: "assistant", content: JSON.stringify(pendingTurn) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(finalPending), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(prepare), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(preparedFinal), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true, rules, canon, playerCharacter: character,
+    });
+    expect(result.preparedRoll).toMatchObject({
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      dc: 13, targetType: "DC", modifier: 5, kind: "SKILL_CHECK",
+    });
+    const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
+    expect(retryRequest.tool_choice).toBe("required");
+    expect(retryRequest.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_check" }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_attack" }) }),
+    ]));
+    const finalPayload = result.payload as { choices: Array<{ message: { content: string } }> };
+    const synchronized = JSON.parse(finalPayload.choices[0]!.message.content);
+    expect(synchronized.rolls[0]).toMatchObject({
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      dc: 13, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+    });
+  });
+
   it("refuses to prepare an attack against an unverified AC", () => {
     const character = {
       statsCertainty: "KNOWN",
