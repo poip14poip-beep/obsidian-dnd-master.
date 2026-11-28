@@ -56,6 +56,6 @@ describe("deterministic rest mechanics", () => {
   it("does not invent HP or recover resources with unknown values", () => {
     const result = calculateRest(character({ hpCurrent: null, hpMax: null }), "LONG");
     expect(result.hpCurrent).toBeNull();
-    expect(result.warnings).toContain("HP не восстановлены: текущие или максимальные HP не подтверждены.");
+    expect(result.warnings).toContain("HP не восстановлены: максимальные HP не подтверждены.");
   });
 });
