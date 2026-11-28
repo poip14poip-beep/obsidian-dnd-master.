@@ -175,3 +175,13 @@ The v94 deployment is an integration milestone, not final acceptance of the comp
 - CI on `cloud-api-client` commit `35397c0bce666e9c2a1b471298c66fa30911548e`: SUCCESS — 235 tests passed, TypeScript check passed, production build passed.
 - Supabase static-host publication completed successfully (workflow run `46186368623`). GitHub Pages deployment completed successfully (workflow run `46186368617`).
 - **Not yet accepted:** Android end-to-end test in a live campaign. Rest interruptions, food/water requirements, multiclass hit-die selection, and old-save Hit Dice reconciliation remain follow-up tasks. Supabase `obsidian-gm` function was not redeployed because this slice changes the app-side state/store, not the Edge Function.
+
+## Condition-aware travel — 2026-11-28, v96
+
+- The existing travel tool now receives the confirmed player-condition state before calculating movement.
+- Travel is rejected while Grappled, Restrained, Paralyzed, Petrified, Stunned, or Unconscious; the engine does not advance time for blocked movement.
+- Prone characters can still crawl, but calculated travel speed and distance are halved.
+- Regression tests cover blocked travel and prone movement. CI on `cloud-api-client` commit `c3be43dfac497e2d55ac6347dc5c13c45abd4cb9`: SUCCESS — 235 tests, TypeScript check, and production build all passed.
+- Supabase Edge Function `obsidian-gm` deployed as **version 96**, ACTIVE, JWT verification enabled. The deployment includes the condition-aware travel calculation.
+- Supabase static-host publication and GitHub Pages deployment completed successfully (workflow runs `46186507009` and `46186506971`).
+- Android live-campaign acceptance remains pending. Condition-aware travel is a first contextual slice; fear-source rules, sight/hearing-dependent checks, prone attack-distance rules, and condition expiry still need implementation.
