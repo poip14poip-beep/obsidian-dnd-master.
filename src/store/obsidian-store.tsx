@@ -1396,11 +1396,11 @@ export function ObsidianStoreProvider({
           ? collections.factions.find((faction) => faction.name.toLocaleLowerCase() === change.factionName!.toLocaleLowerCase())?.id ?? null
           : null;
         const knowledge = change.knowledgeAdditions.map((entry) => ({
-          id: makeId("know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
+          id: makeId("know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
           acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
         }));
         const playerKnowledge = change.playerKnowledgeAdditions.map((entry) => ({
-          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
+          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
           acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
         }));
         if (change.action === "CREATE") {
