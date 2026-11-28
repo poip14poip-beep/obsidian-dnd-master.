@@ -15,7 +15,7 @@ describe("engine boundary narration guard", () => {
   it("pairs assistant tool calls with their exact tool results", () => {
     const exchanges = collectExchanges(toolConversation("pc_attack", { hit: false, target: "Гоблин" }));
     expect(exchanges).toHaveLength(1);
-    expect(exchanges[0]).toMatchObject({ name: "pc_attack", result: { hit: false, target: "Goblin" } });
+    expect(exchanges[0]).toMatchObject({ name: "pc_attack", result: { hit: false, target: "Гоблин" } });
   });
 
   it("rejects narration that turns a server-reported miss into a hit", () => {
