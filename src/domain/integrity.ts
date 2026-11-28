@@ -11,6 +11,40 @@ import type {
   WorldState,
 } from "./types";
 
+export interface HitPointDeltaResult {
+  hpCurrent: number | null;
+  hpTemp: number | null;
+  error: string | null;
+}
+
+/**
+ * Applies signed HP changes using D&D 2024 hit-point rules:
+ * damage consumes temporary HP first; healing never restores temporary HP
+ * and cannot raise current HP above its maximum.
+ */
+export function applyHitPointDelta(
+  hpCurrent: number | null,
+  hpMax: number | null,
+  hpTemp: number | null,
+  delta: number,
+): HitPointDeltaResult {
+  if (!Number.isInteger(delta)) return { hpCurrent, hpTemp, error: "Изменение HP должно быть целым числом." };
+  if (delta === 0) return { hpCurrent, hpTemp, error: null };
+  if (hpCurrent === null) return { hpCurrent, hpTemp, error: "Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа." };
+  if (hpMax !== null && (!Number.isInteger(hpMax) || hpMax < 0)) return { hpCurrent, hpTemp, error: "Максимум HP не подтверждён." };
+  const temporary = Math.max(0, hpTemp ?? 0);
+  if (delta < 0) {
+    const damage = -delta;
+    const absorbed = Math.min(temporary, damage);
+    const remainingDamage = damage - absorbed;
+    const nextCurrent = hpCurrent - remainingDamage;
+    if (nextCurrent < 0) return { hpCurrent, hpTemp, error: "Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP)." };
+    return { hpCurrent: nextCurrent, hpTemp: hpTemp === null ? null : temporary - absorbed, error: null };
+  }
+  const healed = hpMax === null ? hpCurrent + delta : Math.min(hpMax, hpCurrent + delta);
+  return { hpCurrent: healed, hpTemp, error: null };
+}
+
 export const COLLECTION_NAMES: ReadonlyArray<CollectionName> = [
   "sources",
   "canon_facts",
@@ -125,14 +159,8 @@ export function validateTurnDraft(
   if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {
     errors.push("Изменение игрового времени не может быть отрицательным.");
   }
-  if (draft.hpDelta !== 0 && character.hpCurrent === null) {
-    errors.push("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа.");
-  } else if (draft.hpDelta !== 0 && character.hpCurrent !== null && character.hpCurrent + draft.hpDelta < 0) {
-    errors.push("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
-  } else if (draft.hpDelta > 0 && character.hpCurrent !== null && character.hpMax !== null &&
-    character.hpCurrent + draft.hpDelta > character.hpMax) {
-    errors.push("Итоговые HP не могут превышать максимум персонажа.");
-  }
+  const hpChange = applyHitPointDelta(character.hpCurrent, character.hpMax, character.hpTemp, draft.hpDelta);
+  if (hpChange.error) errors.push(hpChange.error);
   for (const change of draft.npcChanges ?? []) {
     const existing = collectionsNpcs.find((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
     if (change.action === "CREATE" && existing) errors.push(`NPC «${change.name}» уже существует; нельзя создать дубликат.`);
