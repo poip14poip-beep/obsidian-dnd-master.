@@ -109,10 +109,11 @@ async function verifyDiceProof(value: {
   );
 }
 
-async function consumeDiceNonce(userId: string, nonce: string, issuedAt: number): Promise<boolean> {
+async function consumeDiceNonces(userId: string, proofs: Array<{ nonce: string; issuedAt: number }>): Promise<boolean> {
+  if (proofs.length === 0) return true;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return false;
   try {
-    const response = await fetch(`${SUPABASE_URL.replace(/\\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonce`, {
+    const response = await fetch(`${SUPABASE_URL.replace(/\\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonces`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -121,8 +122,8 @@ async function consumeDiceNonce(userId: string, nonce: string, issuedAt: number)
       },
       body: JSON.stringify({
         p_user_id: userId,
-        p_nonce: nonce,
-        p_expires_at: new Date(issuedAt + 120_000).toISOString(),
+        p_nonces: proofs.map((proof) => proof.nonce),
+        p_expires_at: proofs.map((proof) => new Date(proof.issuedAt + 120_000).toISOString()),
       }),
       signal: AbortSignal.timeout(5_000),
     });
@@ -572,6 +573,7 @@ Deno.serve(async (req: Request) => {
     if (completedRolls.length > 5) {
       return json({ error: { code: "TOO_MANY_COMPLETED_ROLLS", message: "За один ход можно передать не более пяти результатов бросков." } }, 400, cors);
     }
+    const nonceProofs: Array<{ nonce: string; issuedAt: number }> = [];
     for (const item of completedRolls) {
       if (!isRecord(item) || typeof item.formula !== "string" || !Array.isArray(item.dice) ||
           !Number.isInteger(item.modifier) || !Number.isInteger(item.total) || !isRecord(item.proof)) {
@@ -598,10 +600,11 @@ Deno.serve(async (req: Request) => {
       if (!arithmeticValid || !proofValid) {
         return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
       }
-      const nonceConsumed = await consumeDiceNonce(proof.userId as string, proof.nonce as string, proof.issuedAt as number);
-      if (!nonceConsumed) {
-        return json({ error: { code: "DICE_PROOF_REPLAY_OR_STORAGE_FAILURE", message: "Этот результат уже использован или сервер не смог подтвердить его одноразовость. Выполни бросок заново." } }, 409, cors);
-      }
+      nonceProofs.push({ nonce: proof.nonce as string, issuedAt: proof.issuedAt as number });
+    }
+    const nonceBatchConsumed = await consumeDiceNonces(authData.user.id, nonceProofs);
+    if (!nonceBatchConsumed) {
+      return json({ error: { code: "DICE_PROOF_REPLAY_OR_STORAGE_FAILURE", message: "Один из результатов уже использован или сервер не смог подтвердить одноразовость пакета. Выполни броски заново." } }, 409, cors);
     }
   }
   const instructionText = requestBody.instructions as string;
