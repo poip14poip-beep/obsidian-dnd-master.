@@ -50,6 +50,57 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     })]));
   });
 
+  it("resolves passive notice without asking the player to roll", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      skillBonuses: [
+        { name: "Perception", bonus: 5, basis: "WISDOM + владение" },
+        { name: "Insight", bonus: 3, basis: "WISDOM" },
+        { name: "Investigation", bonus: 2, basis: "INTELLIGENCE" },
+      ],
+      conditions: ["Exhaustion 1"],
+    };
+    const result = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "perception", difficulty: "moderate", advantage: "none",
+      reason: "Скрытый наблюдатель следит за героем из окна",
+    }), rules, canon, character);
+    expect(result).toMatchObject({
+      ok: true,
+      notice: {
+        sense: "perception", skill: "Восприятие", dc: 15,
+        passiveScore: 13, noticed: false, margin: -2, result: "НЕ ОБНАРУЖЕНО",
+      },
+    });
+    expect(result.preparedRoll).toBeUndefined();
+    const advantage = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "insight", dc: 18, advantage: "advantage",
+      reason: "Проверить, искренен ли собеседник",
+    }), rules, canon, character);
+    expect(advantage).toMatchObject({
+      ok: true,
+      notice: { passiveScore: 16, noticed: false },
+    });
+    const investigation = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "investigation", dc: 10, reason: "Замеченный скрытый механизм",
+    }), rules, canon, character);
+    expect(investigation).toMatchObject({
+      ok: true,
+      notice: { passiveScore: 10, noticed: true, result: "ОБНАРУЖЕНО" },
+    });
+  });
+
+  it("refuses passive notice when the selected skill bonus is unknown", () => {
+    const result = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "perception", dc: 12, reason: "Проверить скрытую ловушку",
+    }), rules, canon, {
+      statsCertainty: "KNOWN",
+      skillBonuses: [{ name: "Stealth", bonus: 4, basis: "DEXTERITY + владение" }],
+      conditions: [],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Подтверждённый бонус навыка");
+  });
+
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
     const character = {
       statsCertainty: "KNOWN",
