@@ -915,6 +915,8 @@ export async function callWithEkdrasilReadTools(options: {
                 pendingRoll.formula = preparedRoll.formula;
                 pendingRoll.dc = preparedRoll.dc;
                 pendingRoll.targetType = preparedRoll.targetType;
+                // Keep the returned structured payload in sync with the server-prepared roll.
+                finalMessage.content = JSON.stringify(parsedFinal);
                 console.warn("[obsidian-gm] generic passerby attack prepared from verified SRD Commoner AC", {
                   weapon, target, targetAC: 10,
                 });
