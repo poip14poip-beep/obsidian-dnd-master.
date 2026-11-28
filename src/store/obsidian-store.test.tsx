@@ -75,6 +75,52 @@ async function renderCampaignStore(storage: StorageLike) {
   return hook;
 }
 
+describe("rest state persistence", () => {
+  it("initializes confirmed Hit Dice when a dossier import updates die size and class level", async () => {
+    const storage = createMemoryStorage();
+    const initial = createInitialCollections();
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+    act(() => {
+      result.current.updatePlayerCharacter({ hitDice: "1d10", classLevel: 3 });
+    });
+    expect(result.current.character.hitDicePool).toEqual([{ die: "d10", current: 3, maximum: 3 }]);
+  });
+
+  it("commits a long rest atomically with HP, resources, exhaustion, hit dice and Ekdrasil time", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.world_state.calendarSystem = "Календарь Экдрасиля 2.4";
+    initial.world_state.startInGameDate = "1 Вейра, 0 год · 08:00 · Календарь Экдрасиля 2.4";
+    initial.world_state.currentInGameDate = initial.world_state.startInGameDate;
+    initial.world_state.elapsedMinutes = 0;
+    initial.player_character_state.hpCurrent = 8;
+    initial.player_character_state.hpMax = 20;
+    initial.player_character_state.conditions = ["Истощение 2"];
+    initial.player_character_state.hitDice = "1d10";
+    initial.player_character_state.classLevel = 3;
+    initial.player_character_state.hitDicePool = [{ die: "d10", current: 2, maximum: 3 }];
+    initial.player_character_state.resources = [
+      { id: "wind", name: "Второе дыхание", current: 0, max: 3, recovery: "Short/Long Rest", certainty: "KNOWN" },
+    ];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    let restResult: ReturnType<typeof result.current.takeRest>;
+    act(() => { restResult = result.current.takeRest("LONG"); });
+
+    expect(restResult!.ok).toBe(true);
+    expect(result.current.character.hpCurrent).toBe(20);
+    expect(result.current.character.conditions).toEqual([]);
+    expect(result.current.character.resources[0]?.current).toBe(3);
+    expect(result.current.character.hitDicePool).toEqual([{ die: "d10", current: 3, maximum: 3 }]);
+    expect(result.current.worldState.elapsedMinutes).toBe(480);
+    expect(result.current.worldState.currentInGameDate).toContain("16:00");
+    expect(result.current.auditLog.entries.at(-1)?.action).toBe("REST_TAKEN");
+  });
+});
+
 describe("source visibility and campaign separation", () => {
   it("keeps the master prompt and rules out of player-visible sources and uses a neutral character dossier", () => {
     const initial = createInitialCollections();
