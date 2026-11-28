@@ -144,7 +144,7 @@ export interface PreparedRoll {
   dc: number | null;
   targetType: "DC" | "AC" | "NONE";
   modifier: number;
-  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "NPC_ATTACK" | "NPC_DAMAGE";
+  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "PLAYER_DAMAGE" | "NPC_ATTACK" | "NPC_DAMAGE";
   reason: string;
 }
 
