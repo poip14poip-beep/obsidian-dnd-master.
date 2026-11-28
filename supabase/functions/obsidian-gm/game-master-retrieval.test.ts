@@ -362,4 +362,89 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("resolves a natural 20 as a critical hit and prepares doubled player damage dice", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const completedRolls = [{
+      roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+5",
+      targetType: "AC", dc: 18, total: 6, success: false,
+      dice: [{ sides: 20, value: 20, kept: true }],
+    }];
+    const result = executeEkdrasilReadTool("prepare_player_damage", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", reason: "Разрешить попадание мечом",
+    }), rules, canon, character, false, [], completedRolls);
+    expect(result).toMatchObject({
+      ok: true,
+      attackResolution: { hit: true, critical: true, outcome: "CRITICAL_HIT", targetAC: 18 },
+      preparedRoll: { roller: "PLAYER", label: "Урон Longsword по Goblin", formula: "2d8+3", targetType: "NONE", dc: null },
+    });
+  });
+
+  it("does not prepare player damage after a natural 1 even when the total meets AC", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 20, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const completedRolls = [{
+      roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+20",
+      targetType: "AC", dc: 15, total: 21, success: true,
+      dice: [{ sides: 20, value: 1, kept: true }],
+    }];
+    const result = executeEkdrasilReadTool("prepare_player_damage", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", reason: "Разрешить атаку",
+    }), rules, canon, character, false, [], completedRolls);
+    expect(result).toMatchObject({
+      ok: true,
+      attackResolution: { hit: false, critical: false, outcome: "MISS" },
+      preparedRoll: null,
+    });
+  });
+
+  it("passes verified completed rolls through the tool loop so NPC damage is unlocked only after a hit", async () => {
+    const completedRolls = [{
+      roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+4",
+      targetType: "AC", dc: 15, total: 20, success: true,
+      dice: [{ sides: 20, value: 16, kept: true }],
+    }];
+    const first = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "damage-1", type: "function",
+        function: { name: "prepare_npc_damage", arguments: JSON.stringify({
+          creatureName: "Goblin", attackName: "Bite", reason: "Разрешить урон укуса",
+        }) },
+      }] } }],
+    };
+    const second = { choices: [{ message: { role: "assistant", content: "Урон подготовлен." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(second), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules: {
+        ...rules,
+        content: "# Goblin\\n\\nGoblin\\nBite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.\\n",
+      },
+      canon,
+      completedRolls,
+    });
+    expect(result.preparedRoll).toMatchObject({
+      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", kind: "NPC_DAMAGE",
+    });
+    const toolRequest = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body ?? "{}"));
+    const toolMessage = toolRequest.messages.find((message: { role: string; content?: string }) => message.role === "tool");
+    expect(JSON.parse(toolMessage.content)).toMatchObject({
+      ok: true,
+      attackResolution: { hit: true, outcome: "HIT" },
+    });
+  });
+
+
 });
