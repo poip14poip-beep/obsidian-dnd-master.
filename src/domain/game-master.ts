@@ -100,7 +100,7 @@ export async function rollDiceAtServer(
       !("signature" in payload.proof) || typeof payload.proof.signature !== "string") {
     throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
   }
-  const result = payload as DiceRollResult & { formula?: unknown; proof: { userId: string; issuedAt: number; nonce: string; signature: string } };
+  const result = payload as DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string } };
   const parsed = parseDiceFormula(formula)!;
   let offset = 0;
   let diceMatch = result.dice.length === parsed.totalDice &&
