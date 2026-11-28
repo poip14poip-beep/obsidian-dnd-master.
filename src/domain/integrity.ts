@@ -209,6 +209,11 @@ export function validateTurnDraft(
     if (change.action === "CREATE" && existing) errors.push(`NPC «${change.name}» уже существует; нельзя создать дубликат.`);
     if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить NPC «${change.name}»: он отсутствует в реестре.`);
     if (change.action === "UPDATE" && existing?.locked) errors.push(`NPC «${change.name}» заблокирован; сначала разблокируйте карточку вручную.`);
+    if (existing?.gmProfile?.combatProfile.status === "SRD_VERIFIED" &&
+        change.gmProfile?.combatProfile &&
+        JSON.stringify(change.gmProfile.combatProfile) !== JSON.stringify(existing.gmProfile.combatProfile)) {
+      errors.push(`Подтверждённый боевой профиль NPC «${change.name}» нельзя переписывать ответом мастера. HP и параметры боя меняются только через проверенные боевые события.`);
+    }
     if (!change.name.trim() || !change.role.trim() || !change.goals.trim() || !change.reason.trim()) errors.push("Изменение NPC требует имени, роли, целей и причины.");
     if (change.gmProfile) {
       const profile = change.gmProfile;
@@ -249,10 +254,7 @@ export function validateTurnDraft(
       const existing = collectionsNpcs.find((npc) =>
         npc.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
       );
-      const pendingChange = (draft.npcChanges ?? []).find((change) =>
-        change.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
-      );
-      const profile = pendingChange?.gmProfile ?? existing?.gmProfile;
+      const profile = existing?.gmProfile;
       const combat = profile?.combatProfile;
       if (!combat || combat.status !== "SRD_VERIFIED") {
         errors.push(`Нельзя применить урон к NPC «${event.targetName}»: отсутствует подтверждённый боевой профиль SRD.`);
