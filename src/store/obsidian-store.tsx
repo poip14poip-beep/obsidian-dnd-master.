@@ -44,7 +44,6 @@ import type {
   FactionRecord,
   GameTurnEntry,
   IntegrityReport,
-  HitDicePool,
   InventoryItem,
   LocationRecord,
   NpcKnowledgeEntry,
@@ -977,6 +976,9 @@ export function ObsidianStoreProvider({
       for (const entry of pool ?? []) {
         const count = Math.min(entry.current, remaining);
         const sides = Number(entry.die.replace(/^d/i, ""));
+        if (![4, 6, 8, 10, 12].includes(sides)) {
+          return { ok: false, error: `Тип кости хитов «${entry.die}» не поддерживается.`, report: lastIntegrityReport };
+        }
         for (let i = 0; i < count; i++) rolls.push(rollDie(sides));
         remaining -= count;
         if (remaining <= 0) break;
@@ -1840,7 +1842,6 @@ export function ObsidianStoreProvider({
       cloudSyncMessage,
       retryCloudSnapshot,
       takeRest,
-      takeRest,
       attachSourceContent,
       addSupplementalSource,
       verifySource,
@@ -1887,6 +1888,7 @@ export function ObsidianStoreProvider({
       cloudSyncStatus,
       cloudSyncMessage,
       retryCloudSnapshot,
+      takeRest,
       attachSourceContent,
       addSupplementalSource,
       verifySource,
