@@ -1326,6 +1326,68 @@ Deno.serve(async (req: Request) => {
         if (pendingPlayerRolls.length === 1 && modelCall.preparedRoll == null) {
           const pending = pendingPlayerRolls[0]!;
           const label = typeof pending.label === "string" ? pending.label.trim() : "";
+          // Deterministic recovery for the common "attack with weapon — passerby" label.
+          // The target AC must be extracted from the loaded SRD Commoner stat block;
+          // weapon and attack modifier must come from the verified character sheet.
+          const genericAttack = /^атака\s+(.+?)\s*[—–-]\s*(.+)$/i.exec(label);
+          if (genericAttack) {
+            const weapon = genericAttack[1].trim();
+            const target = genericAttack[2].trim();
+            const isGenericPerson = /прохож|обычн(?:ый|ого) человека|граждан|крестьянин|commoner|bystander|civilian/i.test(target);
+            const character = playerCharacterFromInput(inputText);
+            const weaponEntry = Array.isArray(character?.weaponAttacks)
+              ? (character!.weaponAttacks as unknown[]).find((entry) =>
+                  isRecord(entry) && typeof entry.weapon === "string" &&
+                  entry.weapon.normalize("NFKC").trim().toLocaleLowerCase("ru") ===
+                    weapon.normalize("NFKC").trim().toLocaleLowerCase("ru") &&
+                  Number.isInteger(entry.attackBonus))
+              : null;
+            const commonerStart = rulesDoc.search(/\bcommoner\b/i);
+            const commonerText = commonerStart >= 0 ? rulesDoc.slice(commonerStart, commonerStart + 2600) : "";
+            const acMatch = /armor\s+class\s*:?[ \t]*(\d{1,2})/i.exec(commonerText);
+            const commonerExcerpt = acMatch && Number(acMatch[1]) === 10
+              ? commonerText.slice(0, Math.min(commonerText.length, (acMatch.index ?? 0) + acMatch[0].length + 160))
+              : "";
+            if (isGenericPerson && weaponEntry && commonerExcerpt) {
+              const dc = 10;
+              const formulaHint = typeof pending.formula === "string" ? pending.formula : "";
+              const advantage = /2d20kh1/i.test(formulaHint) ? "ADVANTAGE"
+                : /2d20kl1/i.test(formulaHint) ? "DISADVANTAGE" : "NONE";
+              const preparedResult = executeEkdrasilReadTool(
+                "prepare_player_attack",
+                JSON.stringify({
+                  weapon, targetName: "Commoner", targetAC: dc, advantage,
+                  reason: typeof pending.reason === "string" && pending.reason.trim().length >= 3
+                    ? pending.reason.trim().slice(0, 200) : (action || label).slice(0, 200),
+                }),
+                { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
+                { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
+                character, false,
+                [{ text: commonerExcerpt, lines: "server-verified Commoner stat-block extraction" }],
+                [], npcProfilesFromInput(inputText),
+              );
+              if (isRecord(preparedResult) && isRecord(preparedResult.preparedRoll)) {
+                modelCall.preparedRoll = preparedResult.preparedRoll as unknown as PreparedRoll;
+                modelCall.preparedRoll.label = label;
+                pending.label = label;
+                pending.formula = modelCall.preparedRoll.formula;
+                pending.dc = dc;
+                pending.targetType = "AC";
+                console.warn("[obsidian-gm] pending player attack prepared by deterministic SRD fallback", {
+                  model: attempt.id, weapon, targetAC: dc,
+                });
+              } else {
+                console.warn("[obsidian-gm] deterministic attack fallback rejected", {
+                  model: attempt.id, reason: isRecord(preparedResult) ? preparedResult.error : "invalid tool result",
+                });
+              }
+            } else {
+              console.warn("[obsidian-gm] deterministic attack fallback missing verified inputs", {
+                model: attempt.id, genericPerson: isGenericPerson, weaponInSheet: Boolean(weaponEntry),
+                commonerAcVerified: Boolean(commonerExcerpt),
+              });
+            }
+          }
           const prefix = /^(спасбросок|проверка)\s+/i.exec(label);
           const rest = prefix ? label.slice(prefix[0].length).trim() : label;
           const parenthesized = /^(.+?)\s*\((.+)\)$/.exec(rest);
