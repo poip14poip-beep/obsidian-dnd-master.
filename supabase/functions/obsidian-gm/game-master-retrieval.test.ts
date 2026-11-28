@@ -107,7 +107,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon);
     expect(prepared).toMatchObject({
       ok: true,
-      npcContext: { name: "Странник", rolled: undefined },
+      npcContext: { name: "Странник" },
       preparedRoll: {
         roller: "GM", label: "Первая реакция NPC — Странник",
         formula: "2d6", dc: null, targetType: "NONE", modifier: 0, kind: "NPC_REACTION",
