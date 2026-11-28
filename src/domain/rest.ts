@@ -53,6 +53,11 @@ export function calculateRest(
   }
 
   const pool = (character.hitDicePool ?? []).map((entry) => ({ ...entry }));
+  if (pool.some((entry) => !/^d(?:4|6|8|10|12)$/i.test(entry.die) ||
+      !Number.isInteger(entry.current) || !Number.isInteger(entry.maximum) ||
+      entry.maximum < 0 || entry.maximum > 20 || entry.current < 0 || entry.current > entry.maximum)) {
+    errors.push("Запас костей хитов повреждён или не подтверждён; отдых не может его изменить.");
+  }
   const available = pool.reduce((sum, entry) => sum + entry.current, 0);
   if (hitDiceToSpend > available) errors.push(`Нельзя потратить ${hitDiceToSpend} костей хитов: доступно ${available}.`);
   if (hitDiceToSpend > 0 && pool.length === 0) errors.push("Текущий запас костей хитов не подтверждён листом персонажа.");
@@ -108,8 +113,8 @@ export function calculateRest(
   }
 
   if (kind === "LONG") {
-    if (character.hpCurrent === null || character.hpMax === null) {
-      warnings.push("HP не восстановлены: текущие или максимальные HP не подтверждены.");
+    if (character.hpMax === null) {
+      warnings.push("HP не восстановлены: максимальные HP не подтверждены.");
     } else {
       hpCurrent = character.hpMax;
     }
