@@ -159,6 +159,23 @@ const turnSchema = {
       playerVisible: { type: "boolean" },
       locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
       certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
+      gmProfile: { type: "object", additionalProperties: false, properties: {
+        biography: { type: "string" }, appearance: { type: "string" }, personality: { type: "string" },
+        motivation: { type: "string" }, longTermGoal: { type: "string" }, secrets: { type: "string" },
+        relationships: { type: "string" }, skillsAndAbilities: { type: "string" },
+        combatProfile: { type: "object", additionalProperties: false, properties: {
+          status: { type: "string", enum: ["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"] },
+          source: { type: "string" }, armorClass: { type: ["integer", "null"] },
+          hitPoints: { type: ["integer", "null"] }, speed: { type: "string" },
+          attacks: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+            name: { type: "string" }, attackBonus: { type: ["integer", "null"] },
+            damage: { type: "string" }, damageType: { type: "string" },
+          }, required: ["name", "attackBonus", "damage", "damageType"] } },
+          resistances: { type: "array", items: { type: "string" } },
+          vulnerabilities: { type: "array", items: { type: "string" } },
+          immunities: { type: "array", items: { type: "string" } },
+        }, required: ["status", "source", "armorClass", "hitPoints", "speed", "attacks", "resistances", "vulnerabilities", "immunities"] },
+      }, required: ["biography", "appearance", "personality", "motivation", "longTermGoal", "secrets", "relationships", "skillsAndAbilities", "combatProfile"] },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
@@ -167,7 +184,7 @@ const turnSchema = {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["factSummary", "acquisitionPath", "certainty"] } },
-    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
+    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "gmProfile", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
     environment: { type: "object", additionalProperties: false, properties: {
       temperatureC: { type: ["number", "null"] }, temperatureCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       weather: { type: "string" }, lighting: { type: "string" }, visibility: { type: "string" }, wind: { type: "string" },
@@ -485,8 +502,35 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
         (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
-        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
+        typeof npc["reason"] !== "string" || !npc["gmProfile"] || typeof npc["gmProfile"] !== "object" ||
+        !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
+    }
+    const profile = npc["gmProfile"] as Record<string, unknown>;
+    const profileTextFields = ["biography", "appearance", "personality", "motivation", "longTermGoal", "secrets", "relationships", "skillsAndAbilities"];
+    if (profileTextFields.some((key) => typeof profile[key] !== "string") ||
+        !profile["combatProfile"] || typeof profile["combatProfile"] !== "object") {
+      throw new GameMasterError("Карточка NPC неполная: отсутствует GM-досье или описание.", "INVALID_NPC_PROFILE");
+    }
+    const combat = profile["combatProfile"] as Record<string, unknown>;
+    if (!["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(String(combat["status"])) ||
+        typeof combat["source"] !== "string" || typeof combat["speed"] !== "string" ||
+        !(combat["armorClass"] === null || (Number.isInteger(combat["armorClass"]) && Number(combat["armorClass"]) >= 1 && Number(combat["armorClass"]) <= 40)) ||
+        !(combat["hitPoints"] === null || (Number.isInteger(combat["hitPoints"]) && Number(combat["hitPoints"]) >= 1 && Number(combat["hitPoints"]) <= 5000)) ||
+        !Array.isArray(combat["attacks"]) || !Array.isArray(combat["resistances"]) ||
+        !Array.isArray(combat["vulnerabilities"]) || !Array.isArray(combat["immunities"])) {
+      throw new GameMasterError("Некорректный боевой профиль NPC.", "INVALID_NPC_COMBAT_PROFILE");
+    }
+    if (combat["status"] === "SRD_VERIFIED" &&
+        (!String(combat["source"]).trim() || combat["armorClass"] === null || combat["hitPoints"] === null)) {
+      throw new GameMasterError("Боевые характеристики NPC помечены как подтверждённые без источника, КЗ или HP.", "UNSOURCED_NPC_COMBAT_PROFILE");
+    }
+    for (const attack of combat["attacks"] as Array<Record<string, unknown>>) {
+      if (typeof attack["name"] !== "string" || !attack["name"].trim() ||
+          !(attack["attackBonus"] === null || (Number.isInteger(attack["attackBonus"]) && Number(attack["attackBonus"]) >= -10 && Number(attack["attackBonus"]) <= 30)) ||
+          typeof attack["damage"] !== "string" || typeof attack["damageType"] !== "string") {
+        throw new GameMasterError("Некорректная атака в карточке NPC.", "INVALID_NPC_ATTACK_PROFILE");
+      }
     }
     const existingNpc = knownNpcs.find((item) => item.name.toLocaleLowerCase() === (npc["name"] as string).toLocaleLowerCase());
     if (npc["action"] === "CREATE" && existingNpc) {
@@ -733,6 +777,8 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
       "Для Календаря Экдрасиля 2.4 используй только канонические месяцы, межгодовые дни и шестой день каждого четвёртого года. Не вычисляй новую дату самостоятельно: верни newInGameDate равной текущей дате из world.currentInGameDate. Приложение само передвинет календарь по суммарному world.elapsedMinutes от начала кампании. Для старых кампаний с Техническим календарём 1.0 сохраняй их прежний формат.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
+      "При CREATE автоматически сформируй полноценную gmProfile-карточку NPC: биография, внешность, личность, мотивация, долгосрочная цель, секреты, отношения, навыки и способности. Это скрытое досье мастера; оно не является знанием персонажа. Не подменяй playerKnowledgeAdditions содержимым gmProfile. При UPDATE сохраняй непротиворечивость уже созданного досье и меняй только сведения, для которых есть причина.",
+      "combatProfile заполняй строго: status=NOT_REQUIRED, если NPC не нуждается в боевых параметрах; status=UNKNOWN, если параметры нужны, но не подтверждены; status=SRD_VERIFIED только при точном найденном статблоке SRD 5.2.1 с указанием источника. При SRD_VERIFIED укажи только реально найденные КЗ, HP, скорость, атаки, бонусы, формулы урона и типы урона. Не выдумывай сопротивления, иммунитеты, уязвимости и числа. Если данных нет — null/пустые массивы и UNKNOWN.",
       "npcSimulationReference — GM-only протокол принятия решений и ведения NPC, а не источник фактов мира. Следуй ему для устойчивых целей, временного состояния, планов, задач, знаний и ресурсов. Не копируй шаблонные примеры как факты текущего NPC; текущие записи knownNpcs имеют приоритет как состояние.",
       "Поля goals, attitudeToPlayer, knowledge, resources и внутренние планы в knownNpcs могут содержать GM-only сведения. Используй их только для симуляции поведения NPC. Не раскрывай их персонажа, пока она не получила соответствующую информацию через установленный внутриигровой канал. Знание NPC не является знанием персонажа игрока.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов и не выводи текущие остатки ресурсов из их максимума.",
