@@ -292,8 +292,9 @@ function TurnsPage() {
                           <div className="space-y-2">
                             {answer && <p className="mono-code text-sm text-status-verified">Результат: {answer}</p>}
                             <Button type="button" variant="outline" className="touch-target w-full"
+                              disabled={Boolean(answer)}
                               onClick={() => handleRollForPlayer(pendingIndex, roll.formula)}>
-                              <Dices className="mr-2 h-4 w-4" /> {answer ? "Перебросить кубик" : "Бросить кубик"}
+                              <Dices className="mr-2 h-4 w-4" /> {answer ? "Бросок выполнен" : "Бросить кубик"}
                             </Button>
                           </div>
                         );
