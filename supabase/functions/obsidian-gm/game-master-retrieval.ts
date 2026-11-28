@@ -540,7 +540,7 @@ function paceMiles(pace: "fast" | "normal" | "slow", hours: number): number {
   return hours >= 8 ? dayMiles + mph * (hours - 8) : Math.min(mph * hours, dayMiles);
 }
 
-function prepareTravel(args: JsonRecord, weather: TravelWeatherContext): JsonRecord {
+function prepareTravel(args: JsonRecord, weather: TravelWeatherContext, playerCharacter: JsonRecord | null): JsonRecord {
   const pace = args.pace === undefined ? "normal" : args.pace;
   const terrain = args.terrain === undefined ? "normal" : args.terrain;
   const reason = typeof args.reason === "string" ? args.reason.trim() : "";
@@ -550,9 +550,16 @@ function prepareTravel(args: JsonRecord, weather: TravelWeatherContext): JsonRec
       reason.length < 3 || reason.length > 200 || hasHours === hasMiles) {
     return { ok: false, error: "Для travel нужны ровно один параметр hours или miles, корректные pace/terrain и краткая reason." };
   }
+  const conditions = conditionKeys(playerCharacter);
+  const movementBlocked = ["grappled", "restrained", "paralyzed", "petrified", "stunned", "unconscious"]
+    .find((condition) => conditions.has(condition));
+  if (movementBlocked) {
+    return { ok: false, error: "Путешествие невозможно: активное состояние ограничивает движение персонажа. Сначала устрани или измени это состояние." };
+  }
   const weatherState = travelWeatherFactor(weather);
   const terrainFactor = terrain === "difficult" ? 0.5 : 1;
-  const factor = terrainFactor * weatherState.factor;
+  const movementFactor = conditions.has("prone") ? 0.5 : 1;
+  const factor = terrainFactor * weatherState.factor * movementFactor;
   const mph = pace === "fast" ? 4 : pace === "slow" ? 2 : 3;
   let hours: number;
   let distance: number;
@@ -577,13 +584,14 @@ function prepareTravel(args: JsonRecord, weather: TravelWeatherContext): JsonRec
     travel: {
       pace, terrain, hours, timeDeltaMinutes: Math.round(hours * 60),
       distanceMiles: Math.round(distance * 2) / 2,
-      weatherFactor: weatherState.factor, terrainFactor,
+      weatherFactor: weatherState.factor, terrainFactor, movementFactor,
       passivePerceptionModifier: pace === "fast" ? -5 : 0,
       stealthAllowed: pace === "slow", reason,
     },
     notes: [
       terrain === "difficult" ? "Сложная местность: расстояние сокращено вдвое." : "",
       weatherState.note,
+      movementFactor < 1 ? "Персонаж сбит с ног: передвигается ползком, скорость путешествия вдвое ниже." : "",
       pace === "fast" ? "Быстрый темп: пассивное Восприятие −5." : "",
       pace === "slow" ? "Медленный темп позволяет передвигаться скрытно." : pace === "normal" ? "Обычный темп не даёт штрафа к пассивному Восприятию, но не позволяет скрытно идти." : "",
     ].filter(Boolean),
@@ -1099,7 +1107,7 @@ export function executeEkdrasilReadTool(
     return { ok: false, error: "Ожидался объект аргументов." };
   }
   if (name === "travel") {
-    return prepareTravel(args as JsonRecord, travelWeather);
+    return prepareTravel(args as JsonRecord, travelWeather, playerCharacter);
   }
   if (name === "npc_reaction") {
     return prepareNpcReaction(args as JsonRecord, npcProfiles, completedRolls);
