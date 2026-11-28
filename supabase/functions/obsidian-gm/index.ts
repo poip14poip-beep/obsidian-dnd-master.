@@ -1119,6 +1119,9 @@ Deno.serve(async (req: Request) => {
   if (/живот|лошад|кон|пёс|собак|звер|прируч|успокоить живот/.test(actionText)) mappedTerms.push("animal handling", "influence", "ability check");
   if (/леч|первая помощь|стабилиз|диагноз|ранен/.test(actionText)) mappedTerms.push("medicine", "healing", "stabilize", "utilize action");
   if (/след|отпечат|выжива|ориентир|погода|охот|добыть пищ/.test(actionText)) mappedTerms.push("survival", "tracking", "foraging", "travel pace");
+  if (/путешеств|маршрут|переправ|перевал|дорог|поход|идти в другой город|отправиться в/.test(actionText)) {
+    mappedTerms.push("travel pace", "forced march", "difficult terrain", "overland travel");
+  }
   if (/религ|бож|обряд|культ|святын/.test(actionText)) mappedTerms.push("religion", "holy symbol", "divine magic");
   if (/истор|древн|летопис|герб|родослов/.test(actionText)) mappedTerms.push("history", "historical lore");
   if (/природ|растен|гриб|ядовит|минерал|животн/.test(actionText)) mappedTerms.push("nature", "environment");
