@@ -87,6 +87,26 @@ describe("rest state persistence", () => {
     expect(result.current.character.hitDicePool).toEqual([{ die: "d10", current: 3, maximum: 3 }]);
   });
 
+  it("does not invent a full Hit Dice pool for a legacy save during long rest", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.world_state.calendarSystem = "Календарь Экдрасиля 2.4";
+    initial.world_state.startInGameDate = "1 Вейра, 0 год · 08:00 · Календарь Экдрасиля 2.4";
+    initial.world_state.currentInGameDate = initial.world_state.startInGameDate;
+    initial.player_character_state.hitDice = "1d10";
+    initial.player_character_state.classLevel = 3;
+    delete initial.player_character_state.hitDicePool;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    let restResult: ReturnType<typeof result.current.takeRest>;
+    act(() => { restResult = result.current.takeRest("LONG"); });
+
+    expect(restResult!.ok).toBe(true);
+    expect(result.current.character.hitDicePool).toBeUndefined();
+  });
+
   it("commits a long rest atomically with HP, resources, exhaustion, hit dice and Ekdrasil time", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
