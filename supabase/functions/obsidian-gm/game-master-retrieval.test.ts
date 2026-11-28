@@ -382,6 +382,27 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("returns an already verified player damage roll instead of preparing it again", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+    };
+    const completedRolls = [
+      { roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+5", targetType: "AC", dc: 18,
+        total: 25, success: true, dice: [{ sides: 20, value: 16, kept: true }] },
+      { roller: "PLAYER", label: "Урон Longsword по Goblin", formula: "1d8+3", targetType: "NONE",
+        total: 8, modifier: 3, dice: [{ sides: 8, value: 5, kept: true }] },
+    ];
+    const result = executeEkdrasilReadTool("prepare_player_damage", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", reason: "Подтвердить уже совершённый урон",
+    }), rules, canon, character, false, [], completedRolls);
+    expect(result).toMatchObject({
+      ok: true, hit: true,
+      damageResolution: { total: 8, formula: "1d8+3", modifier: 3 },
+      preparedRoll: null,
+    });
+  });
+
   it("does not prepare player damage after a natural 1 even when the total meets AC", () => {
     const character = {
       statsCertainty: "KNOWN",
@@ -398,6 +419,24 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result).toMatchObject({
       ok: true,
       attackResolution: { hit: false, critical: false, outcome: "MISS" },
+      preparedRoll: null,
+    });
+  });
+
+  it("returns an already verified NPC damage roll instead of preparing it again", () => {
+    const statblock = "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.";
+    const completedRolls = [
+      { roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+4", targetType: "AC", dc: 15,
+        total: 20, success: true, dice: [{ sides: 20, value: 16, kept: true }] },
+      { roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", targetType: "NONE",
+        total: 5, modifier: 2, dice: [{ sides: 6, value: 3, kept: true }] },
+    ];
+    const result = executeEkdrasilReadTool("prepare_npc_damage", JSON.stringify({
+      creatureName: "Goblin", attackName: "Bite", reason: "Подтвердить уже совершённый урон",
+    }), { ...rules, content: statblock }, canon, null, false, [{ text: statblock, lines: "1–1" }], completedRolls);
+    expect(result).toMatchObject({
+      ok: true, hit: true,
+      damageResolution: { total: 5, formula: "1d6+2", modifier: 2 },
       preparedRoll: null,
     });
   });
