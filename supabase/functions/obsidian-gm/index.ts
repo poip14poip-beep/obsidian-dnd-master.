@@ -563,7 +563,7 @@ Deno.serve(async (req: Request) => {
       "Релевантные фрагменты по запросу не найдены. Не выдумывай сведения о мире; используй UNKNOWN и не заменяй отсутствие фрагмента вымышленным фактом.";
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
-  const isGameTurnRequest = !isCompatibilityRequest && !isBiographyRequest;
+  const isGameTurnRequest = isRecord(body) && body.operation === "GAME_TURN";
   const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
