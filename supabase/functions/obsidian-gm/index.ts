@@ -578,7 +578,11 @@ Deno.serve(async (req: Request) => {
       let challenge = isRecord(pending.challenge)
         ? pending.challenge as unknown as SignedDiceChallenge
         : null;
-      if (completedRolls.length === 0 && (!challenge || !await verifyDiceChallenge(challenge))) {
+      const challengeExpired = challenge !== null && !await verifyDiceChallenge(challenge);
+      const needsNewChallenge = challenge === null
+        ? completedRolls.length === 0
+        : challengeExpired;
+      if (needsNewChallenge) {
         const prepared = pending.prepared_roll;
         challenge = await issueDiceChallenge(authData.user.id, {
           formula: String(prepared.formula ?? ""),
