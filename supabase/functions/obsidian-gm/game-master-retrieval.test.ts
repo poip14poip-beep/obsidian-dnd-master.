@@ -377,10 +377,13 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
     const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     expect(retryRequest.tool_choice).toBe("required");
-    expect(retryRequest.tools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_check" }) }),
-      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_attack" }) }),
-    ]));
+    const recoveryToolNames = retryRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
+    expect(recoveryToolNames.length).toBe(5);
+    expect(recoveryToolNames.every((name: string) => name.startsWith("prepare_"))).toBe(true);
+    expect(recoveryToolNames).toContain("prepare_player_check");
+    expect(recoveryToolNames).toContain("prepare_player_attack");
+    expect(recoveryToolNames).not.toContain("search_dnd_rules");
+    expect(recoveryToolNames).not.toContain("search_ekdrasil_canon");
     const finalPayload = result.payload as { choices: Array<{ message: { content: string } }> };
     const synchronized = JSON.parse(finalPayload.choices[0]!.message.content);
     expect(synchronized.rolls[0]).toMatchObject({
