@@ -3,6 +3,7 @@ name: Deploy Obsidian app to GitHub Pages
 on:
   push:
     branches:
+      - main
       - cloud-api-client
   workflow_dispatch:
 
