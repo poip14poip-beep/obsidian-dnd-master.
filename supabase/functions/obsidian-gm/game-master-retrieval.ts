@@ -317,18 +317,6 @@ function preparePlayerAttack(
   };
 }
 
-function parseRollTotal(roll: JsonRecord): number | null {
-  if (typeof roll.result !== "string") return null;
-  const match = /(?:итог|total)\s*=\s*(-?\d+)/i.exec(roll.result);
-  return match ? Number(match[1]) : null;
-}
-
-function wasCriticalD20(roll: JsonRecord): boolean {
-  if (typeof roll.result !== "string") return false;
-  return [...roll.result.matchAll(/d20:(\d+)(?:\s*\(не учитывается\))?/gi)]
-    .some((match) => match[1] === "20" && !match[0].includes("не учитывается"));
-}
-
 function prepareNpcAttack(
   args: JsonRecord,
   rules: RetrievalSource,
@@ -477,7 +465,7 @@ function prepareNpcDamage(
   completedRolls: JsonRecord[],
   retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
   alreadyPrepared: boolean,
-): { ok: true; preparedRoll: PreparedRoll; damageSource: { sourceId: string; sha256: string; lines: string }; critical: boolean } | { ok: false; error: string } {
+): JsonRecord {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
   const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
   const attackName = typeof args.attackName === "string" ? args.attackName.trim() : "";
@@ -507,12 +495,8 @@ function prepareNpcDamage(
   let formula = damageMatch[1]!.replace(/\s+/g, "");
   const parsed = parseDiceFormula(formula);
   if (!parsed) return { ok: false, error: "Формула урона из статблока не поддерживается серверным генератором." };
-  const critical = wasCriticalD20(priorAttack);
-  if (critical) {
-    formula = formula.replace(/(\d*)d(\d+)/gi, (_match, count: string, sides: string) =>
-      String((Number(count || 1) * 2)) + "d" + sides,
-    );
-  }
+  const critical = attackResolution.critical;
+  if (critical) formula = doubleDamageDice(formula);
   const verified = parseDiceFormula(formula);
   if (!verified) return { ok: false, error: "Формула критического урона некорректна." };
   return {
