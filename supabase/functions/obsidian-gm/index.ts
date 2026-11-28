@@ -124,7 +124,7 @@ async function issueDiceChallenge(userId: string, prepared: {
   return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
 }
 async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean> {
-  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 600_000 ||
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
       value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
       !value.formula || !value.label || value.label.length > 180 ||
       !["DC", "AC", "NONE"].includes(value.targetType) ||
