@@ -28,7 +28,9 @@ export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMaster
     return ["deepseek/deepseek-v4.1-flash"];
   }
   if (flags.highImpactTurn) {
-    return ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"];
+    // DeepSeek handles all game turns first; Gemini is the independent fallback.
+    // Reserve Claude for non-game-turn authoring tasks where its extra cost is justified.
+    return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
   if (flags.isGameTurnRequest) {
     return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
@@ -40,7 +42,7 @@ export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMaster
   ];
 }
 
-export const GAME_TURN_MAX_OUTPUT_TOKENS = 8192;
+export const GAME_TURN_MAX_OUTPUT_TOKENS = 4096;
 export const DEEPSEEK_GAME_TURN_REASONING_EFFORT = "none" as const;
 
 export function gameTurnAttemptTimeoutMs(attemptIndex: number): number {
