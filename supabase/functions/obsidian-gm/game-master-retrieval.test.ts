@@ -417,9 +417,9 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     const prepare = {
       choices: [{ message: { role: "assistant", tool_calls: [{
         id: "prepare-check", type: "function",
-        function: { name: "prepare_player_check", arguments: JSON.stringify({
-          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 13,
-          advantage: "NONE", reason: "Прислушаться к шуму за дверью",
+        function: { name: "request_roll", arguments: JSON.stringify({
+          kind: "skill_check", skill: "perception", dc: 13,
+          advantage: "none", reason: "Прислушаться к шуму за дверью",
         }) },
       }] } }],
     };
@@ -438,7 +438,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       enabled: true, rules, canon, playerCharacter: character,
     });
     expect(result.preparedRoll).toMatchObject({
-      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5",
       dc: 13, targetType: "DC", modifier: 5, kind: "SKILL_CHECK",
     });
     const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
@@ -454,7 +454,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     const finalPayload = result.payload as { choices: Array<{ message: { content: string } }> };
     const synchronized = JSON.parse(finalPayload.choices[0]!.message.content);
     expect(synchronized.rolls[0]).toMatchObject({
-      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5",
       dc: 13, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
     });
   });
