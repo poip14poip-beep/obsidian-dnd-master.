@@ -826,6 +826,8 @@ export async function callWithEkdrasilReadTools(options: {
   let dndRuleSearchCalls = 0;
   let canonSearchCalls = 0;
   let searchBudgetNoticeAdded = false;
+  let pendingRollRecoveryAttempts = 0;
+  let requireToolCall = false;
   for (let round = 0; ; round += 1) {
     // Rule/canon retrieval is evidence gathering, not the game action itself.
     // Cap repeated lookups so a provider cannot spend its whole turn searching
@@ -840,7 +842,7 @@ export async function callWithEkdrasilReadTools(options: {
       ...options.requestBody,
       messages,
       tools: availableTools,
-      tool_choice: "auto",
+      tool_choice: requireToolCall ? "required" : "auto",
     };
     // Tool-capable requests omit structured-output constraints for compatibility
     // with providers that cannot combine strict JSON schema and function calls.
@@ -865,8 +867,8 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       let finalResult = await send(finalBody);
-      if (!finalResult.response.ok || preparedRoll !== null) {
-        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, combatEvents, conversation: messages };
+      if (!finalResult.response.ok) {
+        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
       }
 
       const finalRoot = finalResult.payload && typeof finalResult.payload === "object"
@@ -891,129 +893,57 @@ export async function callWithEkdrasilReadTools(options: {
         }
       } catch { /* malformed output is handled by the normal schema validator */ }
 
-      if (pendingRoll) {
-        const label = typeof pendingRoll.label === "string" ? pendingRoll.label : "";
-        const preparationTool = /^атака\b/i.test(label) ? "prepare_player_attack"
-          : /^(?:проверка|спасбросок)\b/i.test(label) || label.includes("(") ? "prepare_player_check"
-          : null;
-
-        // A generic passerby is represented by the SRD Commoner stat block.
-        // Resolve its AC from the loaded SRD text, then calculate the attack
-        // bonus only from the character's verified weaponAttacks entry.
-        const genericAttack = /^атака\s+(.+?)\s*[—–-]\s*(.+)$/i.exec(label);
-        if (genericAttack && finalMessage.role === "assistant" && !preparedRoll) {
-          const weapon = genericAttack[1].trim();
-          const target = genericAttack[2].trim();
-          const genericPerson = /прохож|обычн(?:ый|ого) человека|граждан|крестьянин|commoner|bystander|civilian/i.test(target);
-          const weaponExists = Array.isArray(options.playerCharacter?.weaponAttacks) &&
-            (options.playerCharacter!.weaponAttacks as unknown[]).some((entry) =>
-              entry && typeof entry === "object" &&
-              typeof (entry as JsonRecord).weapon === "string" &&
-              ((entry as JsonRecord).weapon as string).normalize("NFKC").trim().toLocaleLowerCase() ===
-                weapon.normalize("NFKC").trim().toLocaleLowerCase());
-          if (genericPerson && weaponExists) {
-            const lookup = executeEkdrasilReadTool(
-              "search_dnd_rules", JSON.stringify({ query: "Commoner Armor Class" }),
-              options.rules, options.canon, options.playerCharacter ?? null, false,
-              retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [],
-            );
-            const excerpts = Array.isArray(lookup.excerpts) ? lookup.excerpts.filter((item) =>
-              item && typeof item === "object" && typeof (item as JsonRecord).text === "string") as JsonRecord[] : [];
-            for (const excerpt of excerpts) {
-              const text = String(excerpt.text);
-              const acMatch = /(?:armor\s+class|\bAC)\s*:?\s*(\d{1,2})\b/i.exec(text);
-              if (/(?:\bcommoner\b|простолюдин)/i.test(text) && acMatch) {
-                retrievedRuleExcerpts.push({ text, lines: String(excerpt.lines ?? "unknown") });
+      if (pendingRoll && finalMessage.role === "assistant") {
+        if (preparedRoll) {
+          // The server-prepared roll is authoritative. Synchronize the model's
+          // structured turn with the verified formula/DC before returning it.
+          const rolls = Array.isArray(parsedFinal?.rolls) ? parsedFinal!.rolls as unknown[] : [];
+          const pendingIndex = rolls.findIndex((roll) => roll && typeof roll === "object" &&
+            (roll as JsonRecord).roller === "PLAYER" &&
+            (roll as JsonRecord).result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+          if (pendingIndex >= 0) {
+            const current = rolls[pendingIndex] as JsonRecord;
+            rolls[pendingIndex] = {
+              ...current,
+              roller: "PLAYER",
+              label: preparedRoll.label,
+              formula: preparedRoll.formula,
+              dc: preparedRoll.dc,
+              targetType: preparedRoll.targetType,
+              result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+            };
+            finalMessage.content = JSON.stringify(parsedFinal);
+            finalResult = {
+              ...finalResult,
+              payload: finalRoot,
+            };
+            if (finalRoot.choices && Array.isArray(finalRoot.choices) &&
+                finalRoot.choices[0] && typeof finalRoot.choices[0] === "object") {
+              const firstChoice = finalRoot.choices[0] as JsonRecord;
+              if (firstChoice.message && typeof firstChoice.message === "object") {
+                (firstChoice.message as JsonRecord).content = finalMessage.content;
               }
-            }
-            const commoner = retrievedRuleExcerpts.find((excerpt) =>
-              /(?:\bcommoner\b|простолюдин)/i.test(excerpt.text) &&
-              /(?:armor\s+class|\bAC)\s*:?\s*10\b/i.test(excerpt.text));
-            if (commoner) {
-              const advantage = /2d20kh1/i.test(String(pendingRoll.formula ?? "")) ? "ADVANTAGE"
-                : /2d20kl1/i.test(String(pendingRoll.formula ?? "")) ? "DISADVANTAGE" : "NONE";
-              const args = {
-                weapon, targetName: "Commoner", targetAC: 10, advantage,
-                reason: typeof pendingRoll.reason === "string" ? pendingRoll.reason :
-                  (label + " — цель рассматривается как обычный прохожий по статблоку SRD"),
-              };
-              const result = executeEkdrasilReadTool(
-                "prepare_player_attack", JSON.stringify(args),
-                options.rules, options.canon, options.playerCharacter ?? null, false,
-                retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [],
-              );
-              if (result.preparedRoll && typeof result.preparedRoll === "object") {
-                preparedRoll = result.preparedRoll as PreparedRoll;
-                preparedRoll.label = label;
-                pendingRoll.label = label;
-                pendingRoll.formula = preparedRoll.formula;
-                pendingRoll.dc = preparedRoll.dc;
-                pendingRoll.targetType = preparedRoll.targetType;
-                // Keep the returned structured payload in sync with the server-prepared roll.
-                if (parsedFinal) finalMessage.content = JSON.stringify(parsedFinal);
-                console.warn("[obsidian-gm] generic passerby attack prepared from verified SRD Commoner AC", {
-                  weapon, target, targetAC: 10,
-                });
-              }
-            } else {
-              console.warn("[obsidian-gm] generic passerby attack not prepared: SRD Commoner AC excerpt unavailable", { weapon, target });
             }
           }
-        }
-
-        if (!preparedRoll && preparationTool && finalMessage.role === "assistant") {
+        } else if (pendingRollRecoveryAttempts < 1) {
+          // A model may narrate the need for a roll but omit the preparation
+          // tool call. Never infer a mechanic from the roll label. Ask the
+          // D&D engine to re-evaluate the whole action and force a real tool
+          // selection from the complete preparation tool set.
+          pendingRollRecoveryAttempts += 1;
           messages.push(finalMessage);
           messages.push({
             role: "system",
-            content: preparationTool === "prepare_player_attack"
-              ? "Ты вернул ожидающий бросок атаки без серверной подготовки. Теперь обязательно вызови prepare_player_attack. Оружие должно точно совпадать с weaponAttacks листа, а AC — подтверждаться уже найденной выдержкой SRD. Если AC не подтверждён, не выдумывай его."
-              : "Ты вернул ожидающую проверку без серверной подготовки. Теперь обязательно вызови prepare_player_check. Выбери точные kind, ability, skill и DC; сервер сам вычислит бонус и формулу по листу персонажа.",
+            content: [
+              "ОБЯЗАТЕЛЬНАЯ ПРОВЕРКА ДВИЖКА: ты вернул ожидающий бросок игрока, но не вызвал серверный инструмент подготовки. Не возвращай сейчас JSON и не угадывай формулу по подписи броска.",
+              "Повторно оцени исходное намерение игрока по правилам D&D 2024 / SRD 5.2.1, подтверждённому листу персонажа, текущему состоянию и уже завершённым броскам.",
+              "Выбери подходящий инструмент по фактической механике: prepare_player_check для проверки характеристики/навыка/спасброска; prepare_player_attack для атаки персонажа; prepare_player_damage только после подтверждённого попадания; prepare_npc_attack и prepare_npc_damage для бросков существ, которые выполняет сервер.",
+              "Если для выбора AC/правила не хватает подтверждения, сначала вызови search_dnd_rules. Не придумывай DC, AC, модификатор, владение, оружие или урон. Инструмент сам проверит данные листа и правила.",
+              "Если по правилам бросок не нужен, откажись от ожидающего броска и верни обычное разрешение действия. Если нужен бросок игрока, обязательно вызови подходящий инструмент до финального ответа.",
+            ].join("\n"),
           });
-          const forcedBody: JsonRecord = {
-            ...options.requestBody,
-            messages,
-            tools: EKDRASIL_READ_TOOLS,
-            tool_choice: { type: "function", function: { name: preparationTool } },
-          };
-          delete forcedBody.response_format;
-          delete forcedBody.structured_outputs;
-          const forcedResult = await send(forcedBody);
-          const forcedRoot = forcedResult.payload && typeof forcedResult.payload === "object"
-            ? forcedResult.payload as JsonRecord : {};
-          const forcedChoices = Array.isArray(forcedRoot.choices) ? forcedRoot.choices : [];
-          const forcedChoice = forcedChoices[0] && typeof forcedChoices[0] === "object"
-            ? forcedChoices[0] as JsonRecord : {};
-          const forcedMessage = forcedChoice.message && typeof forcedChoice.message === "object"
-            ? forcedChoice.message as JsonRecord : {};
-          const forcedCalls = Array.isArray(forcedMessage.tool_calls) ? forcedMessage.tool_calls : [];
-          if (forcedResult.response.ok && forcedCalls.length === 1) {
-            messages.push(forcedMessage);
-            const rawCall = forcedCalls[0] && typeof forcedCalls[0] === "object"
-              ? forcedCalls[0] as JsonRecord : {};
-            const fn = rawCall.function && typeof rawCall.function === "object"
-              ? rawCall.function as JsonRecord : {};
-            const id = typeof rawCall.id === "string" ? rawCall.id : "";
-            const name = typeof fn.name === "string" ? fn.name : "";
-            const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
-            const toolResult = id && name === preparationTool
-              ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon,
-                  options.playerCharacter ?? null, false, retrievedRuleExcerpts,
-                  completedRolls, options.npcProfiles ?? [])
-              : { ok: false, error: "Не удалось подтвердить обязательный инструмент подготовки броска." };
-            if (toolResult.preparedRoll && typeof toolResult.preparedRoll === "object" &&
-                (toolResult.preparedRoll as PreparedRoll).roller === "PLAYER") {
-              preparedRoll = toolResult.preparedRoll as PreparedRoll;
-            }
-            messages.push({
-              role: "tool",
-              tool_call_id: id || "invalid-tool-call",
-              content: JSON.stringify(toolResult),
-            });
-            toolCalls += 1;
-            if (preparedRoll) {
-              finalResult = await send(finalBody);
-            }
-          }
+          requireToolCall = true;
+          continue;
         }
       }
       return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
@@ -1091,6 +1021,7 @@ export async function callWithEkdrasilReadTools(options: {
               toolResult = { ok: false, error: "Достигнут предел серверных бросков для одного действия.", preparedRoll: null };
             } else {
               preparedRoll = prepared;
+              requireToolCall = false;
             }
           } else if (prepared.roller === "GM") {
             try {
