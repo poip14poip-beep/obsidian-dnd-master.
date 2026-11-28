@@ -12,6 +12,7 @@ import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } fr
 import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
 import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
+  applyHitPointDelta,
   buildBackupEnvelope,
   computeChecksum,
   runIntegrityAudit,
@@ -1492,7 +1493,9 @@ export function ObsidianStoreProvider({
         consequences: nextConsequences,
       };
 
-      const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;
+      const hpChange = applyHitPointDelta(pc.hpCurrent, pc.hpMax, pc.hpTemp, activeDraft.hpDelta);
+      if (hpChange.error) return { ok: false, error: hpChange.error, report: lastIntegrityReport };
+      const nextHp = hpChange.hpCurrent;
       const characterChanges: CharacterChangeSet = activeDraft.characterChanges ?? {
         inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
       };
@@ -1543,6 +1546,7 @@ export function ObsidianStoreProvider({
         stateVersion: nextCharacterVersion,
         updatedAt: now,
         hpCurrent: nextHp,
+        hpTemp: hpChange.hpTemp,
         inventory: nextInventory,
         resources: nextResources,
         conditions: nextConditions,
