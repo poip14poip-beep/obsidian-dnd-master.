@@ -642,6 +642,32 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
   )) {
     throw new GameMasterError("При ожидаемом броске или уточнении мастер не может фиксировать время, HP, предметы, ресурсы, NPC, локацию или последствия.", "INVALID_CLARIFICATION_DELTA");
   }
+  if ("combatEvents" in turn) {
+    if (!Array.isArray(turn["combatEvents"])) {
+      throw new GameMasterError("Сервер вернул некорректный список боевых событий.", "INVALID_COMBAT_EVENTS");
+    }
+    const combatEvents = turn["combatEvents"] as Array<Record<string, unknown>>;
+    for (const event of combatEvents) {
+      if (!event || typeof event !== "object" ||
+          !["PLAYER", "NPC"].includes(String(event["targetType"])) ||
+          typeof event["targetName"] !== "string" || !event["targetName"].trim() ||
+          !Number.isInteger(event["damage"]) || (event["damage"] as number) < 0 ||
+          (event["damage"] as number) > 10000 ||
+          !(event["damageType"] === null || typeof event["damageType"] === "string") ||
+          typeof event["critical"] !== "boolean" ||
+          !["PLAYER", "NPC"].includes(String(event["source"])) ||
+          typeof event["formula"] !== "string" || !parseDiceFormula(event["formula"]) ||
+          typeof event["rollLabel"] !== "string" || !event["rollLabel"].trim()) {
+        throw new GameMasterError("Серверное боевое событие не прошло проверку структуры.", "INVALID_COMBAT_EVENT");
+      }
+    }
+    const damageToPlayer = combatEvents
+      .filter((event) => event["targetType"] === "PLAYER")
+      .reduce((sum, event) => sum + Number(event["damage"]), 0);
+    if (damageToPlayer > 0 && turn["hpDelta"] !== -damageToPlayer) {
+      throw new GameMasterError("Урон по герою не совпадает с серверным итогом броска.", "COMBAT_HP_MISMATCH");
+    }
+  }
   return turn as unknown as GameMasterTurn;
 }
 function parseTechnicalDateTime(value: string): number | null {
