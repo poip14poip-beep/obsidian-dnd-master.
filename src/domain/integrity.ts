@@ -167,6 +167,20 @@ export function validateTurnDraft(
     if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить NPC «${change.name}»: он отсутствует в реестре.`);
     if (change.action === "UPDATE" && existing?.locked) errors.push(`NPC «${change.name}» заблокирован; сначала разблокируйте карточку вручную.`);
     if (!change.name.trim() || !change.role.trim() || !change.goals.trim() || !change.reason.trim()) errors.push("Изменение NPC требует имени, роли, целей и причины.");
+    if (change.gmProfile) {
+      const profile = change.gmProfile;
+      if ([profile.biography, profile.appearance, profile.personality, profile.motivation, profile.longTermGoal,
+        profile.secrets, profile.relationships, profile.skillsAndAbilities].some((value) => typeof value !== "string")) {
+        errors.push(`Скрытая карточка NPC «${change.name}» содержит некорректные поля.`);
+      }
+      const combat = profile.combatProfile;
+      if (!combat || !["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(combat.status) ||
+          (combat.armorClass !== null && (!Number.isInteger(combat.armorClass) || combat.armorClass < 1 || combat.armorClass > 40)) ||
+          (combat.hitPoints !== null && (!Number.isInteger(combat.hitPoints) || combat.hitPoints < 1 || combat.hitPoints > 5000)) ||
+          (combat.status === "SRD_VERIFIED" && (!combat.source.trim() || combat.armorClass === null || combat.hitPoints === null))) {
+        errors.push(`Боевой профиль NPC «${change.name}» не прошёл проверку источника и числовых значений.`);
+      }
+    }
     for (const knowledge of change.knowledgeAdditions) {
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
