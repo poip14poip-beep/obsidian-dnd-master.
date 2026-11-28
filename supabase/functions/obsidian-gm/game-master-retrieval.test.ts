@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll } from "./game-master-retrieval";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll, resolveSocialCheckOutcome } from "./game-master-retrieval";
 
 const rules = {
   sourceId: "SRD_5_2_1",
@@ -156,6 +156,21 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     }), rules, canon, null, false, [], [], [{ name: "Смотритель", attitudeToPlayer: "неизвестно" }]);
     expect(result.ok).toBe(false);
     expect(result.error).toContain("не подтверждено");
+  });
+
+  it("resolves social outcomes and attitude shifts at the five-point margin", () => {
+    expect(resolveSocialCheckOutcome("hostile", 25, 20)).toEqual({
+      success: true, attitude: "indifferent", shifted: true, direction: "up",
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 10, 15)).toEqual({
+      success: false, attitude: "hostile", shifted: true, direction: "down",
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 14, 15)).toEqual({
+      success: false, attitude: "indifferent", shifted: false, direction: null,
+    });
+    expect(resolveSocialCheckOutcome("friendly", 15, 10)).toEqual({
+      success: true, attitude: "friendly", shifted: false, direction: null,
+    });
   });
 
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
