@@ -834,6 +834,10 @@ export async function callWithEkdrasilReadTools(options: {
     // and never reach the deterministic check/attack preparation tools.
     const availableTools = EKDRASIL_READ_TOOLS.filter((tool) => {
       const name = tool.function.name;
+      // A pending-roll recovery is not another research pass. Restrict the
+      // forced choice to deterministic roll-preparation tools so the model
+      // cannot satisfy tool_choice="required" by searching lore/rules again.
+      if (requireToolCall && !name.startsWith("prepare_")) return false;
       if (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) return false;
       if (name === "search_ekdrasil_canon" && canonSearchCalls >= 2) return false;
       return true;
@@ -953,6 +957,11 @@ export async function callWithEkdrasilReadTools(options: {
     }
 
     messages.push(message);
+    // One forced recovery selection is enough. If its deterministic tool
+    // refuses missing/unknown data, let the model inspect the refusal and
+    // either retrieve the needed source or return a clarification instead of
+    // being trapped in tool_choice="required" forever.
+    if (requireToolCall) requireToolCall = false;
     for (const rawCall of calls) {
       const call = rawCall && typeof rawCall === "object" ? rawCall as JsonRecord : {};
       const fn = call.function && typeof call.function === "object" ? call.function as JsonRecord : {};

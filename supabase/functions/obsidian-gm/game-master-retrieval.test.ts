@@ -377,16 +377,64 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
     const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     expect(retryRequest.tool_choice).toBe("required");
-    expect(retryRequest.tools).toEqual(expect.arrayContaining([
-      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_check" }) }),
-      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_attack" }) }),
-    ]));
+    const recoveryToolNames = retryRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
+    expect(recoveryToolNames.length).toBe(5);
+    expect(recoveryToolNames.every((name: string) => name.startsWith("prepare_"))).toBe(true);
+    expect(recoveryToolNames).toContain("prepare_player_check");
+    expect(recoveryToolNames).toContain("prepare_player_attack");
+    expect(recoveryToolNames).not.toContain("search_dnd_rules");
+    expect(recoveryToolNames).not.toContain("search_ekdrasil_canon");
     const finalPayload = result.payload as { choices: Array<{ message: { content: string } }> };
     const synchronized = JSON.parse(finalPayload.choices[0]!.message.content);
     expect(synchronized.rolls[0]).toMatchObject({
       roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
       dc: 13, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
     });
+  });
+
+  it("releases the forced tool choice after a preparation refusal", async () => {
+    const pendingTurn = {
+      narration: "Ты прислушиваешься к шуму за дверью.",
+      rolls: [{
+        roller: "PLAYER", label: "Проверка Мудрости (Восприятие)",
+        formula: "1d20+5", dc: 13, targetType: "DC",
+        result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+      }],
+    };
+    const ordinaryTurn = { narration: "Ты прислушиваешься, но ничего необычного не слышишь.", rolls: [] };
+    const noTool = { choices: [{ message: { role: "assistant", content: "Нужна проверка." } }] };
+    const finalPending = { choices: [{ message: { role: "assistant", content: JSON.stringify(pendingTurn) } }] };
+    const refusedPreparation = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "prepare-refused", type: "function",
+        function: { name: "prepare_player_check", arguments: JSON.stringify({
+          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 13,
+          advantage: "NONE", reason: "Прислушаться к шуму за дверью",
+        }) },
+      }] } }],
+    };
+    const ordinaryFinal = { choices: [{ message: { role: "assistant", content: JSON.stringify(ordinaryTurn) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(finalPending), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(refusedPreparation), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(ordinaryFinal), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true, rules, canon,
+      playerCharacter: { statsCertainty: "UNKNOWN" },
+    });
+    expect(result.preparedRoll).toBeNull();
+    expect(result.exhausted).toBe(false);
+    const retryAfterRefusal = JSON.parse(String(fetcher.mock.calls[3]?.[1]?.body ?? "{}"));
+    expect(retryAfterRefusal.tool_choice).toBe("auto");
+    expect(retryAfterRefusal.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: "search_dnd_rules" }) }),
+    ]));
   });
 
   it("refuses to prepare an attack against an unverified AC", () => {
