@@ -1,4 +1,4 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest, CombatDamageEvent } from "./types";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
@@ -38,6 +38,7 @@ export interface GameMasterTurn {
   environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
   rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; result: string; challenge?: SignedDiceChallenge }>;
   npcChanges: NpcTurnChange[];
+  combatEvents?: CombatDamageEvent[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
     resources: Array<{ name: string; current: number | null; max: number | null; recovery: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
