@@ -521,6 +521,48 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
   });
 
 
+  it("emits an NPC-to-player combat event only after verified server damage is complete", async () => {
+    const completedRolls = [
+      { roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+4", targetType: "AC",
+        dc: 15, total: 20, success: true, dice: [{ sides: 20, value: 16, kept: true }] },
+      { roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", targetType: "NONE",
+        total: 5, modifier: 2, dice: [{ sides: 6, value: 3, kept: true }] },
+    ];
+    const search = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "search-combat", type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "Goblin Bite" }) },
+      }] } }],
+    };
+    const damage = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "resolve-damage", type: "function",
+        function: { name: "prepare_npc_damage", arguments: JSON.stringify({
+          creatureName: "Goblin", attackName: "Bite", reason: "Разрешить урон по герою",
+        }) },
+      }] } }],
+    };
+    const continueLoop = { choices: [{ message: { role: "assistant", content: "Урон разрешён." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(search), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(damage), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(continueLoop), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test", headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules: { ...rules, content: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage." },
+      canon, completedRolls,
+    });
+    expect(result.combatEvents).toEqual([{
+      targetType: "PLAYER", targetName: "PLAYER", damage: 5, damageType: "Piercing",
+      critical: false, source: "NPC", formula: "1d6+2", rollLabel: "Урон Goblin (Bite)",
+    }]);
+  });
+
   it("doubles only damage dice for an NPC natural-20 critical hit", () => {
     const completedRolls = [{
       roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+4",
