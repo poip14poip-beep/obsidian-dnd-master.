@@ -577,10 +577,12 @@ Deno.serve(async (req: Request) => {
       ? [MODEL_ATTEMPTS[0]!, MODEL_ATTEMPTS[2]!]
       : isIdentityRequest || isBiographyRequest
         ? [MODEL_ATTEMPTS[0]!]
-        : highImpactTurn
-        ? [MODEL_ATTEMPTS[1]!]
         : isGameTurnRequest
-          ? [MODEL_ATTEMPTS[0]!]
+        // Stage 1 uses DeepSeek for source analysis; stage 2 uses a separate
+        // narrative model. Gemini remains an independent final-stage fallback.
+        ? [MODEL_ATTEMPTS[1]!, MODEL_ATTEMPTS[2]!]
+        : highImpactTurn
+          ? [MODEL_ATTEMPTS[1]!]
           : MODEL_ATTEMPTS;
   const characterGuideContext = isCharacterGeneration
     ? (characterGuide.trim()
@@ -647,6 +649,129 @@ Deno.serve(async (req: Request) => {
     { role: "user", content: inputText },
   ];
   const failures: string[] = [];
+  let turnAnalysisReport: JsonRecord | null = null;
+
+  // Two-model turn pipeline: DeepSeek first reads the supplied campaign state,
+  // Obsidian procedure, D&D 2024 rules and Ekdrasil 2.4 canon through bounded
+  // read-only tools. A separate model then writes the player-facing turn.
+  if (isGameTurnRequest) {
+    const analysisSchema: JsonRecord = {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        actionClass: { type: "string", enum: ["OBSERVATION", "MOVEMENT", "ATTACK", "SOCIAL", "ITEM_USE", "OTHER"] },
+        requiresPlayerRoll: { type: "boolean" },
+        playerChecks: { type: "array", maxItems: 3, items: { type: "object", additionalProperties: false,
+          properties: {
+            checkType: { type: "string", maxLength: 80 },
+            ability: { type: "string", maxLength: 40 },
+            skill: { type: "string", maxLength: 60 },
+            formula: { type: "string", maxLength: 80 },
+            target: { type: "string", maxLength: 120 },
+            reason: { type: "string", maxLength: 180 },
+          },
+          required: ["checkType", "ability", "skill", "formula", "target", "reason"],
+        } },
+        npcChecks: { type: "array", maxItems: 3, items: { type: "object", additionalProperties: false,
+          properties: {
+            actor: { type: "string", maxLength: 100 },
+            checkType: { type: "string", maxLength: 80 },
+            formula: { type: "string", maxLength: 80 },
+            reason: { type: "string", maxLength: 180 },
+          },
+          required: ["actor", "checkType", "formula", "reason"],
+        } },
+        rulesFindings: { type: "string", maxLength: 700 },
+        canonFindings: { type: "string", maxLength: 700 },
+        campaignStateFindings: { type: "string", maxLength: 500 },
+        stateMutationAllowed: { type: "boolean" },
+        unresolvedFacts: { type: "array", maxItems: 5, items: { type: "string", maxLength: 140 } },
+      },
+      required: ["actionClass", "requiresPlayerRoll", "playerChecks", "npcChecks", "rulesFindings", "canonFindings", "campaignStateFindings", "stateMutationAllowed", "unresolvedFacts"],
+    };
+    const analysisMessages: JsonRecord[] = [
+      {
+        role: "system",
+        content: [
+          "Ты — аналитический модуль мастера Экдрасиля. Не пиши художественный игровой ход и не обращайся к игроку.",
+          "Изучи действие игрока, состояние персонажа и кампании, журнал последних событий, ОБСИДИАН 4.1, D&D 2024 / SRD 5.2.1 и канон Экдрасиля 2.4.",
+          "Для точной проверки используй только read-only инструменты search_dnd_rules и search_ekdrasil_canon. Не используй старые редакции.",
+          "Определи, требуется ли бросок персонажа игрока или серверный бросок NPC. Не придумывай модификаторы: если листа недостаточно, укажи UNKNOWN в отчёте.",
+          "Если действие явно является атакой персонажа игрока по существу/персонажу, requiresPlayerRoll=true и добавь проверку атаки в playerChecks.",
+          "Если требуется бросок игрока, stateMutationAllowed=false: до результата нельзя менять HP, время, инвентарь, ресурсы, валюту, состояния, NPC, квесты, местоположение или факты мира.",
+          "Верни только короткий JSON по схеме. Отчёт предназначен второй нейросети и должен содержать только решения, доказательства и неизвестные данные.",
+        ].join("\n\n"),
+      },
+      { role: "user", content: inputText },
+    ];
+    const analysisStartedAt = Date.now();
+    try {
+      const analysisCall = await callWithEkdrasilReadTools({
+        fetcher: fetch,
+        url: "https://routerai.ru/api/v1/chat/completions",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
+          "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
+          "X-Title": "Obsidian D&D Master — Анализ хода",
+        },
+        requestBody: {
+          model: MODEL_ATTEMPTS[0]!.id,
+          messages: analysisMessages,
+          response_format: { type: "json_schema", json_schema: { name: "ekdrasil_turn_analysis", strict: true, schema: analysisSchema } },
+          structured_outputs: true,
+          temperature: 0.1,
+          max_tokens: 1800,
+        },
+        enabled: true,
+        ruleParagraphs,
+        canonParagraphs,
+        maxToolRounds: 2,
+        timeoutMs: 20_000,
+      });
+      const root = isRecord(analysisCall.payload) ? analysisCall.payload : {};
+      const choices = Array.isArray(root.choices) ? root.choices : [];
+      const choice = isRecord(choices[0]) ? choices[0] : {};
+      const message = isRecord(choice.message) ? choice.message : {};
+      const content = outputText(message);
+      if (!analysisCall.response.ok || analysisCall.exhausted || !content || choice.finish_reason === "length") {
+        throw new Error("Аналитическая нейросеть не завершила проверку правил и канона.");
+      }
+      let parsedAnalysis: unknown;
+      try { parsedAnalysis = JSON.parse(content); }
+      catch { throw new Error("Аналитическая нейросеть вернула некорректный JSON."); }
+      if (!validateSchema(parsedAnalysis, analysisSchema)) {
+        throw new Error("Отчёт аналитической нейросети не прошёл проверку структуры.");
+      }
+      turnAnalysisReport = parsedAnalysis as JsonRecord;
+      console.log("[obsidian-gm] turn analysis completed", {
+        model: MODEL_ATTEMPTS[0]!.id,
+        elapsedMs: Date.now() - analysisStartedAt,
+        actionClass: turnAnalysisReport.actionClass,
+        requiresPlayerRoll: turnAnalysisReport.requiresPlayerRoll,
+        ruleFindings: String(turnAnalysisReport.rulesFindings).length,
+        canonFindings: String(turnAnalysisReport.canonFindings).length,
+      });
+      messages.push({
+        role: "user",
+        content: "ОТЧЁТ ПЕРВОЙ НЕЙРОСЕТИ — ОБЯЗАТЕЛЬНО УЧТИ ПРИ СОЗДАНИИ ИГРОВОГО ХОДА:\n" +
+          JSON.stringify(turnAnalysisReport) +
+          "\nНе повторяй исследование. Сформируй итоговый ход строго по схеме приложения. Отчёт не является разрешением игнорировать ограничения движка.",
+      });
+    } catch (error) {
+      console.error("[obsidian-gm] turn analysis failed", {
+        elapsedMs: Date.now() - analysisStartedAt,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return json({
+        error: {
+          code: "TURN_ANALYSIS_FAILED",
+          message: "Не удалось проверить действие по правилам D&D 2024, канону Экдрасиля и состоянию кампании. Игровой ход не создан и ничего не сохранено. Повтори отправку.",
+        },
+      }, 503, cors);
+    }
+  }
+
   for (const attempt of orderedModelAttempts) {
     try {
       const responseFormat = attempt.format === "schema"
@@ -678,11 +803,13 @@ Deno.serve(async (req: Request) => {
         url: "https://routerai.ru/api/v1/chat/completions",
         headers: requestHeaders,
         requestBody: modelRequestBody,
-        enabled: isGameTurnRequest,
+        // The first model already performed bounded source retrieval. The
+        // second model receives its compact evidence report and only narrates.
+        enabled: false,
         ruleParagraphs,
         canonParagraphs,
-        maxToolRounds: 3,
-        timeoutMs: isGameTurnRequest ? 82_000 : isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000,
+        maxToolRounds: 0,
+        timeoutMs: isGameTurnRequest ? 42_000 : isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000,
       });
       const upstream = modelCall.response;
       console.log("[obsidian-gm] model response received", {
@@ -753,6 +880,27 @@ Deno.serve(async (req: Request) => {
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "invalid JSON", responseChars: content.length });
         failures.push(`${attempt.id}: invalid JSON`);
         continue;
+      }
+      if (isGameTurnRequest && turnAnalysisReport?.requiresPlayerRoll === true) {
+        const candidate = isRecord(parsed) ? parsed : {};
+        const characterChanges = isRecord(candidate.characterChanges) ? candidate.characterChanges : {};
+        const worldChanges = isRecord(candidate.worldChanges) ? candidate.worldChanges : {};
+        const currency = isRecord(characterChanges.currencyDelta) ? characterChanges.currencyDelta : {};
+        const noCharacterChanges =
+          Array.isArray(characterChanges.inventory) && characterChanges.inventory.length === 0 &&
+          Array.isArray(characterChanges.resources) && characterChanges.resources.length === 0 &&
+          Array.isArray(characterChanges.conditions) && characterChanges.conditions.length === 0 &&
+          ["cp", "sp", "ep", "gp", "pp"].every((coin) => currency[coin] === 0);
+        const worldCollections = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newLocations", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
+        const noWorldChanges = worldCollections.every((key) => Array.isArray(worldChanges[key]) && (worldChanges[key] as unknown[]).length === 0);
+        const hasPlayerRoll = Array.isArray(candidate.rolls) && candidate.rolls.length > 0 &&
+          (candidate.rolls as JsonRecord[]).every((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        const safePendingRoll = hasPlayerRoll && candidate.timeDeltaMinutes === 0 && candidate.hpDelta === 0 &&
+          candidate.newLocationId === null && candidate.newLocationKey === null && noCharacterChanges && noWorldChanges;
+        if (!safePendingRoll) {
+          failures.push(`${attempt.id}: analyst required a player roll but final turn omitted it or mutated pending state`);
+          continue;
+        }
       }
       if (!validateSchema(parsed, schema)) {
         console.warn("[obsidian-gm] model output rejected", { model: attempt.id, reason: "schema mismatch", responseChars: content.length, finishReason: choice.finish_reason ?? "unknown" });
