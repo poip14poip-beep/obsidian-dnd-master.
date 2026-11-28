@@ -176,8 +176,10 @@ export function validateTurnDraft(
       const combat = profile.combatProfile;
       if (!combat || !["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(combat.status) ||
           (combat.armorClass !== null && (!Number.isInteger(combat.armorClass) || combat.armorClass < 1 || combat.armorClass > 40)) ||
-          (combat.hitPoints !== null && (!Number.isInteger(combat.hitPoints) || combat.hitPoints < 1 || combat.hitPoints > 5000)) ||
-          (combat.status === "SRD_VERIFIED" && (!combat.source.trim() || combat.armorClass === null || combat.hitPoints === null))) {
+          (combat.hitPointsCurrent !== null && (!Number.isInteger(combat.hitPointsCurrent) || combat.hitPointsCurrent < 0 || combat.hitPointsCurrent > 5000)) ||
+          (combat.hitPointsMax !== null && (!Number.isInteger(combat.hitPointsMax) || combat.hitPointsMax < 1 || combat.hitPointsMax > 5000)) ||
+          (combat.hitPointsCurrent !== null && combat.hitPointsMax !== null && combat.hitPointsCurrent > combat.hitPointsMax) ||
+          (combat.status === "SRD_VERIFIED" && (!combat.source.trim() || combat.armorClass === null || combat.hitPointsCurrent === null || combat.hitPointsMax === null))) {
         errors.push(`Боевой профиль NPC «${change.name}» не прошёл проверку источника и числовых значений.`);
       }
     }
