@@ -369,7 +369,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     };
     const completedRolls = [{
       roller: "PLAYER", label: "Атака Longsword по Goblin", formula: "1d20+5",
-      targetType: "AC", dc: 18, total: 6, success: false,
+      targetType: "AC", dc: 18, total: 25, success: true,
       dice: [{ sides: 20, value: 20, kept: true }],
     }];
     const result = executeEkdrasilReadTool("prepare_player_damage", JSON.stringify({
