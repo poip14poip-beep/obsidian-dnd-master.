@@ -9,12 +9,12 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
-import { resolvePlayerAction, rollDiceAtServer, type CompletedGameRoll, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, restorePendingGameTurn, rollDiceAtServer, type CompletedGameRoll, type GameMasterTurn } from "@/domain/game-master";
 import { formatGameMasterAnswer } from "@/domain/game-master-presentation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,6 +46,7 @@ export const Route = createFileRoute("/turns")({
 
 function TurnsPage() {
   const {
+    hydrated,
     sources,
     worldState,
     character,
@@ -74,6 +75,7 @@ function TurnsPage() {
   const [gmBusy, setGmBusy] = useState(false);
   // React state updates after the event; this synchronous guard blocks rapid duplicate submissions.
   const gmRequestInFlight = useRef(false);
+  const pendingRestoreStarted = useRef(false);
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
@@ -86,6 +88,35 @@ function TurnsPage() {
 
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
+
+  useEffect(() => {
+    if (!hydrated || !session?.access_token || pendingRestoreStarted.current) return;
+    pendingRestoreStarted.current = true;
+    let cancelled = false;
+    void restorePendingGameTurn(session.access_token, {
+      action: "",
+      sources,
+      world: worldState,
+      character,
+      canonFacts,
+      npcs,
+      factions,
+      locations,
+      timelineEvents,
+      journal: sessionLog.entries,
+    }).then((pending) => {
+      if (!pending || cancelled) return;
+      setPlayerAction(pending.action);
+      setGmTurn(pending.turn);
+      setCompletedRolls(pending.completedRolls);
+      toast.info(pending.completedRolls.length > 0
+        ? "Ожидающий ход восстановлен вместе с уже выполненными бросками. Продолжи то же действие."
+        : "Ожидающий ход восстановлен. Можно выполнить сохранённый бросок.");
+    }).catch((error) => {
+      if (!cancelled) setGmError(error instanceof Error ? error.message : "Не удалось восстановить ожидающий ход.");
+    });
+    return () => { cancelled = true; };
+  }, [hydrated, session?.access_token, sources, worldState, character, canonFacts, npcs, factions, locations, timelineEvents, sessionLog.entries]);
 
   async function handleResolveAction(actionOverride?: string, completedRollsOverride?: CompletedGameRoll[]) {
     if (gmRequestInFlight.current) return;
