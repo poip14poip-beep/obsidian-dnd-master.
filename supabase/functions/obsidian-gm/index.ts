@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectGameplayRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
 import { evaluateRollSuccess, parseDiceFormula, rollDiceFormula } from "./dice.ts";
-import { callWithEkdrasilReadTools, executeEkdrasilReadTool, type PreparedRoll } from "./game-master-retrieval.ts";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, normalizeSocialAttitude, resolveSocialCheckOutcome, type PreparedRoll } from "./game-master-retrieval.ts";
 import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -275,6 +275,71 @@ function npcProfilesFromInput(inputText: string): JsonRecord[] {
   } catch {
     return [];
   }
+}
+
+function applySocialCheckOutcomes(parsed: JsonRecord, inputText: string): boolean {
+  let request: unknown = null;
+  try { request = JSON.parse(inputText); } catch { return false; }
+  if (!isRecord(request) || !Array.isArray(request.completedRolls)) return false;
+  const knownNpcs = npcProfilesFromInput(inputText);
+  if (!knownNpcs.length) return false;
+  const completed = request.completedRolls.filter(isRecord);
+  const socialRolls = completed.filter((roll) =>
+    roll.roller === "PLAYER" && roll.targetType === "DC" &&
+    typeof roll.label === "string" && roll.label.startsWith("Социальная проверка — ") &&
+    Number.isInteger(roll.total) && Number.isInteger(roll.dc),
+  );
+  if (!socialRolls.length) return false;
+  const npcChanges = Array.isArray(parsed.npcChanges)
+    ? parsed.npcChanges.filter(isRecord)
+    : [];
+  const processed = new Set<string>();
+  let changed = false;
+  for (const roll of socialRolls) {
+    const label = roll.label as string;
+    const prefix = "Социальная проверка — ";
+    const separator = label.indexOf(": ", prefix.length);
+    if (separator < 0) continue;
+    const name = label.slice(prefix.length, separator).trim();
+    const key = name.normalize("NFKC").toLocaleLowerCase();
+    if (!key || processed.has(key)) continue;
+    processed.add(key);
+    const npc = knownNpcs.find((entry) => typeof entry.name === "string" &&
+      entry.name.normalize("NFKC").trim().toLocaleLowerCase() === key);
+    const currentAttitude = normalizeSocialAttitude(npc?.attitudeToPlayer);
+    if (!npc || !currentAttitude) continue;
+    const outcome = resolveSocialCheckOutcome(currentAttitude, roll.total as number, roll.dc as number);
+    if (!outcome.shifted) continue;
+    const existing = npcChanges.find((change) =>
+      typeof change.name === "string" &&
+      change.name.normalize("NFKC").trim().toLocaleLowerCase() === key,
+    );
+    if (existing) {
+      existing.attitudeToPlayer = outcome.attitude;
+      existing.reason = "Отношение синхронизировано сервером после социальной проверки.";
+    } else {
+      const profile = isRecord(npc.gmProfile) ? npc.gmProfile : {};
+      npcChanges.push({
+        action: "UPDATE",
+        name,
+        role: typeof npc.role === "string" ? npc.role : "NPC",
+        goals: typeof npc.goals === "string" ? npc.goals : "Неизвестны",
+        resources: typeof npc.resources === "string" ? npc.resources : "Неизвестны",
+        attitudeToPlayer: outcome.attitude,
+        playerVisible: npc.playerVisible === true,
+        locationName: typeof npc.locationName === "string" ? npc.locationName : null,
+        factionName: typeof npc.factionName === "string" ? npc.factionName : null,
+        certainty: ["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc.certainty)) ? npc.certainty : "UNKNOWN",
+        reason: "Отношение синхронизировано сервером после социальной проверки.",
+        gmProfile: profile,
+        knowledgeAdditions: Array.isArray(npc.knowledgeAdditions) ? npc.knowledgeAdditions : [],
+        playerKnowledgeAdditions: Array.isArray(npc.playerKnowledgeAdditions) ? npc.playerKnowledgeAdditions : [],
+      });
+    }
+    changed = true;
+  }
+  if (changed) parsed.npcChanges = npcChanges;
+  return changed;
 }
 
 function partyNamesFromInput(inputText: string): string[] {
@@ -1547,6 +1612,9 @@ Deno.serve(async (req: Request) => {
         content = JSON.stringify(parsed);
       }
       if (isGameTurnRequest && isRecord(parsed)) {
+        if (applySocialCheckOutcomes(parsed, inputText)) {
+          content = JSON.stringify(parsed);
+        }
         const reactions = modelCall.serverRolls.filter((roll) =>
           roll.kind === "NPC_REACTION" && typeof roll.npcName === "string" &&
           ["hostile", "indifferent", "friendly"].includes(String(roll.npcAttitude)),
