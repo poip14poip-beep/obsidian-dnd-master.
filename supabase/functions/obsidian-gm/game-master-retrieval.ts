@@ -1436,7 +1436,7 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tool_choice;
       let finalResult = await send(finalBody);
       if (!finalResult.response.ok) {
-        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
+        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, combatEvents, conversation: messages };
       }
 
       const finalRoot = finalResult.payload && typeof finalResult.payload === "object"
