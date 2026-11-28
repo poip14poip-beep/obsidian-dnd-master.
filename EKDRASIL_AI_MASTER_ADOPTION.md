@@ -112,3 +112,23 @@ The status above is superseded where it conflicts with the implementation below.
 - The complete autonomous combat pipeline still needs broader deterministic support (initiative, multiple targets, conditions, reactions, saves, movement, and all relevant D&D 2024 action economy), plus tests for each supported mechanic.
 - The current NPC server roller supports the verified attack/damage paths implemented by the existing SRD tools; it does not claim to simulate every NPC ability or encounter rule.
 - Run a disposable Android campaign end-to-end against the deployed function before using an important campaign.
+
+
+## Implementation update — 28 November 2026 — durable pending turns and deployment
+
+This update supersedes earlier status notes that described signed rolls, server NPC rolls, or reload recovery as not yet implemented.
+
+- Added a server-only `gm_pending_turns` table with a 24-hour expiry, one active pending action per account, the exact action text, validated turn draft, prepared player check, signed challenge, and completed signed roll proofs.
+- Added service-role-only RPCs to save, read, append a verified player result, and clear a pending turn. The migration `20261128190000_add_durable_gm_pending_turns.sql` is applied. The table and all four RPC signatures were verified in the live project.
+- Player roll execution now requires the signed challenge to match the user's active pending turn. The server rolls the dice, signs the proof, consumes one-time nonces, and atomically records the result before returning it.
+- The client restores the pending action, turn draft, signed challenge, and completed roll proofs after a reload. If the roll was already stored but the continuation response was lost, the player sees the saved result and can resume the same action without rolling again.
+- Repeated submission of the same action before the player rolls returns the saved pending turn and challenge instead of invoking the model again or repeating NPC rolls. A different action is rejected until the pending action is resumed or resolved.
+- Added server-side NPC attack and damage dice execution inside the bounded tool loop. The tool result is fed into the next tool call; final GM roll records are appended only after the model's structured output passes validation.
+- Deployed the current `main` Edge Function source to Supabase project `dbchfgkdrqpjspptoezh`: `obsidian-gm` version 74, status ACTIVE, JWT verification enabled.
+- GitHub Actions for current `main` commit `710956c96623abfe09fee82099263c8547ceb855` passed: `bun run test`, `bunx tsc --noEmit`, and `bun run build`.
+
+### Current verification boundary
+
+The code and CI gates are now in place, and the updated Edge Function is deployed. A real authenticated Android campaign has not yet been run through the complete sequence (submit action → player roll → network interruption/reload → resume → confirm draft → commit). Do not describe the whole autonomous master as fully accepted until that end-to-end campaign succeeds.
+
+The implementation has been committed to `main`. The earlier draft PR #21 still points to an older feature-branch head and is not the source of the deployed code. No further PR merge is required to make these `main` commits live.
