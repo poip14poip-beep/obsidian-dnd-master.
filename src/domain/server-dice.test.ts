@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { rollDiceAtServer } from "./game-master";
-import { rollDiceFormula as rollServerDice } from "../../supabase/functions/obsidian-gm/dice";
+import { evaluateRollSuccess, rollDiceFormula as rollServerDice } from "../../supabase/functions/obsidian-gm/dice";
 
 describe("server-authoritative dice", () => {
   const testChallenge = {
@@ -72,4 +72,13 @@ describe("server-authoritative dice", () => {
       publishableKey: "sb_publishable_test",
     })).rejects.toMatchObject({ code: "DICE_RESULT_MISMATCH" });
   });
+  it("applies natural 1 and natural 20 only to attack rolls against AC", () => {
+    expect(evaluateRollSuccess("AC", 15, [{ value: 1, sides: 20, kept: true }], 21)).toBe(false);
+    expect(evaluateRollSuccess("AC", 25, [{ value: 20, sides: 20, kept: true }], 8)).toBe(true);
+    expect(evaluateRollSuccess("DC", 15, [{ value: 1, sides: 20, kept: true }], 18)).toBe(true);
+    expect(evaluateRollSuccess("DC", 25, [{ value: 20, sides: 20, kept: true }], 22)).toBe(false);
+    expect(evaluateRollSuccess("NONE", null, [{ value: 12, sides: 20, kept: true }], 12)).toBeNull();
+  });
+
+
 });
