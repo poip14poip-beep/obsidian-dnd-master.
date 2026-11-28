@@ -846,11 +846,13 @@ export async function callWithEkdrasilReadTools(options: {
         ? finalChoice.message as JsonRecord : {};
       const finalContent = typeof finalMessage.content === "string" ? finalMessage.content : "";
       let pendingRoll: JsonRecord | null = null;
+      let parsedFinal: JsonRecord | null = null;
       try {
-        const parsedFinal = JSON.parse(finalContent);
-        if (parsedFinal && typeof parsedFinal === "object" && !Array.isArray(parsedFinal)) {
-          const rolls = Array.isArray((parsedFinal as JsonRecord).rolls)
-            ? (parsedFinal as JsonRecord).rolls as unknown[] : [];
+        const parsed = JSON.parse(finalContent);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          parsedFinal = parsed as JsonRecord;
+          const rolls = Array.isArray(parsedFinal.rolls)
+            ? parsedFinal.rolls as unknown[] : [];
           pendingRoll = rolls.find((roll) => roll && typeof roll === "object" &&
             (roll as JsonRecord).roller === "PLAYER" &&
             (roll as JsonRecord).result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") as JsonRecord | undefined ?? null;
@@ -916,7 +918,7 @@ export async function callWithEkdrasilReadTools(options: {
                 pendingRoll.dc = preparedRoll.dc;
                 pendingRoll.targetType = preparedRoll.targetType;
                 // Keep the returned structured payload in sync with the server-prepared roll.
-                finalMessage.content = JSON.stringify(parsedFinal);
+                if (parsedFinal) finalMessage.content = JSON.stringify(parsedFinal);
                 console.warn("[obsidian-gm] generic passerby attack prepared from verified SRD Commoner AC", {
                   weapon, target, targetAC: 10,
                 });
