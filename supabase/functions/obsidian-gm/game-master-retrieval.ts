@@ -1,11 +1,13 @@
 import { parseDiceFormula } from "./dice.ts";
 /**
- * Bounded, read-only retrieval loop adapted from Open Dungeon Master (MIT).
- * Upstream: https://github.com/Lebbitheplow/open-game-master
+ * Bounded retrieval and deterministic roll-preparation loop adapted from
+ * Open Dungeon Master (MIT). Upstream: https://github.com/Lebbitheplow/open-game-master
  * MIT-licensed implementation inspected via https://github.com/mfarme/lorekeeper
  *
- * The tools expose only source-grounded D&D 2024/SRD 5.2.1 and Ekdrasil 2.4
- * excerpts. They cannot roll dice, mutate campaign state, or write persistence.
+ * Retrieval tools expose source-grounded D&D 2024/SRD 5.2.1 and Ekdrasil 2.4
+ * excerpts. Roll tools prepare signed player/NPC rolls from verified sources
+ * and character data. This layer never generates dice outcomes, mutates
+ * campaign state, or writes persistence.
  */
 import { selectCanonExcerpts, selectRuleExcerpts } from "./model-routing.ts";
 
