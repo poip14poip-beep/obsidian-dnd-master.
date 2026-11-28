@@ -62,14 +62,14 @@ describe("turn HP validation", () => {
     expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
       .toContain("Нельзя менять максимум ресурса «Second Wind» без подтверждённого изменения листа персонажа.");
   });
-  it("rejects healing above the character's maximum HP", () => {
+  it("allows healing above maximum HP because the commit resolver caps it", () => {
     const state = createInitialCollections();
     state.world_state.setup.confirmed = true;
     state.player_character_state.hpCurrent = 180;
     state.player_character_state.hpMax = 184;
     const draft = { ...createEmptyTurnDraft(), summary: "Лечение", worldOutcome: "Восстановлено здоровье", hpDelta: 5 };
-    expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
-      .toContain("Итоговые HP не могут превышать максимум персонажа.");
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state)).toEqual([]);
+    expect(applyHitPointDelta(180, 184, 0, 5).hpCurrent).toBe(184);
   });
 });
 
