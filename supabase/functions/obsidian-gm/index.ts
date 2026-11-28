@@ -166,6 +166,90 @@ async function consumeDiceNonces(
   return data === true;
 }
 
+type PendingGmTurn = {
+  owner_id: string;
+  pending_id: string;
+  player_action: string;
+  turn_payload: JsonRecord;
+  prepared_roll: JsonRecord;
+  challenge: JsonRecord | null;
+  completed_rolls: JsonRecord[];
+  expires_at: string;
+};
+
+function createServiceClient() {
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server service-role key is not configured.");
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function getPendingGmTurn(userId: string): Promise<PendingGmTurn | null> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_get_gm_pending_turn", { p_owner_id: userId });
+  if (error) {
+    console.error("[obsidian-gm] pending-turn read failed", { message: error.message });
+    throw new Error("Не удалось восстановить ожидающий игровой бросок.");
+  }
+  return isRecord(data) ? data as unknown as PendingGmTurn : null;
+}
+
+async function savePendingGmTurn(input: {
+  userId: string;
+  pendingId: string;
+  action: string;
+  turn: JsonRecord;
+  preparedRoll: JsonRecord;
+  challenge: SignedDiceChallenge;
+  completedRolls: JsonRecord[];
+}): Promise<boolean> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_save_gm_pending_turn", {
+    p_owner_id: input.userId,
+    p_pending_id: input.pendingId,
+    p_player_action: input.action,
+    p_turn_payload: input.turn,
+    p_prepared_roll: input.preparedRoll,
+    p_challenge: input.challenge,
+    p_completed_rolls: input.completedRolls,
+    p_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) {
+    console.error("[obsidian-gm] pending-turn save failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+async function recordPendingGmRoll(
+  userId: string,
+  pendingId: string,
+  challengeNonce: string,
+  completedRoll: JsonRecord,
+): Promise<boolean> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_record_gm_pending_roll", {
+    p_owner_id: userId,
+    p_pending_id: pendingId,
+    p_nonce: challengeNonce,
+    p_completed_roll: completedRoll,
+  });
+  if (error) {
+    console.error("[obsidian-gm] pending-roll result save failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+async function clearPendingGmTurn(userId: string, pendingId?: string): Promise<void> {
+  const client = createServiceClient();
+  const { error } = await client.rpc("obsidian_clear_gm_pending_turn", {
+    p_owner_id: userId,
+    p_pending_id: pendingId ?? null,
+  });
+  if (error) console.error("[obsidian-gm] pending-turn clear failed", { message: error.message });
+}
+
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
   try {
     const parsed: unknown = JSON.parse(inputText);
