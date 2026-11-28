@@ -996,62 +996,7 @@ export async function callWithEkdrasilReadTools(options: {
         messages.push({
           role: "system",
           content: "ЛИМИТ ПОИСКА ИСТОЧНИКОВ: базовые выдержки правил и канона уже переданы. Не повторяй поиск тех же сведений. Теперь выбери соответствующий игровой инструмент подготовки проверки/атаки либо, если по D&D 2024 бросок не требуется, верни обычный структурированный ход. Не угадывай числа и не подменяй тип действия.",
-        
-  it("stops repeated SRD searches and keeps player-roll preparation tools available", async () => {
-    const character = {
-      statsCertainty: "KNOWN",
-      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
-      skillBonuses: [{ name: "Perception", bonus: 5, basis: "WISDOM + владение" }],
-      conditions: [],
-    };
-    const search = (id: string) => ({
-      choices: [{ message: { role: "assistant", tool_calls: [{
-        id, type: "function",
-        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "ability check d20" }) },
-      }] } }],
-    });
-    const prepare = {
-      choices: [{ message: { role: "assistant", tool_calls: [{
-        id: "prepare-check", type: "function",
-        function: { name: "prepare_player_check", arguments: JSON.stringify({
-          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 13,
-          advantage: "NONE", reason: "Проверить, замечает ли персонаж движение",
-        }) },
-      }] } }],
-    };
-    const ready = { choices: [{ message: { role: "assistant", content: "Проверка подготовлена." } }] };
-    const finalTurn = {
-      narration: "Ты всматриваешься в темноту.",
-      rolls: [{ roller: "PLAYER", label: "Восприятие", formula: "1d20+5", dc: 13,
-        targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
-    };
-    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify(finalTurn) } }] };
-    const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(search("search-1")), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(search("search-2")), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(prepare), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(ready), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
-    const result = await callWithEkdrasilReadTools({
-      fetcher: fetcher as unknown as typeof fetch,
-      url: "https://example.test",
-      headers: {},
-      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
-      enabled: true,
-      rules,
-      canon,
-      playerCharacter: character,
-    });
-    const thirdRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
-    const availableNames = thirdRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
-    expect(availableNames).not.toContain("search_dnd_rules");
-    expect(availableNames).toContain("prepare_player_check");
-    expect(result.preparedRoll).toMatchObject({
-      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 13, targetType: "DC",
-    });
-    expect(fetcher).toHaveBeenCalledTimes(5);
-  });
-});
+        });
       }
       toolCalls += 1;
     }
