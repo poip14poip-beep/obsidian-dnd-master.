@@ -3,12 +3,26 @@ export type SpecialistAgentModel =
   | "deepseek/deepseek-v4.1-flash"
   | "google/gemini-4-argon";
 
+export interface ActionResolution {
+  requiresRoll: boolean;
+  roller: "PLAYER" | "GM" | "NONE";
+  kind: "skill_check" | "ability_check" | "saving_throw" | "initiative" | "custom" | "none";
+  skill: string | null;
+  ability: string | null;
+  difficulty: string | null;
+  dc: number | null;
+  advantage: "none" | "advantage" | "disadvantage";
+  expression: string;
+  reason: string;
+}
+
 export interface SpecialistAgentResult {
   role: SpecialistAgentRole;
   model: SpecialistAgentModel;
   status: "COMPLETED" | "UNAVAILABLE";
   findings: string[];
   uncertainties: string[];
+  actionResolution: ActionResolution | null;
 }
 
 interface AgentRequest {
@@ -27,8 +41,25 @@ const AGENT_SCHEMA = {
   properties: {
     findings: { type: "array", maxItems: 5, items: { type: "string", maxLength: 360 } },
     uncertainties: { type: "array", maxItems: 5, items: { type: "string", maxLength: 240 } },
+    actionResolution: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      properties: {
+        requiresRoll: { type: "boolean" },
+        roller: { type: "string", enum: ["PLAYER", "GM", "NONE"] },
+        kind: { type: "string", enum: ["skill_check", "ability_check", "saving_throw", "initiative", "custom", "none"] },
+        skill: { type: ["string", "null"] },
+        ability: { type: ["string", "null"] },
+        difficulty: { type: ["string", "null"] },
+        dc: { type: ["integer", "null"] },
+        advantage: { type: "string", enum: ["none", "advantage", "disadvantage"] },
+        expression: { type: "string", maxLength: 80 },
+        reason: { type: "string", maxLength: 240 },
+      },
+      required: ["requiresRoll", "roller", "kind", "skill", "ability", "difficulty", "dc", "advantage", "expression", "reason"],
+    },
   },
-  required: ["findings", "uncertainties"],
+  required: ["findings", "uncertainties", "actionResolution"],
 };
 
 function extractContent(payload: unknown): string {
@@ -54,6 +85,7 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
     status: "UNAVAILABLE",
     findings: [],
     uncertainties: ["Специализированный анализатор временно недоступен; итоговый мастер обязан проверить источники самостоятельно."],
+    actionResolution: null,
   });
   try {
     const response = await (request.fetcher ?? fetch)("https://routerai.ru/api/v1/chat/completions", {
@@ -91,12 +123,31 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
         [...findings, ...uncertainties].some((item) => typeof item !== "string" || item.length > 360)) {
       return unavailable();
     }
+    const resolutionRaw = (parsed as { actionResolution?: unknown }).actionResolution;
+    let actionResolution: ActionResolution | null = null;
+    if (resolutionRaw !== null && resolutionRaw !== undefined) {
+      if (!resolutionRaw || typeof resolutionRaw !== "object" || Array.isArray(resolutionRaw)) return unavailable();
+      const value = resolutionRaw as Record<string, unknown>;
+      if (typeof value.requiresRoll !== "boolean" ||
+          !["PLAYER", "GM", "NONE"].includes(String(value.roller)) ||
+          !["skill_check", "ability_check", "saving_throw", "initiative", "custom", "none"].includes(String(value.kind)) ||
+          !["none", "advantage", "disadvantage"].includes(String(value.advantage)) ||
+          typeof value.expression !== "string" || value.expression.length > 80 ||
+          typeof value.reason !== "string" || value.reason.length > 240 ||
+          !(value.skill === null || typeof value.skill === "string") ||
+          !(value.ability === null || typeof value.ability === "string") ||
+          !(value.difficulty === null || typeof value.difficulty === "string") ||
+          !(value.dc === null || Number.isInteger(value.dc))) return unavailable();
+      actionResolution = value as unknown as ActionResolution;
+    }
+    if (request.role === "DND_RULES_AND_CHARACTER" && !actionResolution) return unavailable();
     return {
       role: request.role,
       model: request.model,
       status: "COMPLETED",
       findings: findings as string[],
       uncertainties: uncertainties as string[],
+      actionResolution,
     };
   } catch {
     return unavailable();
@@ -138,7 +189,8 @@ export async function runGameTurnAgents(args: {
         "Определи применимые правила, действие/реакцию/движение, нужную проверку, характеристику, навык, модификатор, преимущество/помеху, формулу броска и необходимые условия.",
         "Проверяй числа только по листу персонажа и переданным фрагментам SRD. Не выдумывай DC, AC, бонусы, ресурсы или свойства.",
         "Если для решения не хватает точного правила или значения, явно укажи uncertainty. Не описывай исход до броска.",
-        "Каждый вывод привязывай к строкам SRD или полю листа персонажа. Верни только краткий JSON findings и uncertainties.",
+        "ОБЯЗАТЕЛЬНО заполни actionResolution. Это механическое решение до повествования: requiresRoll=false, roller=NONE, kind=none, остальные ссылки null и expression пустая строка для безопасного/очевидного действия без неопределённости. Если проверка нужна — requiresRoll=true, roller=PLAYER для главного героя или GM для NPC/существа; выбери точный kind, навык/характеристику, difficulty или подтверждённый DC, advantage и reason. Для игрока никогда не задавай expression: сервер вычислит бонус по листу. Для GM используй expression только из подтверждённого правила/статблока. Не выдумывай AC/оружие/урон. Если не можешь подтвердить механику, верни uncertainty и requiresRoll=false только если действие безопасно; иначе агент недоступен и ход будет остановлен.",
+        "Каждый вывод привязывай к строкам SRD или полю листа персонажа. Верни только JSON findings, uncertainties и actionResolution.",
       ].join("\n"),
       sourceContext: args.rulesContext,
       campaignInput: args.campaignInput,
@@ -156,6 +208,7 @@ export function formatSpecialistAgentContext(results: SpecialistAgentResult[]): 
       `АГЕНТ: ${result.role}; модель=${result.model}; статус=${result.status}`,
       result.findings.length ? `Выводы:\n- ${result.findings.join("\n- ")}` : "Выводы: нет подтверждённых выводов.",
       result.uncertainties.length ? `Неопределённости:\n- ${result.uncertainties.join("\n- ")}` : "Неопределённости: не отмечены.",
+      result.actionResolution ? `МЕХАНИЧЕСКОЕ РЕШЕНИЕ: ${JSON.stringify(result.actionResolution)}` : "МЕХАНИЧЕСКОЕ РЕШЕНИЕ: отсутствует.",
     ].join("\n")),
   ].join("\n\n");
 }
