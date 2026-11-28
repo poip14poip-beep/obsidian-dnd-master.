@@ -499,7 +499,9 @@ function prepareCheckNotice(
   const conditions = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
   const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(conditions);
   const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
-  const passiveScore = 10 + Number(entry.bonus) + advantage - exhaustionPenalty;
+  const conditionFlags = conditionKeys(playerCharacter);
+  const poisonedPenalty = conditionFlags.has("poisoned") ? 5 : 0;
+  const passiveScore = 10 + Number(entry.bonus) + advantage - exhaustionPenalty - poisonedPenalty;
   const noticed = passiveScore >= (dc as number);
   const skillLabel = SKILL_RULES[sense]!.labelRu;
   return {
@@ -765,7 +767,10 @@ function preparePlayerAttack(
   if (["incapacitated", "paralyzed", "petrified", "stunned", "unconscious"].some((condition) => conditions.has(condition))) {
     return { ok: false, error: "Персонаж недееспособен из-за активного состояния и не может совершить атаку." };
   }
-  const modifier = Number(weaponEntry.attackBonus);
+  const exhaustionText = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
+  const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(exhaustionText);
+  const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
+  const modifier = Number(weaponEntry.attackBonus) - exhaustionPenalty;
   const effectiveAdvantage = combineRollAdvantage(
     advantage, false, ["blinded", "poisoned", "prone", "restrained"].some((condition) => conditions.has(condition)),
   );
