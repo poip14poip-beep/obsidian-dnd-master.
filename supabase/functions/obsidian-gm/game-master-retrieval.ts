@@ -1,4 +1,4 @@
-import { parseDiceFormula } from "./dice.ts";
+import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 /**
  * Bounded retrieval and deterministic roll-preparation loop adapted from
  * Open Dungeon Master (MIT). Upstream: https://github.com/Lebbitheplow/open-game-master
@@ -307,7 +307,7 @@ const SKILL_ALIASES: Record<string, string> = {
   "выживание": "survival",
 };
 function normalizeSkillKey(value: string): string {
-  const key = value.normalize("NFKC").trim().toLocaleLowerCase().replace(/[\\s-]+/g, "_");
+  const key = value.normalize("NFKC").trim().toLocaleLowerCase().replace(/[\s-]+/g, "_");
   return SKILL_ALIASES[key] ?? key;
 }
 const ROLL_DIFFICULTY_DC: Record<string, number> = {
@@ -786,7 +786,7 @@ function preparePlayerAttack(
     return { ok: false, error: "Оружие или его подтверждённый бонус атаки отсутствует в листе персонажа." };
   }
   const targetNeedle = targetName.normalize("NFKC").toLocaleLowerCase();
-  const acPattern = new RegExp("(?:armor\\s+class|\bAC)\\s*:?\\s*" + String(targetAC) + "\b", "i");
+  const acPattern = new RegExp("(?:armor\\s+class|AC)\\s*: ?\\s*" + String(targetAC) + "(?:\\s|$|\\))", "i");
   const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) =>
     excerpt.text.normalize("NFKC").toLocaleLowerCase().includes(targetNeedle) && acPattern.test(excerpt.text),
   );
@@ -1121,6 +1121,7 @@ export function executeEkdrasilReadTool(
   retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [],
   completedRolls: JsonRecord[] = [],
   npcProfiles: JsonRecord[] = [],
+  travelWeather: TravelWeatherContext = null,
 ): JsonRecord {
   let args: unknown;
   try { args = JSON.parse(rawArguments || "{}"); }
