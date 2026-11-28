@@ -786,7 +786,7 @@ function preparePlayerAttack(
     return { ok: false, error: "Оружие или его подтверждённый бонус атаки отсутствует в листе персонажа." };
   }
   const targetNeedle = targetName.normalize("NFKC").toLocaleLowerCase();
-  const acPattern = new RegExp("(?:armor\\s+class|AC)\\s*: ?\\s*" + String(targetAC) + "(?:\\s|$|\\))", "i");
+  const acPattern = new RegExp("(?:armor\\s+class|AC)\\s*:?\\s*" + String(targetAC) + "(?:\\s|$|\\))", "i");
   const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) =>
     excerpt.text.normalize("NFKC").toLocaleLowerCase().includes(targetNeedle) && acPattern.test(excerpt.text),
   );
