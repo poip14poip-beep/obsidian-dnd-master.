@@ -313,7 +313,7 @@ describe("game master resolver", () => {
     }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
     expect(result.turn.rolls).toHaveLength(1);
-    expect(result.turn.rolls[0].challenge).toEqual(challenge);
+    expect(result.turn.rolls[0]?.challenge).toEqual(challenge);
   });
 
   it("passes completed dice as structured records separate from free-form action text", async () => {
