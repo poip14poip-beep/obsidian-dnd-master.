@@ -221,4 +221,26 @@ describe("D&D 2024 hit point resolution", () => {
   });
 });
 
+
+  it("rejects removing a condition that is not active on the character", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    const draft = { ...createEmptyTurnDraft(), summary: "Состояние", worldOutcome: "Состояние снято",
+      characterChanges: { inventory: [], resources: [], conditions: [{ action: "REMOVE" as const, name: "Парализован" }],
+        currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } } };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state))
+      .toContain("Нельзя снять состояние «Парализован»: оно не записано у персонажа.");
+  });
+
+  it("accepts a Russian/English condition alias and a custom Ekdrasil condition", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    state.player_character_state.conditions = ["Испуган"];
+    const draft = { ...createEmptyTurnDraft(), summary: "Состояния", worldOutcome: "Состояния обновлены",
+      characterChanges: { inventory: [], resources: [], conditions: [
+        { action: "REMOVE" as const, name: "Frightened" },
+        { action: "ADD" as const, name: "Проклятие чёрного инея" },
+      ], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } } };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state)).toEqual([]);
+  });
 });
