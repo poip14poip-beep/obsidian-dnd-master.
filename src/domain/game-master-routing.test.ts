@@ -3,6 +3,7 @@ import {
   DEEPSEEK_GAME_TURN_REASONING_EFFORT,
   GAME_TURN_MAX_OUTPUT_TOKENS,
   gameTurnAttemptTimeoutMs,
+  selectGameplayRuleExcerpts,
   selectGameMasterModelOrder,
   measureGameTurnInput,
   selectRuleExcerpts,
@@ -56,9 +57,9 @@ describe("Obsidian GM model routing", () => {
   });
 
   it("bounds the two game-turn provider attempts to the mobile request window", () => {
-    expect(gameTurnAttemptTimeoutMs(0)).toBe(60_000);
-    expect(gameTurnAttemptTimeoutMs(1)).toBe(42_000);
-    expect(gameTurnAttemptTimeoutMs(2)).toBe(42_000);
+    expect(gameTurnAttemptTimeoutMs(0)).toBe(35_000);
+    expect(gameTurnAttemptTimeoutMs(1)).toBe(20_000);
+    expect(gameTurnAttemptTimeoutMs(2)).toBe(20_000);
   });
 });
 
@@ -272,4 +273,24 @@ describe("game-turn payload metrics", () => {
     expect(measureGameTurnInput(null).npcSimulationChars).toBe(0);
     expect(measureGameTurnInput([]).npcCount).toBe(0);
   });
+  it("preloads core D&D rules when a Russian action has no English SRD keyword match", () => {
+    const rules = [
+      "# Combat",
+      "",
+      "Attack Rolls. An attack roll is a d20 test against the target Armor Class.",
+      "",
+      "# Ability Checks",
+      "",
+      "Ability Checks. An ability check uses a d20 test and the relevant ability modifier.",
+      "",
+      "# Saving Throws",
+      "",
+      "Saving Throws. A saving throw resists a harmful effect.",
+    ].join("\n");
+    const excerpts = selectGameplayRuleExcerpts(rules, ["случайного", "прохожего"], 2_000, 8);
+    expect(excerpts.length).toBeGreaterThan(0);
+    expect(excerpts.some((excerpt) => /attack roll/i.test(excerpt.text))).toBe(true);
+    expect(excerpts.some((excerpt) => /ability check/i.test(excerpt.text))).toBe(true);
+  });
+
 });

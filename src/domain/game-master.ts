@@ -807,7 +807,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       body: JSON.stringify({ operation: "GAME_TURN", model, instructions: system, input: JSON.stringify(user),
         text: { format: { type: "json_schema", name: "obsidian_game_turn", strict: true, schema: turnSchema } } }),
       // The server has a bounded two-provider retry budget; leave room for it to finish.
-      signal: AbortSignal.timeout(125_000),
+      signal: AbortSignal.timeout(70_000),
     });
   } catch (error) {
     const name = error && typeof error === "object" && "name" in error
