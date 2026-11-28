@@ -438,13 +438,15 @@ function preparePlayerDamage(
     return { ok: false, error: "Не найден подтверждённый результат атаки этого героя по этой цели. Нельзя рассчитывать урон." };
   }
   if (!resolution.hit) {
-    return { ok: true, attackResolution: { ...resolution, outcome: "MISS" }, preparedRoll: null, note: "Атака промахнулась. Бросок урона не требуется." };
+    return { ok: true, hit: false, target: targetName, attackResolution: { ...resolution, outcome: "MISS" }, preparedRoll: null, note: "Атака промахнулась. Бросок урона не требуется." };
   }
   const formula = resolution.critical ? doubleDamageDice(entry.damage) : entry.damage.replace(/\s+/g, "");
   const parsed = parseDiceFormula(formula);
   if (!parsed) return { ok: false, error: "Формула урона не поддерживается серверным генератором." };
   return {
     ok: true,
+    hit: true,
+    target: targetName,
     attackResolution: { ...resolution, outcome: resolution.critical ? "CRITICAL_HIT" : "HIT" },
     preparedRoll: {
       roller: "PLAYER",
@@ -479,7 +481,7 @@ function prepareNpcDamage(
     return { ok: false, error: "Нет подтверждённого серверного результата атаки этого существа. Урон пока не разрешён." };
   }
   if (!attackResolution.hit) {
-    return { ok: true, attackResolution: { ...attackResolution, outcome: "MISS" }, preparedRoll: null, note: "Атака NPC промахнулась. Бросок урона не требуется." };
+    return { ok: true, hit: false, target: creatureName, attackResolution: { ...attackResolution, outcome: "MISS" }, preparedRoll: null, note: "Атака NPC промахнулась. Бросок урона не требуется." };
   }
   const creatureNeedle = creatureName.normalize("NFKC").toLocaleLowerCase();
   const attackNeedle = attackName.normalize("NFKC").toLocaleLowerCase();
@@ -501,6 +503,8 @@ function prepareNpcDamage(
   if (!verified) return { ok: false, error: "Формула критического урона некорректна." };
   return {
     ok: true,
+    hit: true,
+    target: creatureName,
     attackResolution: { ...attackResolution, outcome: critical ? "CRITICAL_HIT" : "HIT" },
     preparedRoll: {
       roller: "GM",
