@@ -132,3 +132,15 @@ This update supersedes earlier status notes that described signed rolls, server 
 The code and CI gates are now in place, and the updated Edge Function is deployed. A real authenticated Android campaign has not yet been run through the complete sequence (submit action → player roll → network interruption/reload → resume → confirm draft → commit). Do not describe the whole autonomous master as fully accepted until that end-to-end campaign succeeds.
 
 The implementation has been committed to `main`. The earlier draft PR #21 still points to an older feature-branch head and is not the source of the deployed code. No further PR merge is required to make these `main` commits live.
+
+
+### 2026-11-28 — universal pending-roll recovery correction
+
+- Removed the two action-label-based fallback paths that attempted to infer player roll mechanics from Russian roll labels, including the generic passerby/shortbow special case.
+- The engine's own D&D 2024 action interpretation remains responsible for selecting the mechanic. If it returns a pending PLAYER roll without invoking a deterministic preparation tool, the retrieval loop now sends the full action back through the available preparation tools with required tool calling, rather than parsing the label or inventing a mechanic.
+- The recovery prompt directs the engine to choose among ability/skill/save checks, player attacks, player damage after a verified hit, and NPC attack/damage tools; rule or AC gaps must be resolved through SRD retrieval.
+- Once a tool prepares the roll, the server-signed preparation is authoritative and the final structured roll is synchronized to the verified formula, DC/AC, and target type. The application still shows the dice control only for PLAYER rolls; NPC rolls remain server-executed.
+- Added a regression test for a pending player skill check returned without a tool call. It verifies that the engine is re-invoked with required tool selection and that the final pending roll matches the server-prepared formula.
+- Strengthened the shared engine boundary contract to require a preparation tool for every PLAYER roll and to prohibit choosing mechanics from roll-label text.
+- Verification on main: bun run test, bunx tsc --noEmit, and bun run build all passed. The changes are deployed to Supabase obsidian-gm Edge Function version 84 (ACTIVE); GitHub Pages and Supabase Static Host workflows completed successfully.
+- Remaining acceptance gate: run real authenticated gameplay from Android for several different action classes (ability/skill check, weapon attack, and NPC action), including player roll UI, server-side NPC rolls, and reload recovery. CI is not a substitute for this end-to-end test.
