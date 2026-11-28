@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { callWithEkdrasilReadTools, executeEkdrasilReadTool } from "./game-master-retrieval";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll } from "./game-master-retrieval";
 
 const rules = {
   sourceId: "SRD_5_2_1",
@@ -451,6 +451,35 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("executes GM-owned attacks on the server and applies natural 1/20 attack rules", () => {
+    const prepared = {
+      roller: "GM" as const, label: "Атака Goblin (Bite)", formula: "1d20+4",
+      dc: 15, targetType: "AC" as const, modifier: 4, kind: "NPC_ATTACK" as const,
+      reason: "Гоблин атакует героя",
+    };
+    const hit = executePreparedServerRoll(prepared, () => 16);
+    expect(hit).toMatchObject({
+      roller: "GM", total: 20, success: true, result: "16 + 4 = 20 · ПОПАДАНИЕ",
+      dice: [{ value: 16, sides: 20, kept: true }],
+    });
+    const critical = executePreparedServerRoll(prepared, () => 20);
+    expect(critical).toMatchObject({ total: 24, success: true, result: expect.stringContaining("КРИТИЧЕСКОЕ ПОПАДАНИЕ") });
+    const miss = executePreparedServerRoll({ ...prepared, formula: "1d20+20", modifier: 20 }, () => 1);
+    expect(miss).toMatchObject({ total: 21, success: false, result: expect.stringContaining("ПРОМАХ") });
+  });
+
+  it("executes GM-owned damage rolls on the server without returning a pending challenge", () => {
+    const result = executePreparedServerRoll({
+      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2",
+      dc: null, targetType: "NONE", modifier: 2, kind: "NPC_DAMAGE",
+      reason: "Урон после попадания",
+    }, () => 3);
+    expect(result).toMatchObject({
+      roller: "GM", total: 5, success: null, result: "3 + 2 = 5",
+      dice: [{ value: 3, sides: 6, kept: true }],
+    });
+  });
+
   it("returns an already verified NPC damage roll instead of preparing it again", () => {
     const statblock = "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.";
     const completedRolls = [
@@ -508,10 +537,13 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       },
       canon,
       completedRolls,
+      rollRandom: () => 3,
     });
-    expect(result.preparedRoll).toMatchObject({
-      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", kind: "NPC_DAMAGE",
-    });
+    expect(result.preparedRoll).toBeNull();
+    expect(result.serverRolls).toMatchObject([{
+      roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", total: 5,
+      result: "3 + 2 = 5",
+    }]);
     const toolRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     const toolMessage = toolRequest.messages.find((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "damage-1");
     expect(JSON.parse(toolMessage.content)).toMatchObject({
@@ -558,6 +590,66 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       hit: false,
       attackResolution: { critical: false, outcome: "MISS" },
       preparedRoll: null,
+    });
+  });
+
+  it("rolls an NPC attack and its damage sequentially inside one bounded tool loop", async () => {
+    const statblock = "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.";
+    const character = { statsCertainty: "KNOWN", armorClass: 15 };
+    const search = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "npc-search", type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "Goblin Bite attack roll" }) },
+      }] } }],
+    };
+    const attack = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "npc-attack", type: "function",
+        function: { name: "prepare_npc_attack", arguments: JSON.stringify({
+          creatureName: "Goblin", attackName: "Bite", advantage: "NONE", reason: "Гоблин кусает героя",
+        }) },
+      }] } }],
+    };
+    const damage = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "npc-damage", type: "function",
+        function: { name: "prepare_npc_damage", arguments: JSON.stringify({
+          creatureName: "Goblin", attackName: "Bite", reason: "Гоблин попал и наносит урон",
+        }) },
+      }] } }],
+    };
+    const ready = { choices: [{ message: { role: "assistant", content: "Атака и урон разрешены." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(search), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(attack), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(damage), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(ready), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const values = [16, 3];
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules: { ...rules, content: statblock },
+      canon,
+      playerCharacter: character,
+      rollRandom: () => values.shift() ?? 1,
+    });
+    expect(result.preparedRoll).toBeNull();
+    expect(result.serverRolls).toHaveLength(2);
+    expect(result.serverRolls[0]).toMatchObject({ label: "Атака Goblin (Bite)", total: 20, success: true });
+    expect(result.serverRolls[1]).toMatchObject({ label: "Урон Goblin (Bite)", total: 5, success: null });
+    const damageRequest = JSON.parse(String(fetcher.mock.calls[3]?.[1]?.body ?? "{}"));
+    const attackToolMessage = damageRequest.messages.find((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "npc-attack");
+    expect(JSON.parse(attackToolMessage.content)).toMatchObject({
+      ok: true, preparedRoll: null, serverRoll: { roller: "GM", total: 20, success: true },
+    });
+    const damageToolMessage = damageRequest.messages.find((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "npc-damage");
+    expect(JSON.parse(damageToolMessage.content)).toMatchObject({
+      ok: true, preparedRoll: null, serverRoll: { roller: "GM", total: 5, success: null },
     });
   });
 
