@@ -224,6 +224,9 @@ export interface PreparedRoll {
   modifier: number;
   kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "PLAYER_DAMAGE" | "NPC_ATTACK" | "NPC_DAMAGE" | "NPC_REACTION";
   reason: string;
+  npcName?: string;
+  npcTrait?: string;
+  npcLocation?: string;
 }
 
 function queryTerms(query: string): string[] {
@@ -511,6 +514,9 @@ function prepareNpcReaction(
       modifier: signedModifier,
       kind: "NPC_REACTION",
       reason,
+      npcName: name,
+      ...(trait ? { npcTrait: trait } : {}),
+      ...(location ? { npcLocation: location } : {}),
     },
   };
 }
@@ -1031,6 +1037,9 @@ export interface ServerCompletedRoll extends JsonRecord {
   result: string;
   kind: PreparedRoll["kind"];
   npcAttitude?: "hostile" | "indifferent" | "friendly";
+  npcName?: string;
+  npcTrait?: string;
+  npcLocation?: string;
 }
 
 /** Resolve a GM-owned roll immediately on the server; never expose a pending GM roll to the player UI. */
@@ -1081,6 +1090,9 @@ export function executePreparedServerRoll(
     result: arithmetic + outcome,
     kind: prepared.kind,
     ...(npcAttitude ? { npcAttitude } : {}),
+    ...(prepared.npcName ? { npcName: prepared.npcName } : {}),
+    ...(prepared.npcTrait ? { npcTrait: prepared.npcTrait } : {}),
+    ...(prepared.npcLocation ? { npcLocation: prepared.npcLocation } : {}),
   };
 }
 
