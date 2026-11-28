@@ -453,4 +453,45 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+
+  it("doubles only damage dice for an NPC natural-20 critical hit", () => {
+    const completedRolls = [{
+      roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+4",
+      targetType: "AC", dc: 15, total: 24, success: true,
+      dice: [{ sides: 20, value: 20, kept: true }],
+    }];
+    const result = executeEkdrasilReadTool("prepare_npc_damage", JSON.stringify({
+      creatureName: "Goblin", attackName: "Bite", reason: "Разрешить критический урон",
+    }), {
+      ...rules,
+      content: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.",
+    }, canon, null, false, [{
+      text: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.",
+      lines: "1–1",
+    }], completedRolls);
+    expect(result).toMatchObject({
+      ok: true,
+      hit: true,
+      attackResolution: { critical: true, outcome: "CRITICAL_HIT" },
+      preparedRoll: { roller: "GM", formula: "2d6+2", kind: "NPC_DAMAGE" },
+    });
+  });
+
+  it("does not prepare NPC damage after a natural 1 even when its total meets AC", () => {
+    const completedRolls = [{
+      roller: "GM", label: "Атака Goblin (Bite)", formula: "1d20+20",
+      targetType: "AC", dc: 15, total: 21, success: true,
+      dice: [{ sides: 20, value: 1, kept: true }],
+    }];
+    const result = executeEkdrasilReadTool("prepare_npc_damage", JSON.stringify({
+      creatureName: "Goblin", attackName: "Bite", reason: "Разрешить урон укуса",
+    }), rules, canon, null, false, [], completedRolls);
+    expect(result).toMatchObject({
+      ok: true,
+      hit: false,
+      attackResolution: { critical: false, outcome: "MISS" },
+      preparedRoll: null,
+    });
+  });
+
 });
