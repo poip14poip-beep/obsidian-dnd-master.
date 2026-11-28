@@ -360,7 +360,7 @@ describe("hit point changes on committed turns", () => {
     const initial = createReadySetupCollections();
     initial.world_state.setup.confirmed = true;
     expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
-    const { result } = await renderCampaignStore(storage);
+    const { result, unmount } = await renderCampaignStore(storage);
     const gmProfile = {
       biography: "Родился в портовом квартале и служит при городских воротах.",
       appearance: "Высокий мужчина с обветренным лицом и седой прядью.",
@@ -396,7 +396,9 @@ describe("hit point changes on committed turns", () => {
     expect(result.current.npcs[0]?.name).toBe("Гарен");
     expect(result.current.npcs[0]?.gmProfile?.secrets).toContain("младшему брату");
     expect(result.current.npcs[0]?.playerKnowledge?.[0]?.factSummary).toContain("городским стражником");
-    const saved = JSON.parse(storage.getItem("obsidian.npcs") ?? "[]") as Array<{ gmProfile?: typeof gmProfile }>;
-    expect(saved[0]?.gmProfile?.combatProfile.status).toBe("UNKNOWN");
+    unmount();
+    const reloaded = await renderCampaignStore(storage);
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.combatProfile.status).toBe("UNKNOWN");
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.secrets).toContain("младшему брату");
   });
 });
