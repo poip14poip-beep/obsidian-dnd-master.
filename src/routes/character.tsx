@@ -44,8 +44,9 @@ function extractDossierSection(content: string, start: RegExp, end: RegExp): str
  return lines.slice(first + 1, last < 0 ? lines.length : last).filter(line => !/^<PARSED TEXT FOR PAGE:/i.test(line.trim())).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 function CharacterPage() {
-  const { sources, worldState, character, updateCharacterResource } = useObsidianStore();
+  const { sources, worldState, character, updateCharacterResource, takeRest } = useObsidianStore();
   const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
+  const [hitDiceToSpend, setHitDiceToSpend] = useState("0");
   const dossier = sources.find((source) => source.id === character.sourceDossierId);
   const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\.\s*Подробная биография/i, /^6\.\s*Области опыта/i) : ''; 
   const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\.\s*Внешность и экипировка/i, /^2\.\s*Прозвища/i) : '';
@@ -213,6 +214,43 @@ function CharacterPage() {
           </details>
         )}
       </section>
+
+      {campaignStarted && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Отдых</h2>
+          <p className="text-xs text-muted-foreground">Отдых проводится движком: продвигается календарь Экдрасиля, восстанавливаются только подтверждённые ресурсы с указанным типом восстановления.</p>
+          <div className="rounded-md border border-border bg-background/50 p-3">
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <span>Кости хитов</span>
+              <strong className="mono-code">{character.hitDicePool?.reduce((sum, entry) => sum + entry.current, 0) ?? "?"}/{character.hitDicePool?.reduce((sum, entry) => sum + entry.maximum, 0) ?? "?"}</strong>
+            </div>
+            {character.hitDicePool?.length ? (
+              <div className="mt-1 text-xs text-muted-foreground">{character.hitDicePool.map((entry) => `${entry.die}: ${entry.current}/${entry.maximum}`).join(" · ")}</div>
+            ) : (
+              <p className="mt-1 text-xs text-muted-foreground">Запас костей хитов не был зафиксирован в старом сохранении. Тратить или восстанавливать их нельзя, пока запас не подтверждён.</p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <label className="text-xs" htmlFor="rest-hit-dice">Потратить на коротком отдыхе</label>
+              <input id="rest-hit-dice" type="number" min="0" max={character.hitDicePool?.reduce((sum, entry) => sum + entry.current, 0) ?? 0} step="1" value={hitDiceToSpend} onChange={(event) => setHitDiceToSpend(event.target.value)} className="w-16 rounded-md border border-border bg-background px-2 py-1 text-sm" disabled={!character.hitDicePool?.length} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button type="button" className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted" onClick={() => {
+              const raw = hitDiceToSpend.trim();
+              const count = Number(raw);
+              if (raw === "" || !Number.isInteger(count) || count < 0) { toast.error("Укажи целое количество костей хитов."); return; }
+              const result = takeRest("SHORT", count);
+              if (result.ok) toast.success(`Короткий отдых завершён: 1 час игрового времени.`);
+              else toast.error(result.error);
+            }}>Короткий отдых · 1 час</button>
+            <button type="button" className="rounded-md border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-muted" onClick={() => {
+              const result = takeRest("LONG");
+              if (result.ok) toast.success("Продолжительный отдых завершён: 8 часов игрового времени.");
+              else toast.error(result.error);
+            }}>Продолжительный отдых · 8 часов</button>
+          </div>
+        </section>
+      )}
 
       <section className="panel-surface space-y-3 p-4">
         <h2 className="text-sm font-semibold text-foreground">Ресурсы и состояния</h2>
