@@ -539,6 +539,10 @@ Deno.serve(async (req: Request) => {
     let parsedTurnInput: unknown;
     try { parsedTurnInput = JSON.parse(inputText); }
     catch { return json({ error: { code: "INVALID_GAME_TURN_INPUT", message: "Контекст игрового хода повреждён." } }, 400, cors); }
+    if (isRecord(parsedTurnInput) && "completedRolls" in parsedTurnInput &&
+        !Array.isArray(parsedTurnInput.completedRolls)) {
+      return json({ error: { code: "INVALID_COMPLETED_ROLLS", message: "Список завершённых бросков имеет неверный формат." } }, 400, cors);
+    }
     const completedRolls = isRecord(parsedTurnInput) && Array.isArray(parsedTurnInput.completedRolls)
       ? parsedTurnInput.completedRolls : [];
     if (completedRolls.length > 5) {
