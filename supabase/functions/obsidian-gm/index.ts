@@ -811,7 +811,27 @@ Deno.serve(async (req: Request) => {
     if (completedRolls.length > 5) {
       return json({ error: { code: "TOO_MANY_COMPLETED_ROLLS", message: "За один ход можно передать не более пяти результатов бросков." } }, 400, cors);
     }
-    const nonceProofs: Array<{ nonce: string; issuedAt: number }> = [];
+    let pendingTurn: PendingGmTurn | null = null;
+    try {
+      pendingTurn = await getPendingGmTurn(authData.user.id);
+    } catch (error) {
+      return json({ error: { code: "PENDING_TURN_STORAGE_UNAVAILABLE", message: error instanceof Error ? error.message : "Хранилище ожидающего хода недоступно." } }, 503, cors);
+    }
+    const submittedAction = isRecord(parsedTurnInput) && typeof parsedTurnInput.action === "string"
+      ? parsedTurnInput.action.trim()
+      : "";
+    if (pendingTurn && pendingTurn.player_action !== submittedAction) {
+      return json({ error: { code: "PENDING_TURN_MUST_RESUME", message: "Сначала продолжи ожидающее действие или заверши его. Начать другое действие до разрешения броска нельзя." } }, 409, cors);
+    }
+    const storedRolls = pendingTurn && Array.isArray(pendingTurn.completed_rolls)
+      ? pendingTurn.completed_rolls.filter(isRecord)
+      : [];
+    if (pendingTurn && storedRolls.length > 0 && completedRolls.length === 0) {
+      return json({ error: { code: "STORED_ROLLS_MUST_RESUME", message: "В ожидающем ходе уже сохранён результат броска. Восстанови его и продолжи то же действие." } }, 409, cors);
+    }
+    if (completedRolls.length > 0 && !pendingTurn) {
+      return json({ error: { code: "PENDING_TURN_NOT_FOUND", message: "Сохранённый ожидающий ход не найден. Восстанови ход и повтори действие." } }, 409, cors);
+    }
     for (const item of completedRolls) {
       if (!isRecord(item) || typeof item.formula !== "string" || !Array.isArray(item.dice) ||
           !Number.isInteger(item.modifier) || !Number.isInteger(item.total) || !isRecord(item.proof)) {
@@ -836,23 +856,17 @@ Deno.serve(async (req: Request) => {
         challenge.roller === item.roller && challenge.label === item.label &&
         (challenge.targetType === "NONE" ? item.success === null :
           item.success === (item.total as number >= (challenge.dc as number)));
+      const storedMatch = challenge !== null && storedRolls.some((stored) =>
+        isRecord(stored.proof) && isRecord(stored.challenge) &&
+        stableSerialize(stored.proof) === stableSerialize(proof) &&
+        stableSerialize(stored.challenge) === stableSerialize(challenge)
+      );
       const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
         typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
-        typeof proof.signature === "string" && challengeMatchesRoll &&
-        await verifyDiceChallenge(challenge!) &&
-        await verifyDiceProof({
-          userId: proof.userId, issuedAt: proof.issuedAt, nonce: proof.nonce,
-          signature: proof.signature, formula, dice, modifier: item.modifier as number,
-          total: item.total as number, challenge: challenge!,
-        });
+        typeof proof.signature === "string" && challengeMatchesRoll && storedMatch;
       if (!arithmeticValid || !proofValid) {
-        return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
+        return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не совпадает с серверной записью ожидающего хода. Восстанови ход и повтори продолжение." } }, 401, cors);
       }
-      nonceProofs.push({ nonce: proof.nonce as string, issuedAt: proof.issuedAt as number });
-    }
-    const nonceBatchConsumed = await consumeDiceNonces(authData.user.id, nonceProofs);
-    if (!nonceBatchConsumed) {
-      return json({ error: { code: "DICE_PROOF_REPLAY_OR_STORAGE_FAILURE", message: "Один из результатов уже использован или сервер не смог подтвердить одноразовость пакета. Выполни броски заново." } }, 409, cors);
     }
   }
   const instructionText = requestBody.instructions as string;
