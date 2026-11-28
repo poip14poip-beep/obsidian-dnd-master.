@@ -603,14 +603,25 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
           !Number.isInteger(roll["dc"]) || (roll["dc"] as number) < 1 || (roll["dc"] as number) > 40)) {
       throw new GameMasterError("Мастер указал некорректную или незафиксированную DC/AC проверки.", "INVALID_DICE_DC");
     }
-    if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
-        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      throw new GameMasterError("Мастер попытался подставить результат броска или не указал, кто бросает. Число должен генерировать игрок или защищённый сервер согласно владельцу броска.", "GM_INVENTED_DICE_RESULT");
+    if (roll["roller"] === "PLAYER" && roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      throw new GameMasterError("Результат броска главного героя должен поступить только через подписанное серверное задание.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (roll["roller"] === "GM" &&
+        (typeof roll["result"] !== "string" || !/=\\s*-?\\d+/.test(roll["result"]))) {
+      throw new GameMasterError("Результат броска NPC должен быть сформирован серверным генератором.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (!["PLAYER", "GM"].includes(String(roll["roller"]))) {
+      throw new GameMasterError("Не указан владелец броска.", "GM_INVENTED_DICE_RESULT");
     }
   }
   const rolls = turn["rolls"] as Array<Record<string, unknown>>;
-  const hasPendingRoll = rolls.length > 0;
-  if (rolls.length > 1) throw new GameMasterError("Для надёжного разрешения мастер запрашивает только один бросок за раз.", "MULTIPLE_PENDING_ROLLS");
+  const pendingPlayerRolls = rolls.filter((roll) =>
+    roll["roller"] === "PLAYER" && roll["result"] === "ОЖИДАЕТСЯ БРОСОК ИГРОКА"
+  );
+  const hasPendingRoll = pendingPlayerRolls.length > 0;
+  if (rolls.length > 5 || pendingPlayerRolls.length > 1) {
+    throw new GameMasterError("В одном ходе допустимы не более пяти завершённых бросков и одного ожидающего броска игрока.", "MULTIPLE_PENDING_ROLLS");
+  }
   if (turn["needsClarification"] && !(turn["clarificationQuestion"] as string).trim()) {
     throw new GameMasterError("Мастер отметил необходимость уточнения, но не задал вопрос.", "MISSING_CLARIFICATION_QUESTION");
   }
