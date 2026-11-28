@@ -155,6 +155,22 @@ function playerCharacterFromInput(inputText: string): JsonRecord | null {
   }
 }
 
+/** Read only the compact NPC dossiers already supplied in knownNpcs.
+ * Combat resolution still requires a matching source excerpt from SRD 5.2.1;
+ * these records can only cross-check, never invent, an attack or damage value.
+ */
+function npcProfilesFromInput(inputText: string): JsonRecord[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || !Array.isArray(parsed.knownNpcs)) return [];
+    return parsed.knownNpcs.filter((entry): entry is JsonRecord =>
+      isRecord(entry) && typeof entry.name === "string" && isRecord(entry.gmProfile),
+    ).slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
 function partyNamesFromInput(inputText: string): string[] {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -965,6 +981,7 @@ Deno.serve(async (req: Request) => {
         rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
         canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
         playerCharacter: playerCharacterFromInput(inputText),
+        npcProfiles: npcProfilesFromInput(inputText),
         completedRolls: (() => {
           try {
             const parsed = JSON.parse(inputText);
