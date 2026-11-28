@@ -86,6 +86,7 @@ function TurnsPage() {
     const submittedAction = actionOverride ?? playerAction;
     setGmError(null);
     setGmTurn(null);
+    setRollAnswers({});
     if (!submittedAction.trim()) return;
     if (!campaignActive) {
       setGmError("Сначала завершите обязательную подготовку кампании.");
