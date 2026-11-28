@@ -965,6 +965,14 @@ Deno.serve(async (req: Request) => {
         rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
         canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
         playerCharacter: playerCharacterFromInput(inputText),
+        completedRolls: (() => {
+          try {
+            const parsed = JSON.parse(inputText);
+            return isRecord(parsed) && Array.isArray(parsed.completedRolls)
+              ? parsed.completedRolls.filter(isRecord)
+              : [];
+          } catch { return []; }
+        })(),
         maxToolRounds: 3,
         maxToolCalls: 6,
         timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
