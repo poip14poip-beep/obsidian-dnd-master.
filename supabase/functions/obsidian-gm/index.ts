@@ -809,7 +809,7 @@ Deno.serve(async (req: Request) => {
         ruleParagraphs,
         canonParagraphs,
         maxToolRounds: 0,
-        timeoutMs: isGameTurnRequest ? 42_000 : isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000,
+        timeoutMs: isGameTurnRequest ? (attempt.id.startsWith("google/") ? 18_000 : 42_000) : isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : 18_000,
       });
       const upstream = modelCall.response;
       console.log("[obsidian-gm] model response received", {
