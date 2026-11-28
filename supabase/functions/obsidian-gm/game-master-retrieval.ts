@@ -68,6 +68,25 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "travel",
+      description: "Рассчитать обычный переход или дневной отрезок пути по правилам темпа D&D: fast 4 мили/ч (30 миль за 8 ч), normal 3 мили/ч (24 мили за 8 ч), slow 2 мили/ч (18 миль за 8 ч). Сложная местность уменьшает расстояние вдвое; снег/шторм/дождь учитываются по текущей погоде кампании. Возвращает точное игровое время, расстояние, штраф пассивному Восприятию и возможность скрытного передвижения. Вызывай для переходов по местности, а не для обычной ходьбы по комнате или боя. Более 8 часов за один отрезок отклоняются: принудительный марш пока не реализован.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          hours: { type: "number", minimum: 0.25, maximum: 8, description: "Сколько часов идёт переход, шаг 15 минут. Укажи hours или miles." },
+          miles: { type: "number", exclusiveMinimum: 0, maximum: 30, description: "Желаемое расстояние в милях. Сервер рассчитает время по темпу, местности и погоде. Укажи miles или hours." },
+          pace: { type: "string", enum: ["fast", "normal", "slow"], description: "Темп пути. По умолчанию normal." },
+          terrain: { type: "string", enum: ["normal", "difficult"], description: "Сложная местность (густой лес, болото, горы, глубокий снег) уменьшает скорость вдвое." },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "social_check",
       description: "Проверка попытки повлиять на уже известного NPC словами: убедить, обмануть или запугать. Вызывай ДО описания ответа NPC. Сервер найдёт отношение NPC к герою и назначит DC по правилам социального взаимодействия: friendly 10, indifferent 15, hostile 20. Обычный разговор, приветствие, вопрос или слушание не требуют броска.",
       parameters: {
@@ -449,6 +468,75 @@ function prepareCheckNotice(
     note: noticed
       ? "Пассивное значение достигло DC. Можно описать только то, что герой действительно способен заметить."
       : "Пассивное значение ниже DC. Не раскрывай скрытую деталь персонажу.",
+  };
+}
+
+type TravelWeatherContext = { weather?: string; precipitation?: string } | null;
+
+function travelWeatherFactor(weather: TravelWeatherContext): { factor: number; note: string } {
+  const text = [weather?.weather, weather?.precipitation].filter((value) => typeof value === "string").join(" ").normalize("NFKC").toLocaleLowerCase();
+  if (/гроз|шторм|буря|storm|blizzard|метел/.test(text)) return { factor: 0.5, note: "Шторм/буря уменьшает расстояние вдвое." };
+  if (/снег|snow/.test(text)) return /сильн|обильн|heavy|глубок/.test(text)
+    ? { factor: 0.5, note: "Сильный снег уменьшает расстояние вдвое." }
+    : { factor: 0.75, note: "Снег уменьшает расстояние на четверть." };
+  if (/дожд|rain/.test(text)) return { factor: 0.75, note: "Дождь уменьшает расстояние на четверть." };
+  return { factor: 1, note: "" };
+}
+
+function paceMiles(pace: "fast" | "normal" | "slow", hours: number): number {
+  const mph = pace === "fast" ? 4 : pace === "slow" ? 2 : 3;
+  const dayMiles = pace === "fast" ? 30 : pace === "slow" ? 18 : 24;
+  return hours >= 8 ? dayMiles + mph * (hours - 8) : Math.min(mph * hours, dayMiles);
+}
+
+function prepareTravel(args: JsonRecord, weather: TravelWeatherContext): JsonRecord {
+  const pace = args.pace === undefined ? "normal" : args.pace;
+  const terrain = args.terrain === undefined ? "normal" : args.terrain;
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  const hasHours = typeof args.hours === "number";
+  const hasMiles = typeof args.miles === "number";
+  if (!["fast", "normal", "slow"].includes(String(pace)) || !["normal", "difficult"].includes(String(terrain)) ||
+      reason.length < 3 || reason.length > 200 || hasHours === hasMiles) {
+    return { ok: false, error: "Для travel нужны ровно один параметр hours или miles, корректные pace/terrain и краткая reason." };
+  }
+  const weatherState = travelWeatherFactor(weather);
+  const terrainFactor = terrain === "difficult" ? 0.5 : 1;
+  const factor = terrainFactor * weatherState.factor;
+  const mph = pace === "fast" ? 4 : pace === "slow" ? 2 : 3;
+  let hours: number;
+  let distance: number;
+  if (hasHours) {
+    const requestedHours = args.hours as number;
+    if (!Number.isFinite(requestedHours) || requestedHours < 0.25 || requestedHours > 8) {
+      return { ok: false, error: "Один отрезок обычного путешествия — от 15 минут до 8 часов. Принудительный марш свыше 8 часов пока не поддерживается; ничего не продвинуто." };
+    }
+    hours = Math.ceil(requestedHours * 4) / 4;
+    distance = paceMiles(pace as "fast" | "normal" | "slow", hours) * factor;
+  } else {
+    const requestedMiles = args.miles as number;
+    if (!Number.isFinite(requestedMiles) || requestedMiles <= 0) return { ok: false, error: "Расстояние должно быть больше нуля." };
+    const baseMiles = requestedMiles / factor;
+    const dayMiles = pace === "fast" ? 30 : pace === "slow" ? 18 : 24;
+    if (baseMiles > dayMiles + 1e-9) return { ok: false, error: "Это расстояние превышает один 8-часовой отрезок выбранного темпа. Разбей путь на несколько дневных отрезков; время не изменено." };
+    hours = baseMiles > mph * 8 ? 8 : Math.ceil((baseMiles / mph) * 4) / 4;
+    distance = paceMiles(pace as "fast" | "normal" | "slow", hours) * factor;
+  }
+  return {
+    ok: true,
+    travel: {
+      pace, terrain, hours, timeDeltaMinutes: Math.round(hours * 60),
+      distanceMiles: Math.round(distance * 2) / 2,
+      weatherFactor: weatherState.factor, terrainFactor,
+      passivePerceptionModifier: pace === "fast" ? -5 : 0,
+      stealthAllowed: pace === "slow", reason,
+    },
+    notes: [
+      terrain === "difficult" ? "Сложная местность: расстояние сокращено вдвое." : "",
+      weatherState.note,
+      pace === "fast" ? "Быстрый темп: пассивное Восприятие −5." : "",
+      pace === "slow" ? "Медленный темп позволяет передвигаться скрытно." : pace === "normal" ? "Обычный темп не даёт штрафа к пассивному Восприятию, но не позволяет скрытно идти." : "",
+    ].filter(Boolean),
+    instruction: "Установи timeDeltaMinutes точно равным travel.timeDeltaMinutes. Не продвигай время повторно и не создавай проверку только за сам факт путешествия. newLocationId меняй только при фактическом прибытии в уже зарегистрированную локацию.",
   };
 }
 
@@ -842,6 +930,7 @@ function prepareNpcDamage(
   retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
   alreadyPrepared: boolean,
   npcProfiles: JsonRecord[] = [],
+  travelWeather: TravelWeatherContext = null,
 ): JsonRecord {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
   const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
@@ -943,6 +1032,9 @@ export function executeEkdrasilReadTool(
   catch { return { ok: false, error: "Аргументы инструмента должны быть корректным JSON." }; }
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
+  }
+  if (name === "travel") {
+    return prepareTravel(args as JsonRecord, travelWeather);
   }
   if (name === "npc_reaction") {
     return prepareNpcReaction(args as JsonRecord, npcProfiles, completedRolls);
@@ -1153,6 +1245,7 @@ export async function callWithEkdrasilReadTools(options: {
   playerCharacter?: JsonRecord | null;
   completedRolls?: JsonRecord[];
   npcProfiles?: JsonRecord[];
+  travelWeather?: TravelWeatherContext;
   /** Deterministic test seam; production defaults to cryptographic server RNG. */
   rollRandom?: (sides: number) => number;
   maxToolRounds?: number;
@@ -1349,7 +1442,7 @@ export async function callWithEkdrasilReadTools(options: {
         ? { ok: false, error: "У вызова инструмента отсутствует идентификатор." }
         : searchBlocked
           ? { ok: false, error: "Лимит поиска этого источника достигнут. Используй уже переданные выдержки и переходи к инструменту подготовки проверки/атаки или к обычному ходу без броска." }
-          : executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? []);
+          : executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [], options.travelWeather ?? null);
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
         for (const rawExcerpt of (toolResult as JsonRecord).excerpts as unknown[]) {
