@@ -50,6 +50,63 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     })]));
   });
 
+  it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 14 },
+      proficiencyBonus: 2,
+      skillBonuses: [
+        { name: "Persuasion", bonus: 4, basis: "CHARISMA + владение" },
+        { name: "Intimidation", bonus: 4, basis: "CHARISMA + владение" },
+      ],
+      conditions: [],
+    };
+    const npcs = [
+      { name: "Марта", attitudeToPlayer: "дружелюбный" },
+      { name: "Капитан стражи", attitudeToPlayer: "враждебный" },
+      { name: "Торговец", attitudeToPlayer: "нейтральный" },
+    ];
+    const friendly = executeEkdrasilReadTool("social_check", JSON.stringify({
+      npc: "Марта", approach: "persuade", reason: "Убедить её рассказать о пропавшем обозе",
+    }), rules, canon, character, false, [], [], npcs);
+    expect(friendly).toMatchObject({
+      ok: true,
+      socialContext: { npc: "Марта", approach: "persuade", attitude: "friendly", dc: 10 },
+      preparedRoll: {
+        roller: "PLAYER", label: "Харизма (Убеждение) — Марта",
+        formula: "1d20+4", dc: 10, targetType: "DC", kind: "SKILL_CHECK",
+      },
+    });
+    const hostile = executeEkdrasilReadTool("social_check", JSON.stringify({
+      npc: "Капитан стражи", approach: "intimidate", reason: "Заставить капитана отступить",
+    }), rules, canon, character, false, [], [], npcs);
+    expect(hostile).toMatchObject({
+      ok: true,
+      socialContext: { attitude: "hostile", dc: 20 },
+      preparedRoll: { label: "Харизма (Запугивание) — Капитан стражи", dc: 20 },
+    });
+    const neutral = executeEkdrasilReadTool("social_check", JSON.stringify({
+      npc: "Торговец", approach: "deceive", reason: "Скрыть настоящую цель визита",
+    }), rules, canon, character, false, [], [], npcs);
+    expect(neutral).toMatchObject({ ok: true, socialContext: { attitude: "indifferent", dc: 15 }, preparedRoll: { dc: 15 } });
+  });
+
+  it("refuses social checks when the NPC or their attitude is not confirmed", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 14 },
+      conditions: [],
+    };
+    const missingNpc = executeEkdrasilReadTool("social_check", JSON.stringify({
+      npc: "Незнакомец", approach: "persuade", reason: "Попросить о помощи",
+    }), rules, canon, character, false, [], [], []);
+    expect(missingNpc.error).toContain("не найден");
+    const unknownAttitude = executeEkdrasilReadTool("social_check", JSON.stringify({
+      npc: "Незнакомец", approach: "persuade", reason: "Попросить о помощи",
+    }), rules, canon, character, false, [], [], [{ name: "Незнакомец", attitudeToPlayer: "UNKNOWN" }]);
+    expect(unknownAttitude.error).toContain("не подтверждено");
+  });
+
   it("uses the upstream request_roll contract for Russian and English skill names", () => {
     const character = {
       statsCertainty: "KNOWN",
@@ -444,9 +501,10 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     expect(retryRequest.tool_choice).toBe("required");
     const recoveryToolNames = retryRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
-    expect(recoveryToolNames.length).toBe(6);
-    expect(recoveryToolNames.every((name: string) => name === "request_roll" || name.startsWith("prepare_"))).toBe(true);
+    expect(recoveryToolNames.length).toBe(7);
+    expect(recoveryToolNames.every((name: string) => name === "request_roll" || name === "social_check" || name.startsWith("prepare_"))).toBe(true);
     expect(recoveryToolNames).toContain("request_roll");
+    expect(recoveryToolNames).toContain("social_check");
     expect(recoveryToolNames).toContain("prepare_player_check");
     expect(recoveryToolNames).toContain("prepare_player_attack");
     expect(recoveryToolNames).not.toContain("search_dnd_rules");
