@@ -323,3 +323,35 @@ describe("explicit resource reconciliation", () => {
     expect(result.current.character.resources[0]?.current).toBeNull();
   });
 });
+
+
+describe("hit point changes on committed turns", () => {
+  it("consumes temporary HP first and persists the remaining damage to current HP", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.player_character_state.hpCurrent = 12;
+    initial.player_character_state.hpMax = 20;
+    initial.player_character_state.hpTemp = 5;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Получен удар",
+        worldOutcome: "Удар частично поглощён временными HP",
+        hpDelta: -8,
+      });
+    });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok).toBe(true);
+
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok).toBe(true);
+    expect(result.current.character.hpCurrent).toBe(9);
+    expect(result.current.character.hpTemp).toBe(0);
+    expect(result.current.sessionLog.lastTurnNumber).toBe(1);
+  });
+});
