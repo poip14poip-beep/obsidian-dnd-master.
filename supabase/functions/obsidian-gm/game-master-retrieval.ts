@@ -771,8 +771,8 @@ export async function callWithEkdrasilReadTools(options: {
   const messages = Array.isArray(options.requestBody.messages)
     ? [...options.requestBody.messages] as JsonRecord[]
     : [];
-  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 5, 5));
-  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 10, 10));
+  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 8, 8));
+  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 16, 16));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedRoll: PreparedRoll | null = null;
   const serverRolls: ServerCompletedRoll[] = [];
@@ -803,11 +803,23 @@ export async function callWithEkdrasilReadTools(options: {
   }
 
   let toolCalls = 0;
+  let dndRuleSearchCalls = 0;
+  let canonSearchCalls = 0;
+  let searchBudgetNoticeAdded = false;
   for (let round = 0; ; round += 1) {
+    // Rule/canon retrieval is evidence gathering, not the game action itself.
+    // Cap repeated lookups so a provider cannot spend its whole turn searching
+    // and never reach the deterministic check/attack preparation tools.
+    const availableTools = EKDRASIL_READ_TOOLS.filter((tool) => {
+      const name = tool.function.name;
+      if (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) return false;
+      if (name === "search_ekdrasil_canon" && canonSearchCalls >= 2) return false;
+      return true;
+    });
     const toolBody: JsonRecord = {
       ...options.requestBody,
       messages,
-      tools: EKDRASIL_READ_TOOLS,
+      tools: availableTools,
       tool_choice: "auto",
     };
     // Tool-capable requests omit structured-output constraints for compatibility
@@ -997,9 +1009,16 @@ export async function callWithEkdrasilReadTools(options: {
       const id = typeof call.id === "string" ? call.id : "";
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
-      let toolResult: JsonRecord = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [])
-        : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
+      const searchBlocked =
+        (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) ||
+        (name === "search_ekdrasil_canon" && canonSearchCalls >= 2);
+      if (name === "search_dnd_rules") dndRuleSearchCalls += searchBlocked ? 0 : 1;
+      if (name === "search_ekdrasil_canon") canonSearchCalls += searchBlocked ? 0 : 1;
+      let toolResult: JsonRecord = !id
+        ? { ok: false, error: "У вызова инструмента отсутствует идентификатор." }
+        : searchBlocked
+          ? { ok: false, error: "Лимит поиска этого источника достигнут. Используй уже переданные выдержки и переходи к инструменту подготовки проверки/атаки или к обычному ходу без броска." }
+          : executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? []);
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
         for (const rawExcerpt of (toolResult as JsonRecord).excerpts as unknown[]) {
@@ -1046,6 +1065,13 @@ export async function callWithEkdrasilReadTools(options: {
         tool_call_id: id || "invalid-tool-call",
         content: JSON.stringify(toolResult),
       });
+      if (!searchBudgetNoticeAdded && (dndRuleSearchCalls >= 2 || canonSearchCalls >= 2)) {
+        searchBudgetNoticeAdded = true;
+        messages.push({
+          role: "system",
+          content: "ЛИМИТ ПОИСКА ИСТОЧНИКОВ: базовые выдержки правил и канона уже переданы. Не повторяй поиск тех же сведений. Теперь выбери соответствующий детерминированный инструмент подготовки проверки/атаки/урона либо верни обычный ход без броска. Не выдумывай бонусы, оружие, AC/DC или результат.",
+        });
+      }
       toolCalls += 1;
     }
   }
