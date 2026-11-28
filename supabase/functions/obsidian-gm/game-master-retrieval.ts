@@ -407,7 +407,7 @@ function prepareCheckNotice(
     return { ok: false, error: "advantage должен быть none, advantage или disadvantage." };
   }
   const conditions = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
-  const exhaustionMatch = /(?:exhaustion(?:\\s+level)?|истощение(?:\\s+уровень)?)\\s*[:(]?\\s*([1-6])/i.exec(conditions);
+  const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(conditions);
   const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
   const passiveScore = 10 + Number(entry.bonus) + advantage - exhaustionPenalty;
   const noticed = passiveScore >= (dc as number);
