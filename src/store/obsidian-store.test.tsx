@@ -354,4 +354,49 @@ describe("hit point changes on committed turns", () => {
     expect(result.current.character.hpTemp).toBe(0);
     expect(result.current.sessionLog.lastTurnNumber).toBe(1);
   });
+
+  it("creates and persists an NPC private dossier automatically with the committed turn", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+    const gmProfile = {
+      biography: "Родился в портовом квартале и служит при городских воротах.",
+      appearance: "Высокий мужчина с обветренным лицом и седой прядью.",
+      personality: "Сдержанный, наблюдательный, осторожный.",
+      motivation: "Сохранить порядок и защитить семью.",
+      longTermGoal: "Получить должность начальника городской стражи.",
+      secrets: "Тайно помогает младшему брату скрываться от кредиторов.",
+      relationships: "Доверяет двум караульным; конфликтует с начальником смены.",
+      skillsAndAbilities: "Наблюдательность, строевая подготовка, владение копьём.",
+      combatProfile: {
+        status: "UNKNOWN" as const, source: "", armorClass: null, hitPoints: null, speed: "UNKNOWN",
+        attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+      },
+    };
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Встреча со стражником",
+        worldOutcome: "Персонаж впервые познакомился со стражником.",
+        npcChanges: [{
+          action: "CREATE", playerVisible: true, name: "Гарен", role: "Городской стражник",
+          goals: "Охранять ворота", resources: "Копьё и ключи от караульного помещения",
+          attitudeToPlayer: "Настороженное", locationName: null, factionName: null,
+          certainty: "KNOWN", reason: "Личная встреча у ворот", gmProfile,
+          knowledgeAdditions: [], playerKnowledgeAdditions: [{
+            factSummary: "Гарен служит городским стражником.", acquisitionPath: "Личная встреча у ворот", certainty: "KNOWN",
+          }],
+        }],
+      });
+    });
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok).toBe(true);
+    expect(result.current.npcs[0]?.name).toBe("Гарен");
+    expect(result.current.npcs[0]?.gmProfile?.secrets).toContain("младшему брату");
+    expect(result.current.npcs[0]?.playerKnowledge?.[0]?.factSummary).toContain("городским стражником");
+    const saved = JSON.parse(storage.getItem("obsidian.npcs") ?? "[]") as Array<{ gmProfile?: typeof gmProfile }>;
+    expect(saved[0]?.gmProfile?.combatProfile.status).toBe("UNKNOWN");
+  });
 });
