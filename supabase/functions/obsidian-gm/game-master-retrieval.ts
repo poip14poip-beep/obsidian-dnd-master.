@@ -862,7 +862,70 @@ export async function callWithEkdrasilReadTools(options: {
         const preparationTool = /^атака\b/i.test(label) ? "prepare_player_attack"
           : /^(?:проверка|спасбросок)\b/i.test(label) || label.includes("(") ? "prepare_player_check"
           : null;
-        if (preparationTool && finalMessage.role === "assistant") {
+
+        // A generic passerby is represented by the SRD Commoner stat block.
+        // Resolve its AC from the loaded SRD text, then calculate the attack
+        // bonus only from the character's verified weaponAttacks entry.
+        const genericAttack = /^атака\s+(.+?)\s*[—–-]\s*(.+)$/i.exec(label);
+        if (genericAttack && finalMessage.role === "assistant" && !preparedRoll) {
+          const weapon = genericAttack[1].trim();
+          const target = genericAttack[2].trim();
+          const genericPerson = /прохож|обычн(?:ый|ого) человека|граждан|крестьянин|commoner|bystander|civilian/i.test(target);
+          const weaponExists = Array.isArray(options.playerCharacter?.weaponAttacks) &&
+            (options.playerCharacter!.weaponAttacks as unknown[]).some((entry) =>
+              entry && typeof entry === "object" &&
+              typeof (entry as JsonRecord).weapon === "string" &&
+              ((entry as JsonRecord).weapon as string).normalize("NFKC").trim().toLocaleLowerCase() ===
+                weapon.normalize("NFKC").trim().toLocaleLowerCase());
+          if (genericPerson && weaponExists) {
+            const lookup = executeEkdrasilReadTool(
+              "search_dnd_rules", JSON.stringify({ query: "Commoner Armor Class" }),
+              options.rules, options.canon, options.playerCharacter ?? null, false,
+              retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [],
+            );
+            const excerpts = Array.isArray(lookup.excerpts) ? lookup.excerpts.filter((item) =>
+              item && typeof item === "object" && typeof (item as JsonRecord).text === "string") as JsonRecord[] : [];
+            for (const excerpt of excerpts) {
+              const text = String(excerpt.text);
+              const acMatch = /(?:armor\s+class|\bAC)\s*:?\s*(\d{1,2})\b/i.exec(text);
+              if (/(?:\bcommoner\b|простолюдин)/i.test(text) && acMatch) {
+                retrievedRuleExcerpts.push({ text, lines: String(excerpt.lines ?? "unknown") });
+              }
+            }
+            const commoner = retrievedRuleExcerpts.find((excerpt) =>
+              /(?:\bcommoner\b|простолюдин)/i.test(excerpt.text) &&
+              /(?:armor\s+class|\bAC)\s*:?\s*10\b/i.test(excerpt.text));
+            if (commoner) {
+              const advantage = /2d20kh1/i.test(String(pendingRoll.formula ?? "")) ? "ADVANTAGE"
+                : /2d20kl1/i.test(String(pendingRoll.formula ?? "")) ? "DISADVANTAGE" : "NONE";
+              const args = {
+                weapon, targetName: "Commoner", targetAC: 10, advantage,
+                reason: typeof pendingRoll.reason === "string" ? pendingRoll.reason :
+                  (label + " — цель рассматривается как обычный прохожий по статблоку SRD"),
+              };
+              const result = executeEkdrasilReadTool(
+                "prepare_player_attack", JSON.stringify(args),
+                options.rules, options.canon, options.playerCharacter ?? null, false,
+                retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [],
+              );
+              if (result.preparedRoll && typeof result.preparedRoll === "object") {
+                preparedRoll = result.preparedRoll as PreparedRoll;
+                preparedRoll.label = label;
+                pendingRoll.label = label;
+                pendingRoll.formula = preparedRoll.formula;
+                pendingRoll.dc = preparedRoll.dc;
+                pendingRoll.targetType = preparedRoll.targetType;
+                console.warn("[obsidian-gm] generic passerby attack prepared from verified SRD Commoner AC", {
+                  weapon, target, targetAC: 10,
+                });
+              }
+            } else {
+              console.warn("[obsidian-gm] generic passerby attack not prepared: SRD Commoner AC excerpt unavailable", { weapon, target });
+            }
+          }
+        }
+
+        if (!preparedRoll && preparationTool && finalMessage.role === "assistant") {
           messages.push(finalMessage);
           messages.push({
             role: "system",
