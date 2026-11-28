@@ -123,3 +123,5 @@ Current status: **PARTIAL INTEGRATION — NOT READY FOR PLAYER TESTING AS A COMP
 
 - Added same-action continuation detection: once the player has supplied dice results, the server passes that fact to both stages and rejects any final response that asks for the same player roll again.
 - The player dice button becomes disabled after the roll is made, preventing repeated rerolls for the same pending check. A failed network request can be retried using the already-entered result embedded in the continuation action.
+
+- Refined roll continuation matching: the server parses submitted player roll labels/formulas, blocks a repeated request for the same completed check, and still permits a genuinely different new check in a multi-step action. Any newly pending player check remains subject to the no-mutation gate. If the analyst says a roll is required but omits enough check detail to distinguish it from a completed check, the server fails closed rather than silently advancing.
