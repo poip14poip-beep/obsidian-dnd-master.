@@ -785,11 +785,11 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
     }
     const candidate = rawChallenge as Record<string, unknown>;
-    if (typeof candidate.userId !== "string" || candidate.formula !== waitingRoll.formula ||
-        candidate.label !== waitingRoll.label || candidate.dc !== waitingRoll.dc ||
-        candidate.targetType !== waitingRoll.targetType || candidate.roller !== waitingRoll.roller ||
-        !Number.isInteger(candidate.issuedAt) || typeof candidate.nonce !== "string" ||
-        typeof candidate.signature !== "string") {
+    if (typeof candidate["userId"] !== "string" || candidate["formula"] !== waitingRoll.formula ||
+        candidate["label"] !== waitingRoll.label || candidate["dc"] !== waitingRoll.dc ||
+        candidate["targetType"] !== waitingRoll.targetType || candidate["roller"] !== waitingRoll.roller ||
+        !Number.isInteger(candidate["issuedAt"]) || typeof candidate["nonce"] !== "string" ||
+        typeof candidate["signature"] !== "string") {
       throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
     }
     waitingRoll.challenge = candidate as unknown as SignedDiceChallenge;
