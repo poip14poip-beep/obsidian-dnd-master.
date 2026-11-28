@@ -624,14 +624,22 @@ Deno.serve(async (req: Request) => {
     const rawChallenge = body.challenge;
     const challenge = rawChallenge as unknown as SignedDiceChallenge;
     if (challenge.userId !== authData.user.id || challenge.formula !== body.formula ||
-        typeof challenge.signature !== "string" || !await verifyDiceChallenge(challenge)) {
+        challenge.roller !== "PLAYER" || typeof challenge.signature !== "string" ||
+        !await verifyDiceChallenge(challenge)) {
       return json({ error: { code: "INVALID_DICE_CHALLENGE", message: "Задание броска недействительно или устарело. Запроси новое у мастера." } }, 401, cors);
     }
     try {
+      const pending = await getPendingGmTurn(authData.user.id);
+      if (!pending || !isRecord(pending.challenge) ||
+          stableSerialize(pending.challenge) !== stableSerialize(challenge) ||
+          pending.prepared_roll.formula !== challenge.formula ||
+          pending.prepared_roll.label !== challenge.label) {
+        return json({ error: { code: "PENDING_DICE_CHALLENGE_MISMATCH", message: "Задание не соответствует сохранённому ожидающему ходу. Восстанови ход и запроси новый бросок." } }, 409, cors);
+      }
       const rolled = rollDiceFormula(body.formula);
       const challengeConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: challenge.nonce, issuedAt: challenge.issuedAt }]);
       if (!challengeConsumed) {
-        return json({ error: { code: "DICE_CHALLENGE_REPLAY_OR_STORAGE_FAILURE", message: "Это задание уже использовано или хранилище одноразовых заданий недоступно. Запроси новый бросок." } }, 409, cors);
+        return json({ error: { code: "DICE_CHALLENGE_REPLAY_OR_STORAGE_FAILURE", message: "Это задание уже использовано или хранилище одноразовых заданий недоступно. Восстанови ожидающий ход." } }, 409, cors);
       }
       const proof = {
         userId: authData.user.id,
@@ -643,8 +651,52 @@ Deno.serve(async (req: Request) => {
         ...proof, formula: body.formula, dice: rolled.dice,
         modifier: rolled.modifier, total: rolled.total,
       }));
+      const proofConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: proof.nonce, issuedAt: proof.issuedAt }]);
+      if (!proofConsumed) {
+        return json({ error: { code: "DICE_PROOF_STORAGE_FAILED", message: "Сервер не смог сохранить одноразовое подтверждение броска. Восстанови ход и повтори бросок." } }, 503, cors);
+      }
+      const success = challenge.targetType === "NONE" ? null : rolled.total >= (challenge.dc ?? Number.POSITIVE_INFINITY);
+      const keptD20 = rolled.dice.find((die) => die.sides === 20 && die.kept)?.value;
+      const outcome = challenge.targetType === "AC"
+        ? keptD20 === 20 ? "КРИТИЧЕСКОЕ ПОПАДАНИЕ" : keptD20 === 1 ? "АВТОМАТИЧЕСКИЙ ПРОМАХ" : success ? "ПОПАДАНИЕ" : "ПРОМАХ"
+        : success === null ? "" : success ? "УСПЕХ" : "ПРОВАЛ";
+      const diceText = rolled.dice.map((die) => die.kept ? String(die.value) : `(${die.value})`).join(" + ");
+      const modifierText = rolled.modifier === 0 ? "" : rolled.modifier > 0 ? ` + ${rolled.modifier}` : ` - ${Math.abs(rolled.modifier)}`;
+      const completedRoll: JsonRecord = {
+        id: crypto.randomUUID(),
+        label: challenge.label,
+        formula: body.formula,
+        dc: challenge.dc,
+        targetType: challenge.targetType,
+        roller: "PLAYER",
+        dice: rolled.dice,
+        modifier: rolled.modifier,
+        total: rolled.total,
+        success,
+        result: `${diceText}${modifierText} = ${rolled.total}${outcome ? ` · ${outcome}` : ""}`,
+        challenge,
+        proof: { ...proof, signature },
+      };
+      const recorded = await recordPendingGmRoll(authData.user.id, pending.pending_id, challenge.nonce, completedRoll);
+      if (!recorded) {
+        const renewed = await issueDiceChallenge(authData.user.id, {
+          formula: challenge.formula, dc: challenge.dc, targetType: challenge.targetType,
+          roller: "PLAYER", label: challenge.label,
+        });
+        await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          preparedRoll: pending.prepared_roll,
+          challenge: renewed,
+          completedRolls: Array.isArray(pending.completed_rolls) ? pending.completed_rolls : [],
+        });
+        return json({ error: { code: "PENDING_DICE_RESULT_SAVE_FAILED", message: "Результат не был сохранён в ожидающем ходе. Запроси новый бросок." } }, 503, cors);
+      }
       return json({ formula: body.formula, ...rolled, proof: { ...proof, signature } }, 200, cors);
-    } catch {
+    } catch (error) {
+      console.error("[obsidian-gm] server dice execution failed", { message: error instanceof Error ? error.message : String(error) });
       return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
     }
   }
