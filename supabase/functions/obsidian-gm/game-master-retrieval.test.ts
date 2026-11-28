@@ -173,6 +173,24 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("resolves social outcomes and moves NPC attitude only at five-point margins", () => {
+    expect(resolveSocialCheckOutcome("indifferent", 14, 15)).toEqual({
+      success: false, attitude: "indifferent", shifted: false, direction: null,
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 20, 15)).toEqual({
+      success: true, attitude: "friendly", shifted: true, direction: "up",
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 10, 15)).toEqual({
+      success: false, attitude: "hostile", shifted: true, direction: "down",
+    });
+    expect(resolveSocialCheckOutcome("friendly", 25, 15)).toEqual({
+      success: true, attitude: "friendly", shifted: false, direction: null,
+    });
+    expect(resolveSocialCheckOutcome("hostile", 5, 15)).toEqual({
+      success: false, attitude: "hostile", shifted: false, direction: null,
+    });
+  });
+
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
     const character = {
       statsCertainty: "KNOWN",
