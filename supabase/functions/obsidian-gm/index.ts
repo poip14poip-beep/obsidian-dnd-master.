@@ -702,6 +702,10 @@ Deno.serve(async (req: Request) => {
           "Верни только короткий JSON по схеме. Отчёт предназначен второй нейросети и должен содержать только решения, доказательства и неизвестные данные.",
         ].join("\n\n"),
       },
+      {
+        role: "system",
+        content: "ОБЯЗАТЕЛЬНАЯ ПРОЦЕДУРА ОБСИДИАН 4.1 (источник приложения; применяй к анализу хода):\\n" + masterPrompt,
+      },
       { role: "user", content: inputText },
     ];
     const analysisStartedAt = Date.now();
