@@ -452,13 +452,33 @@ function prepareCheckNotice(
   };
 }
 
-function socialAttitude(value: unknown): "friendly" | "indifferent" | "hostile" | null {
+export function normalizeSocialAttitude(value: unknown): "friendly" | "indifferent" | "hostile" | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const attitude = value.normalize("NFKC").toLocaleLowerCase();
   if (/hostile|враждеб|агрессив|ненавид|враг/.test(attitude)) return "hostile";
   if (/friendly|дружелюб|дружес|доброжел|союзник|друг/.test(attitude)) return "friendly";
   if (/indifferent|neutral|нейтрал|равнодуш|безразлич|насторож|wary/.test(attitude)) return "indifferent";
   return null;
+}
+
+export function resolveSocialCheckOutcome(
+  attitude: "hostile" | "indifferent" | "friendly",
+  total: number,
+  dc: number,
+): { success: boolean; attitude: "hostile" | "indifferent" | "friendly"; shifted: boolean; direction: "up" | "down" | null } {
+  const order = ["hostile", "indifferent", "friendly"] as const;
+  const success = total >= dc;
+  const direction = total >= dc + 5 ? "up" : total <= dc - 5 ? "down" : null;
+  if (!direction) return { success, attitude, shifted: false, direction: null };
+  const current = order.indexOf(attitude);
+  const next = Math.max(0, Math.min(order.length - 1, current + (direction === "up" ? 1 : -1)));
+  const nextAttitude = order[next]!;
+  return {
+    success,
+    attitude: nextAttitude,
+    shifted: nextAttitude !== attitude,
+    direction: nextAttitude === attitude ? null : direction,
+  };
 }
 
 function prepareNpcReaction(
@@ -478,7 +498,7 @@ function prepareNpcReaction(
   const existing = npcProfiles.find((entry) => typeof entry.name === "string" &&
     entry.name.normalize("NFKC").trim().toLocaleLowerCase() === name.normalize("NFKC").trim().toLocaleLowerCase());
   if (existing) {
-    const attitude = socialAttitude(existing.attitudeToPlayer);
+    const attitude = normalizeSocialAttitude(existing.attitudeToPlayer);
     if (!attitude) {
       return { ok: false, error: "NPC уже зарегистрирован, но его отношение не подтверждено. Не бросай повторную реакцию и не выдумывай отношение." };
     }
@@ -544,7 +564,7 @@ function prepareSocialCheck(
   if (!npc) {
     return { ok: false, error: "NPC не найден в подтверждённом реестре. Не выдумывай его отношение; сначала зарегистрируй NPC в кампании." };
   }
-  const attitude = socialAttitude(npc.attitudeToPlayer);
+  const attitude = normalizeSocialAttitude(npc.attitudeToPlayer);
   if (!attitude) {
     return { ok: false, error: "Отношение NPC к герою не подтверждено. Не назначай социальную DC по догадке; сначала уточни состояние NPC." };
   }
@@ -563,7 +583,7 @@ function prepareSocialCheck(
     socialContext: { npc: npcName, approach, attitude, dc, reason },
     preparedRoll: {
       ...prepared.preparedRoll,
-      label: prepared.preparedRoll.label + " — " + npcName,
+      label: "Социальная проверка — " + npcName + ": " + prepared.preparedRoll.label,
     },
   };
 }
