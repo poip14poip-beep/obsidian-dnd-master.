@@ -651,6 +651,7 @@ Deno.serve(async (req: Request) => {
   ];
   const failures: string[] = [];
   let turnAnalysisReport: JsonRecord | null = null;
+  const playerRollContinuationReceived = inputText.includes("Результаты бросков, которые игрок выполнил самостоятельно:");
 
   // Two-model turn pipeline: DeepSeek first reads the supplied campaign state,
   // Obsidian procedure, D&D 2024 rules and Ekdrasil 2.4 canon through bounded
@@ -700,6 +701,9 @@ Deno.serve(async (req: Request) => {
           "Определи, требуется ли бросок персонажа игрока или серверный бросок NPC. Не придумывай модификаторы: если листа недостаточно, укажи UNKNOWN в отчёте.",
           "Если действие явно является атакой персонажа игрока по существу/персонажу, requiresPlayerRoll=true и добавь проверку атаки в playerChecks.",
           "Если требуется бросок игрока, stateMutationAllowed=false: до результата нельзя менять HP, время, инвентарь, ресурсы, валюту, состояния, NPC, квесты, местоположение или факты мира.",
+          playerRollContinuationReceived
+            ? "Во входных данных уже есть результаты бросков, выполненных игроком. Это продолжение того же действия: не запрашивай и не выполняй бросок повторно; оцени исход по указанному результату."
+            : "Если результатов броска ещё нет, остановись на запросе броска игрока.",
           "Верни только короткий JSON по схеме. Отчёт предназначен второй нейросети и должен содержать только решения, доказательства и неизвестные данные.",
           EKDRASIL_ENGINE_BOUNDARY_RULES,
         ].join("\n\n") +
@@ -759,8 +763,13 @@ Deno.serve(async (req: Request) => {
       messages.push({
         role: "user",
         content: "ОТЧЁТ ПЕРВОЙ НЕЙРОСЕТИ — ОБЯЗАТЕЛЬНО УЧТИ ПРИ СОЗДАНИИ ИГРОВОГО ХОДА:\n" +
-          JSON.stringify(turnAnalysisReport) +
-          "\nНе повторяй исследование. Сформируй итоговый ход строго по схеме приложения. Отчёт не является разрешением игнорировать ограничения движка.",
+          JSON.stringify({
+            ...turnAnalysisReport,
+            playerRollContinuationReceived,
+          }) +
+          (playerRollContinuationReceived
+            ? "\nПРОДОЛЖЕНИЕ ПОСЛЕ БРОСКА: игрок уже предоставил результат проверки персонажа. Это продолжение того же действия. Не запрашивай повторный бросок, не генерируй новый бросок и разреши исход по переданному результату."
+            : "\nНе повторяй исследование. Сформируй итоговый ход строго по схеме приложения. Отчёт не является разрешением игнорировать ограничения движка."),
       });
     } catch (error) {
       console.error("[obsidian-gm] turn analysis failed", {
@@ -885,7 +894,16 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: invalid JSON`);
         continue;
       }
-      if (isGameTurnRequest && turnAnalysisReport?.requiresPlayerRoll === true) {
+      if (isGameTurnRequest && playerRollContinuationReceived) {
+        const candidate = isRecord(parsed) ? parsed : {};
+        const repeatedRollRequest = Array.isArray(candidate.rolls) &&
+          (candidate.rolls as JsonRecord[]).some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        if (repeatedRollRequest) {
+          failures.push(`${attempt.id}: continuation attempted to request a player roll that was already submitted`);
+          continue;
+        }
+      }
+      if (isGameTurnRequest && turnAnalysisReport?.requiresPlayerRoll === true && !playerRollContinuationReceived) {
         const candidate = isRecord(parsed) ? parsed : {};
         const characterChanges = isRecord(candidate.characterChanges) ? candidate.characterChanges : {};
         const worldChanges = isRecord(candidate.worldChanges) ? candidate.worldChanges : {};
