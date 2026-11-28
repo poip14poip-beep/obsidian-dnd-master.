@@ -1,6 +1,5 @@
 export type GameMasterModelId =
   | "deepseek/deepseek-v4.1-flash"
-  | "anthropic/claude-sonnet-5.5"
   | "google/gemini-4-argon";
 
 export interface ModelRoutingFlags {
@@ -19,7 +18,7 @@ export interface ModelRoutingFlags {
  */
 export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMasterModelId[] {
   if (flags.isCompatibilityRequest) {
-    return ["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"];
+    return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
   if (flags.isStoryRequest) {
     return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
@@ -35,11 +34,7 @@ export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMaster
   if (flags.isGameTurnRequest) {
     return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
-  return [
-    "deepseek/deepseek-v4.1-flash",
-    "anthropic/claude-sonnet-5.5",
-    "google/gemini-4-argon",
-  ];
+  return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
 }
 
 export const GAME_TURN_MAX_OUTPUT_TOKENS = 4096;
