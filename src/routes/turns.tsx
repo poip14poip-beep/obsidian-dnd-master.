@@ -16,6 +16,7 @@ import { SetupGateBanner } from "@/components/StatusPill";
 import { isCampaignActive } from "@/domain/campaign-state";
 import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
 import { buildDiceContinuationAction } from "@/domain/dice-continuation";
+import { rollDiceExpression } from "@/domain/dice-roll";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -129,6 +130,16 @@ function TurnsPage() {
       setGmError(error instanceof Error ? error.message : "Не удалось получить ответ мастера.");
     } finally {
       setGmBusy(false);
+    }
+  }
+
+  function handleRollForPlayer(pendingIndex: number, formula: string) {
+    try {
+      const result = rollDiceExpression(formula);
+      setRollAnswers((current) => ({ ...current, [pendingIndex]: result.display }));
+      setGmError(null);
+    } catch (error) {
+      setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок.");
     }
   }
 
@@ -274,13 +285,19 @@ function TurnsPage() {
                   <div key={index} className="space-y-1 rounded border border-border/60 p-2">
                     <p className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>
                     {roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" && (
-                      <Input inputMode="numeric" value={rollAnswers[gmTurn.rolls.filter((item) => item.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").findIndex((item) => item === roll)] ?? ""}
-                        onChange={(e) => {
-                          const pendingIndex = gmTurn.rolls.filter((item) => item.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").findIndex((item) => item === roll);
-                          setRollAnswers((current) => ({ ...current, [pendingIndex]: e.target.value }));
-                        }}
-                        placeholder="Твой результат броска"
-                        className="touch-target mono-code" />
+                      {(() => {
+                        const pendingIndex = gmTurn.rolls.filter((item) => item.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").findIndex((item) => item === roll);
+                        const answer = rollAnswers[pendingIndex];
+                        return (
+                          <div className="space-y-2">
+                            {answer && <p className="mono-code text-sm text-status-verified">Результат: {answer}</p>}
+                            <Button type="button" variant="outline" className="touch-target w-full"
+                              onClick={() => handleRollForPlayer(pendingIndex, roll.formula)}>
+                              <Dices className="mr-2 h-4 w-4" /> {answer ? "Перебросить кубик" : "Бросить кубик"}
+                            </Button>
+                          </div>
+                        );
+                      })()}
                     )}
                   </div>
                 ))}
