@@ -28,6 +28,27 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "request_roll",
+      description: "Универсальный бросок главного героя по правилам D&D 2024: проверка навыка, характеристики или спасбросок. Сервер берёт модификатор из подтверждённого листа и готовит формулу; игрок бросает кубик в интерфейсе. Используй для исследования, общения, скрытности, преодоления препятствий и других неопределённых действий. Не используй для атаки или урона.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          kind: { type: "string", enum: ["skill_check", "ability_check", "saving_throw"] },
+          skill: { type: "string", maxLength: 80, description: "Для skill_check: один из навыков D&D 2024 (acrobatics, animal_handling, arcana, athletics, deception, history, insight, intimidation, investigation, medicine, nature, perception, performance, persuasion, religion, sleight_of_hand, stealth, survival). Допустимо русское название." },
+          ability: { type: "string", enum: ["strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma", "str", "dex", "con", "int", "wis", "cha", "сила", "ловкость", "телосложение", "интеллект", "мудрость", "харизма"], description: "Для ability_check и saving_throw; для skill_check сервер определяет базовую характеристику навыка автоматически." },
+          difficulty: { type: "string", enum: ["very_easy", "easy", "moderate", "hard", "very_hard", "nearly_impossible"], description: "Сложность задачи; сервер преобразует её в DC 5, 10, 15, 20, 25 или 30. Используй вместо произвольного DC, если правило не задаёт точное число." },
+          dc: { type: "integer", minimum: 1, maximum: 40, description: "Точная DC, только если её прямо задаёт правило или подтверждённый источник. Иначе используй difficulty." },
+          advantage: { type: "string", enum: ["none", "advantage", "disadvantage"], description: "Преимущество или помеха, только если они обоснованы обстоятельствами и правилами." },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["kind", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "prepare_player_check",
       description: "Подготовить проверку главного героя по его фактическому листу. Сервер сам вычисляет бонус и формулу; игрок затем бросает кубик в интерфейсе. Вызывай до описания исхода. Не используй для атак, урона или бросков NPC.",
       parameters: {
@@ -165,6 +186,55 @@ function normalizeAbility(value: string): "strength" | "dexterity" | "constituti
   return aliases[value.normalize("NFKC").trim().toLocaleLowerCase()] ?? null;
 }
 
+const SKILL_RULES: Record<string, { ability: "strength" | "dexterity" | "constitution" | "intelligence" | "wisdom" | "charisma"; labelRu: string }> = {
+  acrobatics: { ability: "dexterity", labelRu: "Акробатика" },
+  animal_handling: { ability: "wisdom", labelRu: "Уход за животными" },
+  arcana: { ability: "intelligence", labelRu: "Магия" },
+  athletics: { ability: "strength", labelRu: "Атлетика" },
+  deception: { ability: "charisma", labelRu: "Обман" },
+  history: { ability: "intelligence", labelRu: "История" },
+  insight: { ability: "wisdom", labelRu: "Проницательность" },
+  intimidation: { ability: "charisma", labelRu: "Запугивание" },
+  investigation: { ability: "intelligence", labelRu: "Расследование" },
+  medicine: { ability: "wisdom", labelRu: "Медицина" },
+  nature: { ability: "intelligence", labelRu: "Природа" },
+  perception: { ability: "wisdom", labelRu: "Восприятие" },
+  performance: { ability: "charisma", labelRu: "Выступление" },
+  persuasion: { ability: "charisma", labelRu: "Убеждение" },
+  religion: { ability: "intelligence", labelRu: "Религия" },
+  sleight_of_hand: { ability: "dexterity", labelRu: "Ловкость рук" },
+  stealth: { ability: "dexterity", labelRu: "Скрытность" },
+  survival: { ability: "wisdom", labelRu: "Выживание" },
+};
+const SKILL_ALIASES: Record<string, string> = {
+  "уход_за_животными": "animal_handling",
+  "обращение_с_животными": "animal_handling",
+  "ловкость_рук": "sleight_of_hand",
+  "акробатика": "acrobatics",
+  "магия": "arcana",
+  "атлетика": "athletics",
+  "обман": "deception",
+  "история": "history",
+  "проницательность": "insight",
+  "запугивание": "intimidation",
+  "расследование": "investigation",
+  "медицина": "medicine",
+  "природа": "nature",
+  "восприятие": "perception",
+  "выступление": "performance",
+  "убеждение": "persuasion",
+  "религия": "religion",
+  "скрытность": "stealth",
+  "выживание": "survival",
+};
+function normalizeSkillKey(value: string): string {
+  const key = value.normalize("NFKC").trim().toLocaleLowerCase().replace(/[\\s-]+/g, "_");
+  return SKILL_ALIASES[key] ?? key;
+}
+const ROLL_DIFFICULTY_DC: Record<string, number> = {
+  very_easy: 5, easy: 10, moderate: 15, hard: 20, very_hard: 25, nearly_impossible: 30,
+};
+
 function modifierForScore(score: number): number {
   return Math.floor((score - 10) / 2);
 }
@@ -180,8 +250,9 @@ function preparePlayerCheck(
     return { ok: false, error: "Лист персонажа не содержит подтверждённых характеристик. Не выдумывай бонус; запроси уточнение." };
   }
   const kind = args.kind;
-  const ability = typeof args.ability === "string" ? normalizeAbility(args.ability) : null;
   const skill = typeof args.skill === "string" && args.skill.trim() ? args.skill.trim() : null;
+  const skillRule = skill ? SKILL_RULES[normalizeSkillKey(skill)] : null;
+  const ability = typeof args.ability === "string" ? normalizeAbility(args.ability) : skillRule?.ability ?? null;
   const dc = args.dc;
   const advantage = args.advantage;
   const reason = typeof args.reason === "string" ? args.reason.trim() : "";
@@ -192,6 +263,9 @@ function preparePlayerCheck(
   }
   if ((kind === "SKILL_CHECK") !== Boolean(skill)) {
     return { ok: false, error: "Для SKILL_CHECK укажи точное имя навыка; для остальных видов skill должен быть null." };
+  }
+  if (kind === "SKILL_CHECK" && !skillRule) {
+    return { ok: false, error: "Навык не распознан. Укажи один из 18 навыков D&D 2024 на русском или английском." };
   }
 
   const scores = playerCharacter.abilityScores as JsonRecord;
@@ -213,10 +287,10 @@ function preparePlayerCheck(
     if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
   } else if (kind === "SKILL_CHECK") {
     const entries = Array.isArray(playerCharacter.skillBonuses) ? playerCharacter.skillBonuses : [];
-    const normalizedSkill = skill!.normalize("NFKC").trim().toLocaleLowerCase();
+    const normalizedSkill = normalizeSkillKey(skill!);
     const entry = entries.find((item) => item && typeof item === "object" &&
       typeof (item as JsonRecord).name === "string" &&
-      ((item as JsonRecord).name as string).normalize("NFKC").trim().toLocaleLowerCase() === normalizedSkill) as JsonRecord | undefined;
+      normalizeSkillKey((item as JsonRecord).name as string) === normalizedSkill) as JsonRecord | undefined;
     if (entry) {
       const basis = typeof entry.basis === "string" ? entry.basis.toLocaleLowerCase() : "";
       const basisAbility = normalizeAbility(basis.split(/[\s+]+/)[0] ?? "");
@@ -251,7 +325,7 @@ function preparePlayerCheck(
     intelligence: "Интеллект", wisdom: "Мудрость", charisma: "Харизма",
   };
   const label = kind === "SKILL_CHECK"
-    ? abilityRu[ability] + " (" + skill + ")"
+    ? abilityRu[ability] + " (" + skillRule!.labelRu + ")"
     : kind === "SAVING_THROW" ? "Спасбросок " + abilityRu[ability] : "Проверка " + abilityRu[ability];
   return {
     ok: true,
@@ -618,6 +692,32 @@ export function executeEkdrasilReadTool(
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
   }
+  if (name === "request_roll") {
+    const request = args as JsonRecord;
+    const kindMap: Record<string, string> = {
+      skill_check: "SKILL_CHECK",
+      ability_check: "ABILITY_CHECK",
+      saving_throw: "SAVING_THROW",
+    };
+    const kind = typeof request.kind === "string" ? kindMap[request.kind] : undefined;
+    if (!kind) return { ok: false, error: "request_roll поддерживает skill_check, ability_check и saving_throw. Для атаки используй отдельный инструмент подготовки атаки." };
+    const difficulty = typeof request.difficulty === "string" ? ROLL_DIFFICULTY_DC[request.difficulty] : undefined;
+    const dc = Number.isInteger(request.dc) ? request.dc : difficulty;
+    if (!Number.isInteger(dc)) return { ok: false, error: "Для проверки укажи difficulty или точную dc." };
+    const advantageMap: Record<string, string> = {
+      none: "NONE", advantage: "ADVANTAGE", disadvantage: "DISADVANTAGE",
+    };
+    const advantage = typeof request.advantage === "string" ? advantageMap[request.advantage] : "NONE";
+    if (!advantage) return { ok: false, error: "advantage должен быть none, advantage или disadvantage." };
+    return preparePlayerCheck({
+      kind,
+      ability: request.ability,
+      skill: kind === "SKILL_CHECK" ? request.skill : null,
+      dc,
+      advantage,
+      reason: request.reason,
+    }, playerCharacter, alreadyPrepared);
+  }
   if (name === "prepare_player_check") {
     return preparePlayerCheck(args as JsonRecord, playerCharacter, alreadyPrepared);
   }
@@ -837,7 +937,7 @@ export async function callWithEkdrasilReadTools(options: {
       // A pending-roll recovery is not another research pass. Restrict the
       // forced choice to deterministic roll-preparation tools so the model
       // cannot satisfy tool_choice="required" by searching lore/rules again.
-      if (requireToolCall && !name.startsWith("prepare_")) return false;
+      if (requireToolCall && name !== "request_roll" && !name.startsWith("prepare_")) return false;
       if (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) return false;
       if (name === "search_ekdrasil_canon" && canonSearchCalls >= 2) return false;
       return true;
