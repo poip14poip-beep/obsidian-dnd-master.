@@ -1071,29 +1071,45 @@ Deno.serve(async (req: Request) => {
       }
       if (isGameTurnRequest && isRecord(parsed)) {
         const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const pendingPlayerRolls = rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
         const prepared = modelCall.preparedRoll;
-        const matchesPrepared = prepared !== null && rolls.length === 1 &&
-          rolls[0]?.roller === prepared.roller &&
+        const matchesPrepared = prepared !== null && prepared.roller === "PLAYER" &&
+          pendingPlayerRolls.length === 1 && rolls.length === 1 &&
+          rolls[0]?.roller === "PLAYER" &&
           rolls[0]?.label === prepared.label &&
           rolls[0]?.formula === prepared.formula &&
           rolls[0]?.dc === prepared.dc &&
-          rolls[0]?.targetType === prepared.targetType &&
-          rolls[0]?.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА";
-        const invalidPendingRoll = prepared !== null ? !matchesPrepared : rolls.length > 0;
+          rolls[0]?.targetType === prepared.targetType;
+        const invalidPendingRoll = prepared !== null ? !matchesPrepared : pendingPlayerRolls.length > 0;
         if (invalidPendingRoll) {
           const reason = prepared
-            ? "pending roll does not match the server-prepared game mechanic"
-            : "pending roll was returned without a deterministic preparation tool";
+            ? "pending player roll does not match the server-prepared game mechanic"
+            : "pending player roll was returned without a deterministic preparation tool";
           console.warn("[obsidian-gm] prepared-roll validation rejected", { model: attempt.id, reason });
           failures.push(attempt.id + ": " + reason);
           messages.push({
             role: "system",
-            content: "ОТКЛОНЕНО: каждый ожидающий бросок должен быть подготовлен соответствующим серверным инструментом. Используй точные roller, label, formula, targetType и DC/AC из результата инструмента; result строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Не придумывай бонусы и целевые значения.",
+            content: "ОТКЛОНЕНО: ожидающий бросок игрока должен быть подготовлен серверным инструментом и точно совпадать с его roller, label, formula, targetType и DC/AC. Результат строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Броски GM выполняются сервером автоматически; не добавляй числовые результаты бросков GM в JSON — они будут приложены сервером.",
           });
           continue;
         }
+        // Completed NPC/GM rolls are server-generated and appended only after
+        // the model's strict schema has passed. The model cannot invent their totals.
+        if (modelCall.serverRolls.length > 0) {
+          const serverRollEntries = modelCall.serverRolls.map((roll) => ({
+            roller: "GM",
+            label: roll.label,
+            formula: roll.formula,
+            dc: roll.dc,
+            targetType: roll.targetType,
+            result: roll.result,
+          }));
+          parsed.rolls = [...rolls, ...serverRollEntries];
+          content = JSON.stringify(parsed);
+        }
       }
-      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) &&
+          parsed.rolls.some((roll) => isRecord(roll) && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         // A pending roll is a pause in the action pipeline, not a commit.
         // Safely discard premature model mutations; they are recalculated after the actual roll.
         let currentEnvironment: JsonRecord = {
@@ -1211,7 +1227,7 @@ Deno.serve(async (req: Request) => {
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       let rollChallenge: SignedDiceChallenge | null = null;
-      if (isGameTurnRequest && modelCall.preparedRoll) {
+      if (isGameTurnRequest && modelCall.preparedRoll?.roller === "PLAYER") {
         const prepared = modelCall.preparedRoll;
         const pendingRolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
         if (pendingRolls.length === 1 && pendingRolls[0].result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
