@@ -291,7 +291,7 @@ function preparePlayerAttack(
     return { ok: false, error: "Оружие или его подтверждённый бонус атаки отсутствует в листе персонажа." };
   }
   const targetNeedle = targetName.normalize("NFKC").toLocaleLowerCase();
-  const acPattern = new RegExp("(?:armor\\s+class|\\bAC)\\s*:?\\s*" + String(targetAC) + "\\b", "i");
+  const acPattern = new RegExp("(?:armor\\s+class|\bAC)\\s*:?\\s*" + String(targetAC) + "\b", "i");
   const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) =>
     excerpt.text.normalize("NFKC").toLocaleLowerCase().includes(targetNeedle) && acPattern.test(excerpt.text),
   );
@@ -859,8 +859,8 @@ export async function callWithEkdrasilReadTools(options: {
 
       if (pendingRoll) {
         const label = typeof pendingRoll.label === "string" ? pendingRoll.label : "";
-        const preparationTool = /^атака\\b/i.test(label) ? "prepare_player_attack"
-          : /^(?:проверка|спасбросок)\\b/i.test(label) || label.includes("(") ? "prepare_player_check"
+        const preparationTool = /^атака\b/i.test(label) ? "prepare_player_attack"
+          : /^(?:проверка|спасбросок)\b/i.test(label) || label.includes("(") ? "prepare_player_check"
           : null;
         if (preparationTool && finalMessage.role === "assistant") {
           messages.push(finalMessage);
