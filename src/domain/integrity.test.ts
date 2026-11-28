@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyTurnDraft, createInitialCollections } from "./defaults";
-import { applyHitPointDelta, runIntegrityAudit, validateTurnDraft } from "./integrity";
+import { applyHitPointDelta, applyNpcHitPointDamage, runIntegrityAudit, validateTurnDraft } from "./integrity";
 describe("turn HP validation", () => {
   it("does not silently discard an HP change when current HP is unknown", () => {
     const state = createInitialCollections();
@@ -70,6 +70,52 @@ describe("turn HP validation", () => {
     const draft = { ...createEmptyTurnDraft(), summary: "Лечение", worldOutcome: "Восстановлено здоровье", hpDelta: 5 };
     expect(validateTurnDraft(draft, state.world_state, state.player_character_state)).toEqual([]);
     expect(applyHitPointDelta(180, 184, 0, 5).hpCurrent).toBe(184);
+  });
+});
+
+
+describe("verified NPC combat HP", () => {
+  it("applies resistance, vulnerability, immunity and zero-HP floor", () => {
+    expect(applyNpcHitPointDamage(12, 20, 7, "fire", ["fire"], [], []))
+      .toMatchObject({ hpCurrent: 9, appliedDamage: 3, error: null });
+    expect(applyNpcHitPointDamage(12, 20, 7, "fire", [], ["fire"], []))
+      .toMatchObject({ hpCurrent: 0, appliedDamage: 14, error: null });
+    expect(applyNpcHitPointDamage(12, 20, 7, "fire", [], [], ["fire"]))
+      .toMatchObject({ hpCurrent: 12, appliedDamage: 0, error: null });
+  });
+
+  it("fails closed when damage type is unknown but the NPC has defenses", () => {
+    expect(applyNpcHitPointDamage(12, 20, 7, null, ["fire"], [], []))
+      .toMatchObject({ hpCurrent: 12, error: expect.stringContaining("Тип урона неизвестен") });
+  });
+
+  it("validates NPC damage events only against a verified SRD combat profile", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    const combatProfile = {
+      status: "SRD_VERIFIED" as const, source: "SRD 5.2.1 lines 10-20",
+      armorClass: 13, hitPointsCurrent: 11, hitPointsMax: 11, speed: "30 ft",
+      attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+    };
+    const npc = {
+      id: "npc-guard", name: "Страж", role: "Стражник", locationId: null, factionId: null,
+      goals: "Охраняет ворота", gmProfile: {
+        biography: "", appearance: "", personality: "", motivation: "", longTermGoal: "",
+        secrets: "", relationships: "", skillsAndAbilities: "", combatProfile,
+      },
+      attitudeToPlayer: "Нейтральное", certainty: "KNOWN" as const, sourceId: "MANUAL_GM_ENTRY",
+      locked: false, knowledge: [], version: 1, history: [],
+    };
+    const event = {
+      targetType: "NPC" as const, targetName: "Страж", damage: 5, damageType: "piercing",
+      critical: false, source: "PLAYER" as const, formula: "1d8+2", rollLabel: "Урон мечом по Страж",
+    };
+    const draft = { ...createEmptyTurnDraft(), summary: "Атака", worldOutcome: "Страж ранен", combatEvents: [event] };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state, [npc])).toEqual([]);
+    expect(applyNpcHitPointDamage(11, 11, 5, "piercing", [], [], []).hpCurrent).toBe(6);
+    const unverified = { ...npc, gmProfile: { ...npc.gmProfile, combatProfile: { ...combatProfile, status: "UNKNOWN" as const } } };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state, [unverified]))
+      .toContain("Нельзя применить урон к NPC «Страж»: отсутствует подтверждённый боевой профиль SRD.");
   });
 });
 
