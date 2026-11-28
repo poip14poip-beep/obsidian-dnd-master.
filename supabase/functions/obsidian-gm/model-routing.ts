@@ -232,6 +232,28 @@ export function selectRuleExcerpts(
 }
 
 
+/**
+ * Russian player actions often do not lexically match the English SRD.
+ * Keep action-specific excerpts when available; otherwise seed the DM with
+ * the core resolution rules so it can classify the action before narration.
+ */
+export const CORE_GAMEPLAY_RULE_TERMS = [
+  "d20 test", "ability check", "ability checks", "attack roll", "attack rolls",
+  "saving throw", "saving throws", "armor class", "weapon attack", "damage roll",
+];
+
+export function selectGameplayRuleExcerpts(
+  content: string,
+  actionTerms: string[],
+  maxChars: number,
+  maxItems: number,
+): RuleExcerpt[] {
+  const actionMatches = selectRuleExcerpts(content, actionTerms, maxChars, maxItems);
+  if (actionMatches.length > 0) return actionMatches;
+  return selectRuleExcerpts(content, CORE_GAMEPLAY_RULE_TERMS, maxChars, maxItems);
+}
+
+
 export interface CanonExcerpt extends RuleExcerpt {
   sectionId: string;
   headingPath: string[];
