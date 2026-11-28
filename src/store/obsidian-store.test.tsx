@@ -112,7 +112,7 @@ describe("rest state persistence", () => {
 
     expect(restResult!.ok).toBe(true);
     expect(result.current.character.hpCurrent).toBe(20);
-    expect(result.current.character.conditions).toEqual([]);
+    expect(result.current.character.conditions).toEqual(["Истощение 1"]);
     expect(result.current.character.resources[0]?.current).toBe(3);
     expect(result.current.character.hitDicePool).toEqual([{ die: "d10", current: 3, maximum: 3 }]);
     expect(result.current.worldState.elapsedMinutes).toBe(480);
