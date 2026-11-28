@@ -204,6 +204,23 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("blocks travel when movement is prevented and halves travel speed while prone", () => {
+    const blocked = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 2, pace: "normal", reason: "Уйти к ближайшей деревне",
+    }), rules, canon, { conditions: ["Опутан"] }, false, [], [], [], null);
+    expect(blocked).toMatchObject({ ok: false });
+    expect(blocked.error).toContain("ограничивает движение");
+
+    const prone = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 2, pace: "normal", reason: "Добраться ползком до укрытия",
+    }), rules, canon, { conditions: ["Сбит с ног"] }, false, [], [], [], null);
+    expect(prone).toMatchObject({
+      ok: true,
+      travel: { hours: 2, distanceMiles: 3, movementFactor: 0.5 },
+    });
+    expect(prone.notes.join(" ")).toContain("передвигается ползком");
+  });
+
   it("applies confirmed campaign weather and refuses unsupported forced marches", () => {
     const storm = executeEkdrasilReadTool("travel", JSON.stringify({
       hours: 4, pace: "normal", reason: "Пробраться через перевал",
