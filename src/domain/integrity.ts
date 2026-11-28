@@ -1,3 +1,4 @@
+import { applyConditionChanges } from "./conditions";
 import type {
   BackupEnvelope,
   CollectionName,
@@ -286,6 +287,8 @@ export function validateTurnDraft(
   }
   const changes = draft.characterChanges;
   if (changes) {
+    const conditionResult = applyConditionChanges(character.conditions ?? [], changes.conditions ?? []);
+    errors.push(...conditionResult.errors);
     for (const change of changes.inventory) {
       if (!change.name.trim() || !Number.isInteger(change.quantity) ||
           (change.action === "SET" ? change.quantity < 0 : change.quantity < 1)) {
