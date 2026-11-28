@@ -15,7 +15,7 @@ const context: GameMasterContext = {
 const validNpcProfile = {
   biography: "UNKNOWN", appearance: "UNKNOWN", personality: "UNKNOWN", motivation: "UNKNOWN",
   longTermGoal: "UNKNOWN", secrets: "UNKNOWN", relationships: "UNKNOWN", skillsAndAbilities: "UNKNOWN",
-  combatProfile: { status: "NOT_REQUIRED", source: "", armorClass: null, hitPoints: null, speed: "UNKNOWN",
+  combatProfile: { status: "NOT_REQUIRED", source: "", armorClass: null, hitPointsCurrent: null, hitPointsMax: null, speed: "UNKNOWN",
     attacks: [], resistances: [], vulnerabilities: [], immunities: [] },
 };
 const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", environment: { temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "" }, environmentReason: "Без изменений.", questChanges: [], rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
