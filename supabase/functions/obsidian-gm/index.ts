@@ -696,6 +696,10 @@ Deno.serve(async (req: Request) => {
       return isRecord(parsed) && parsed.mode === "OPENING";
     } catch { return false; }
   })();
+  // Server-owned mechanical result is carried through model narration and
+  // overwritten into the final schema after the narrator responds.
+  let authoritativeRolls: JsonRecord[] = [];
+  let actionResolutionNote = "";
   if (isGameTurnRequest && !isOpeningGameTurn) {
     let compactCampaignInput = inputText;
     try { compactCampaignInput = JSON.stringify(compactAuditValue(JSON.parse(inputText))); }
@@ -709,8 +713,6 @@ Deno.serve(async (req: Request) => {
     });
     const agentContext = formatSpecialistAgentContext(specialistResults);
     const rulesAgent = specialistResults.find((result) => result.role === "DND_RULES_AND_CHARACTER");
-    let authoritativeRolls: JsonRecord[] = [];
-    let actionResolutionNote = "";
     const actualPlayerRollAlreadyProvided = /ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА:/i.test(actionText);
     if (actualPlayerRollAlreadyProvided) {
       actionResolutionNote = "ПРОВЕРКА УЖЕ БЫЛА БРОШЕНА ИГРОКОМ: используй фактический результат из сообщения. Не запрашивай повторный бросок.";
