@@ -50,6 +50,72 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     })]));
   });
 
+  it("uses the upstream request_roll contract for Russian and English skill names", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Восприятие", bonus: 5, basis: "WISDOM + владение" }],
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 2, intelligence: 0, wisdom: 3, charisma: -1 },
+      conditions: [],
+    };
+    const english = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "skill_check", skill: "perception", difficulty: "moderate",
+      advantage: "none", reason: "Прислушаться к шуму за дверью",
+    }), rules, canon, character);
+    expect(english).toMatchObject({
+      ok: true,
+      preparedRoll: {
+        roller: "PLAYER", label: "Мудрость (Восприятие)",
+        formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5, kind: "SKILL_CHECK",
+      },
+    });
+    const russian = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "skill_check", skill: "Восприятие", dc: 12,
+      advantage: "none", reason: "Осмотреть подозрительный переулок",
+    }), rules, canon, character);
+    expect(russian).toMatchObject({ ok: true, preparedRoll: { label: "Мудрость (Восприятие)", dc: 12 } });
+  });
+
+  it("prepares ability checks and saving throws through request_roll", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 2, intelligence: 0, wisdom: 3, charisma: -1 },
+      conditions: [],
+    };
+    const ability = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "ability_check", ability: "dex", difficulty: "hard",
+      advantage: "advantage", reason: "Удержать равновесие на мокрой крыше",
+    }), rules, canon, character);
+    expect(ability).toMatchObject({
+      ok: true,
+      preparedRoll: { label: "Проверка Ловкость", formula: "2d20kh1+2", dc: 20, kind: "ABILITY_CHECK" },
+    });
+    const save = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "saving_throw", ability: "constitution", dc: 12,
+      advantage: "none", reason: "Перенести воздействие яда",
+    }), rules, canon, character);
+    expect(save).toMatchObject({
+      ok: true,
+      preparedRoll: { label: "Спасбросок Телосложение", formula: "1d20+2", dc: 12, kind: "SAVING_THROW" },
+    });
+  });
+
+  it("refuses unsupported request_roll kinds and checks without a DC", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      conditions: [],
+    };
+    expect(executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "attack", reason: "Ударить противника",
+    }), rules, canon, character).error).toContain("Для атаки");
+    expect(executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "ability_check", ability: "dexterity", reason: "Прыгнуть через пропасть",
+    }), rules, canon, character).error).toContain("difficulty или точную dc");
+  });
+
   it("refuses unknown tools and malformed arguments", () => {
     expect(executeEkdrasilReadTool("write_campaign_state", "{}", rules, canon).ok).toBe(false);
     expect(executeEkdrasilReadTool("search_ekdrasil_canon", "{", rules, canon).ok).toBe(false);
@@ -378,8 +444,9 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
     expect(retryRequest.tool_choice).toBe("required");
     const recoveryToolNames = retryRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
-    expect(recoveryToolNames.length).toBe(5);
-    expect(recoveryToolNames.every((name: string) => name.startsWith("prepare_"))).toBe(true);
+    expect(recoveryToolNames.length).toBe(6);
+    expect(recoveryToolNames.every((name: string) => name === "request_roll" || name.startsWith("prepare_"))).toBe(true);
+    expect(recoveryToolNames).toContain("request_roll");
     expect(recoveryToolNames).toContain("prepare_player_check");
     expect(recoveryToolNames).toContain("prepare_player_attack");
     expect(recoveryToolNames).not.toContain("search_dnd_rules");
