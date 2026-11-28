@@ -1237,8 +1237,8 @@ Deno.serve(async (req: Request) => {
               : [];
           } catch { return []; }
         })(),
-        maxToolRounds: 3,
-        maxToolCalls: 6,
+        maxToolRounds: 5,
+        maxToolCalls: 10,
         timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
       });
       const upstream = modelCall.response;
