@@ -130,10 +130,18 @@ function TurnsPage() {
           consequenceText: result.turn.consequenceText,
           characterChanges: result.turn.characterChanges,
           npcChanges: result.turn.npcChanges,
-          rolls: result.turn.rolls.map((roll, index) => ({
-            id: `gm-roll-${Date.now().toString(36)}-${index}`,
-            label: roll.label, formula: roll.formula, result: roll.result,
-          })),
+          rolls: [
+            ...(completedRollsOverride ?? completedRolls).map((roll) => ({
+              id: roll.id,
+              label: roll.label,
+              formula: roll.formula,
+              result: roll.result,
+            })),
+            ...result.turn.rolls.map((roll, index) => ({
+              id: `gm-roll-${Date.now().toString(36)}-${index}`,
+              label: roll.label, formula: roll.formula, result: roll.result,
+            })),
+          ],
         });
         setExplicitConfirm(false);
         setCompletedRolls([]);
@@ -243,6 +251,7 @@ function TurnsPage() {
       setPlayerAction("");
       setGmTurn(null);
       setClarificationAnswer("");
+      setCompletedRolls([]);
       const msg = `Ход №${nextTurnNumber} зафиксирован в session_log; read-back сравнение payload и контрольных сумм пройдено.`;
       setCommitSuccessMsg(msg);
       toast.success(msg);
