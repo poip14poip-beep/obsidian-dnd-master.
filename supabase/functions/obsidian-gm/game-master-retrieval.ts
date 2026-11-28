@@ -835,7 +835,7 @@ export async function callWithEkdrasilReadTools(options: {
       delete finalBody.tools;
       delete finalBody.tool_choice;
       let finalResult = await send(finalBody);
-      if (!finalResult.response.ok || preparedRoll !== null) {
+      if (!finalResult.response.ok) {
         return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
       }
 
