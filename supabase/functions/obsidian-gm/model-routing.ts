@@ -41,7 +41,7 @@ export const GAME_TURN_MAX_OUTPUT_TOKENS = 4096;
 export const DEEPSEEK_GAME_TURN_REASONING_EFFORT = "none" as const;
 
 export function gameTurnAttemptTimeoutMs(attemptIndex: number): number {
-  return attemptIndex <= 0 ? 42_000 : 28_000;
+  return attemptIndex <= 0 ? 60_000 : 42_000;
 }
 
 
