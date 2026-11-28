@@ -771,8 +771,8 @@ export async function callWithEkdrasilReadTools(options: {
   const messages = Array.isArray(options.requestBody.messages)
     ? [...options.requestBody.messages] as JsonRecord[]
     : [];
-  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 3, 3));
-  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 6, 6));
+  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 5, 5));
+  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 10, 10));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedRoll: PreparedRoll | null = null;
   const serverRolls: ServerCompletedRoll[] = [];
