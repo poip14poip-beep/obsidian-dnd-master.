@@ -10,8 +10,15 @@ describe("parallel specialist game-master agents", () => {
       const findings = request.model.startsWith("deepseek/")
         ? ["[CANON SOURCE sectionId=12; lines 20–24] Место подтверждено."]
         : ["[SRD SOURCE lines 44–48] Для поиска подходит проверка Восприятия."];
+      const actionResolution = request.model.startsWith("google/")
+        ? {
+            requiresRoll: true, roller: "PLAYER", kind: "skill_check",
+            skill: "perception", ability: null, difficulty: "moderate", dc: null,
+            advantage: "none", expression: "", reason: "Активный поиск скрытых деталей",
+          }
+        : null;
       return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ findings, uncertainties: [] }) } }],
+        choices: [{ message: { content: JSON.stringify({ findings, uncertainties: [], actionResolution }) } }],
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
 
@@ -25,6 +32,8 @@ describe("parallel specialist game-master agents", () => {
 
     expect(seenModels.sort()).toEqual(["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"]);
     expect(results.every((result) => result.status === "COMPLETED")).toBe(true);
+    expect(results.find((result) => result.role === "DND_RULES_AND_CHARACTER")?.actionResolution)
+      .toMatchObject({ requiresRoll: true, roller: "PLAYER", kind: "skill_check", skill: "perception" });
     const formatted = formatSpecialistAgentContext(results);
     expect(formatted).toContain("CANON_AND_CAMPAIGN");
     expect(formatted).toContain("DND_RULES_AND_CHARACTER");
