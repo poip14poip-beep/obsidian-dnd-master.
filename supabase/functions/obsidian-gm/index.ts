@@ -570,6 +570,48 @@ Deno.serve(async (req: Request) => {
   try { body = JSON.parse(rawBody); }
   catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
 
+  if (isRecord(body) && body.operation === "GET_PENDING_GM_TURN") {
+    try {
+      const pending = await getPendingGmTurn(authData.user.id);
+      if (!pending) return json({ pending: null }, 200, cors);
+      const completedRolls = Array.isArray(pending.completed_rolls) ? pending.completed_rolls : [];
+      let challenge = isRecord(pending.challenge)
+        ? pending.challenge as unknown as SignedDiceChallenge
+        : null;
+      if (completedRolls.length === 0 && (!challenge || !await verifyDiceChallenge(challenge))) {
+        const prepared = pending.prepared_roll;
+        challenge = await issueDiceChallenge(authData.user.id, {
+          formula: String(prepared.formula ?? ""),
+          dc: typeof prepared.dc === "number" ? prepared.dc : null,
+          targetType: prepared.targetType as "DC" | "AC" | "NONE",
+          roller: "PLAYER",
+          label: String(prepared.label ?? ""),
+        });
+        const saved = await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          preparedRoll: pending.prepared_roll,
+          challenge,
+          completedRolls,
+        });
+        if (!saved) return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось обновить задание ожидающего броска." } }, 503, cors);
+      }
+      return json({
+        pending: {
+          pendingTurnId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          completedRolls,
+          challenge,
+        },
+      }, 200, cors);
+    } catch (error) {
+      return json({ error: { code: "PENDING_TURN_READ_FAILED", message: error instanceof Error ? error.message : "Не удалось восстановить ожидающий ход." } }, 503, cors);
+    }
+  }
+
   // Dice are rolled by the authenticated server, never guessed by a language model
   // or generated in the player's browser.
   if (isRecord(body) && body.operation === "ROLL_DICE") {
