@@ -16,5 +16,6 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run test
+      - run: bun run test:edge
       - run: bunx tsc --noEmit
       - run: bun run build
