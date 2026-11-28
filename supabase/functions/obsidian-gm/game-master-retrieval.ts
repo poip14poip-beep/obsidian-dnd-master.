@@ -30,6 +30,23 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "social_check",
+      description: "Проверка попытки повлиять на уже известного NPC словами: убедить, обмануть или запугать. Вызывай ДО описания ответа NPC. Сервер найдёт отношение NPC к герою и назначит DC по правилам социального взаимодействия: friendly 10, indifferent 15, hostile 20. Обычный разговор, приветствие, вопрос или слушание не требуют броска.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          npc: { type: "string", minLength: 1, maxLength: 100, description: "Точное имя уже зарегистрированного NPC из GAME STATE." },
+          approach: { type: "string", enum: ["persuade", "deceive", "intimidate"] },
+          reason: { type: "string", minLength: 3, maxLength: 200, description: "Что именно герой пытается получить от NPC." },
+        },
+        required: ["npc", "approach", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "request_roll",
       description: "Универсальный бросок главного героя по правилам D&D 2024: проверка навыка, характеристики или спасбросок. Сервер берёт модификатор из подтверждённого листа и готовит формулу; игрок бросает кубик в интерфейсе. Используй для исследования, общения, скрытности, преодоления препятствий и других неопределённых действий. Не используй для атаки или урона.",
       parameters: {
@@ -334,6 +351,62 @@ function preparePlayerCheck(
     preparedRoll: {
       roller: "PLAYER", label, formula, dc: dc as number, targetType: "DC", modifier,
       kind: kind as PreparedRoll["kind"], reason,
+    },
+  };
+}
+
+function socialAttitude(value: unknown): "friendly" | "indifferent" | "hostile" | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const attitude = value.normalize("NFKC").toLocaleLowerCase();
+  if (/hostile|враждеб|агрессив|ненавид|враг/.test(attitude)) return "hostile";
+  if (/friendly|дружелюб|доброжел|союзник|друг/.test(attitude)) return "friendly";
+  if (/indifferent|neutral|нейтрал|равнодуш|безразлич|насторож|wary/.test(attitude)) return "indifferent";
+  return null;
+}
+
+function prepareSocialCheck(
+  args: JsonRecord,
+  playerCharacter: JsonRecord | null,
+  npcProfiles: JsonRecord[],
+  alreadyPrepared: boolean,
+): JsonRecord {
+  const npcName = typeof args.npc === "string" ? args.npc.trim() : "";
+  const approach = args.approach;
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  const skillByApproach: Record<string, string> = {
+    persuade: "persuasion",
+    deceive: "deception",
+    intimidate: "intimidation",
+  };
+  const skill = typeof approach === "string" ? skillByApproach[approach] : undefined;
+  if (!npcName || !skill || reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для social_check нужны точное имя NPC, подход persuade/deceive/intimidate и причина." };
+  }
+  const npc = npcProfiles.find((entry) => typeof entry.name === "string" &&
+    entry.name.normalize("NFKC").trim().toLocaleLowerCase() === npcName.normalize("NFKC").trim().toLocaleLowerCase());
+  if (!npc) {
+    return { ok: false, error: "NPC не найден в подтверждённом реестре. Не выдумывай его отношение; сначала зарегистрируй NPC в кампании." };
+  }
+  const attitude = socialAttitude(npc.attitudeToPlayer);
+  if (!attitude) {
+    return { ok: false, error: "Отношение NPC к герою не подтверждено. Не назначай социальную DC по догадке; сначала уточни состояние NPC." };
+  }
+  const dc = attitude === "friendly" ? 10 : attitude === "hostile" ? 20 : 15;
+  const prepared = preparePlayerCheck({
+    kind: "SKILL_CHECK",
+    ability: "charisma",
+    skill,
+    dc,
+    advantage: "NONE",
+    reason,
+  }, playerCharacter, alreadyPrepared);
+  if (!prepared.ok) return prepared;
+  return {
+    ...prepared,
+    socialContext: { npc: npcName, approach, attitude, dc, reason },
+    preparedRoll: {
+      ...prepared.preparedRoll,
+      label: prepared.preparedRoll.label + " — " + npcName,
     },
   };
 }
@@ -694,6 +767,9 @@ export function executeEkdrasilReadTool(
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
   }
+  if (name === "social_check") {
+    return prepareSocialCheck(args as JsonRecord, playerCharacter, npcProfiles, alreadyPrepared);
+  }
   if (name === "request_roll") {
     const request = args as JsonRecord;
     const kindMap: Record<string, string> = {
@@ -939,7 +1015,7 @@ export async function callWithEkdrasilReadTools(options: {
       // A pending-roll recovery is not another research pass. Restrict the
       // forced choice to deterministic roll-preparation tools so the model
       // cannot satisfy tool_choice="required" by searching lore/rules again.
-      if (requireToolCall && name !== "request_roll" && !name.startsWith("prepare_")) return false;
+      if (requireToolCall && name !== "request_roll" && name !== "social_check" && !name.startsWith("prepare_")) return false;
       if (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) return false;
       if (name === "search_ekdrasil_canon" && canonSearchCalls >= 2) return false;
       return true;
