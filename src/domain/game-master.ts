@@ -16,7 +16,7 @@ export interface CompletedGameRoll {
   total: number;
   success: boolean | null;
   result: string;
-  proof: { userId: string; issuedAt: number; nonce: string; signature: string };
+  proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge };
 }
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -24,13 +24,18 @@ export interface GameMasterContext {
   journal: Array<GameTurnEntry | TechnicalMessageEntry>; timelineEvents: DelayedEvent[];
   completedRolls?: CompletedGameRoll[];
 }
+export interface SignedDiceChallenge {
+  userId: string; formula: string; dc: number | null;
+  targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM";
+  label: string; issuedAt: number; nonce: string; signature: string;
+}
 export interface GameMasterTurn {
   narration: string; campaignMemory: string; sensoryDescription: string; spatialAccounting: string;
   mechanics: string; consequences: string; resourceAccounting: string; nextAction: string;
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
-  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; result: string }>;
+  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; result: string; challenge?: SignedDiceChallenge }>;
   npcChanges: NpcTurnChange[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -55,8 +60,9 @@ export interface ServerDiceRollOptions {
 export async function rollDiceAtServer(
   sessionToken: string,
   formula: string,
+  challenge: SignedDiceChallenge,
   options: ServerDiceRollOptions = {},
-): Promise<DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string } }> {
+): Promise<DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }> {
   const env = readSupabaseEnv();
   const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
   const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
@@ -65,6 +71,9 @@ export async function rollDiceAtServer(
   }
   if (!sessionToken.trim()) throw new GameMasterError("Для броска требуется активная сессия.", "AUTH_REQUIRED");
   if (!parseDiceFormula(formula)) throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска.", "INVALID_DICE_FORMULA");
+  if (!challenge || challenge.formula !== formula || !challenge.signature || !challenge.nonce) {
+    throw new GameMasterError("Для броска отсутствует подписанное задание мастера. Запроси новый ход.", "DICE_CHALLENGE_MISSING");
+  }
 
   let response: Response;
   try {
@@ -75,7 +84,7 @@ export async function rollDiceAtServer(
         Authorization: `Bearer ${sessionToken.trim()}`,
         apikey: publishableKey,
       },
-      body: JSON.stringify({ operation: "ROLL_DICE", formula }),
+      body: JSON.stringify({ operation: "ROLL_DICE", formula, challenge }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
@@ -97,10 +106,11 @@ export async function rollDiceAtServer(
       !("userId" in payload.proof) || typeof payload.proof.userId !== "string" ||
       !("issuedAt" in payload.proof) || !Number.isInteger(payload.proof.issuedAt) ||
       !("nonce" in payload.proof) || typeof payload.proof.nonce !== "string" ||
-      !("signature" in payload.proof) || typeof payload.proof.signature !== "string") {
+      !("signature" in payload.proof) || typeof payload.proof.signature !== "string" ||
+      !("challenge" in payload.proof) || !payload.proof.challenge || typeof payload.proof.challenge !== "object") {
     throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
   }
-  const result = payload as DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string } };
+  const result = payload as DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } };
   const parsed = parseDiceFormula(formula)!;
   let offset = 0;
   let diceMatch = result.dice.length === parsed.totalDice &&
@@ -121,7 +131,8 @@ export async function rollDiceAtServer(
     }
     offset += term.count;
   }
-  if (result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
+  if (JSON.stringify(result.proof.challenge) !== JSON.stringify(challenge) ||
+      result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
       result.total !== result.dice.reduce((sum, die) => sum + (die.kept ? die.value : 0), 0) + result.modifier) {
     throw new GameMasterError("Результат броска не соответствует исходной формуле. Ход не продолжен.", "DICE_RESULT_MISMATCH");
   }
@@ -765,6 +776,25 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   let turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
+  const rawChallenge = record["rollChallenge"];
+  const waitingRolls = turn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+  if (waitingRolls.length > 0) {
+    if (waitingRolls.length !== 1 || !rawChallenge || typeof rawChallenge !== "object" ||
+        !("userId" in rawChallenge) || typeof rawChallenge.userId !== "string" ||
+        !("formula" in rawChallenge) || rawChallenge.formula !== waitingRolls[0].formula ||
+        !("label" in rawChallenge) || rawChallenge.label !== waitingRolls[0].label ||
+        !("dc" in rawChallenge) || rawChallenge.dc !== waitingRolls[0].dc ||
+        !("targetType" in rawChallenge) || rawChallenge.targetType !== waitingRolls[0].targetType ||
+        !("roller" in rawChallenge) || rawChallenge.roller !== waitingRolls[0].roller ||
+        !("issuedAt" in rawChallenge) || !Number.isInteger(rawChallenge.issuedAt) ||
+        !("nonce" in rawChallenge) || typeof rawChallenge.nonce !== "string" ||
+        !("signature" in rawChallenge) || typeof rawChallenge.signature !== "string") {
+      throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
+    }
+    waitingRolls[0].challenge = rawChallenge as unknown as SignedDiceChallenge;
+  } else if (rawChallenge !== undefined && rawChallenge !== null) {
+    throw new GameMasterError("Сервер выдал задание броска без ожидающей проверки. Ход не продолжен.", "UNEXPECTED_DICE_CHALLENGE");
+  }
   const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(context.world.calendarSystem);
   if (context.mode !== "OPENING" && isEkdrasilCalendar) {
     const before = parseEkdrasilDateTime(context.world.currentInGameDate);
