@@ -40,8 +40,30 @@ export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMaster
 export const GAME_TURN_MAX_OUTPUT_TOKENS = 4096;
 export const DEEPSEEK_GAME_TURN_REASONING_EFFORT = "none" as const;
 
+/**
+ * A Russian action may not overlap English SRD vocabulary. When action-specific
+ * retrieval finds nothing, seed the turn with the core D&D 2024 resolution rules
+ * so the model does not spend most of its tool budget rediscovering basics.
+ */
+export const CORE_GAMEPLAY_RULE_TERMS = [
+  "d20 test", "ability check", "ability checks", "attack roll", "attack rolls",
+  "saving throw", "saving throws", "armor class", "weapon attack", "damage roll",
+];
+
+export function selectGameplayRuleExcerpts(
+  content: string,
+  actionTerms: string[],
+  maxChars: number,
+  maxItems: number,
+): RuleExcerpt[] {
+  const actionMatches = selectRuleExcerpts(content, actionTerms, maxChars, maxItems);
+  if (actionMatches.length > 0) return actionMatches;
+  return selectRuleExcerpts(content, CORE_GAMEPLAY_RULE_TERMS, maxChars, maxItems);
+}
+
 export function gameTurnAttemptTimeoutMs(attemptIndex: number): number {
-  return attemptIndex <= 0 ? 60_000 : 42_000;
+  // Keep the complete two-provider path inside the mobile/edge request window.
+  return attemptIndex <= 0 ? 35_000 : 20_000;
 }
 
 
