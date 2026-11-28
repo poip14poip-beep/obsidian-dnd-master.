@@ -51,7 +51,7 @@ function GamePage() {
   const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; targetType: "DC" | "AC" | "NONE"; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -156,7 +156,7 @@ function GamePage() {
     }
   }, [turnCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft, nextTurnNumber]);
 
-  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }> = []) {
+  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }> = []) {
     return {
       action,
       mode,
@@ -256,7 +256,7 @@ function GamePage() {
     void handleOpenCampaign();
   }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
-  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>, playerIntentOverride?: string) {
+  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>, playerIntentOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
