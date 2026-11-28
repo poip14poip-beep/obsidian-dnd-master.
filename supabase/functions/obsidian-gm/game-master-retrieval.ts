@@ -771,8 +771,8 @@ export async function callWithEkdrasilReadTools(options: {
   const messages = Array.isArray(options.requestBody.messages)
     ? [...options.requestBody.messages] as JsonRecord[]
     : [];
-  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 5, 5));
-  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 10, 10));
+  const maxRounds = Math.max(0, Math.min(options.maxToolRounds ?? 8, 8));
+  const maxCalls = Math.max(1, Math.min(options.maxToolCalls ?? 16, 16));
   const deadline = Date.now() + (options.timeoutMs ?? 40_000);
   let preparedRoll: PreparedRoll | null = null;
   const serverRolls: ServerCompletedRoll[] = [];
@@ -791,7 +791,7 @@ export async function callWithEkdrasilReadTools(options: {
       method: "POST",
       headers: options.headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(Math.min(remaining, 42_000)),
+      signal: AbortSignal.timeout(Math.min(remaining, 50_000)),
     });
     const payload = await response.clone().json().catch(() => null) as unknown;
     return { response, payload };

@@ -718,4 +718,33 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("allows more than five retrieval rounds so the D&D engine can reach player-roll preparation", async () => {
+    const responses: unknown[] = Array.from({ length: 6 }, (_, index) => ({
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: `search-${index}`, type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "ability check d20" }) },
+      }] } }],
+    }));
+    responses.push({ choices: [{ message: { role: "assistant", content: "Правил достаточно." } }] });
+    responses.push({ choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] });
+    const fetcher = vi.fn();
+    for (const response of responses) {
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }));
+    }
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules,
+      canon,
+      maxToolRounds: 8,
+      maxToolCalls: 16,
+    });
+    expect(result.toolCalls).toBe(6);
+    expect(result.exhausted).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(8);
+  });
+
 });
