@@ -985,8 +985,14 @@ export async function restorePendingGameTurn(
   if (waitingRolls.length > 1) {
     throw new GameMasterError("В сохранённом ходе несколько ожидающих бросков. Требуется восстановление целостности.", "MULTIPLE_PENDING_ROLLS");
   }
+  if (waitingRolls.length === 0) {
+    throw new GameMasterError("Сохранённая запись не содержит ожидающей проверки игрока.", "PENDING_ROLL_MISSING");
+  }
   if (waitingRolls.length === 1) {
     const waiting = waitingRolls[0]!;
+    if (waiting.roller !== "PLAYER") {
+      throw new GameMasterError("В сохранённом ходе неверно указан владелец броска.", "PENDING_ROLL_OWNER_INVALID");
+    }
     const alreadyRolled = completedRolls.some((roll) => roll.label === waiting.label && roll.formula === waiting.formula);
     if (rawChallenge && typeof rawChallenge === "object") {
       const challenge = rawChallenge as Record<string, unknown>;
