@@ -185,3 +185,14 @@ The v94 deployment is an integration milestone, not final acceptance of the comp
 - Supabase Edge Function `obsidian-gm` deployed as **version 96**, ACTIVE, JWT verification enabled. The deployment includes the condition-aware travel calculation.
 - Supabase static-host publication and GitHub Pages deployment completed successfully (workflow runs `46186507009` and `46186506971`).
 - Android live-campaign acceptance remains pending. Condition-aware travel is a first contextual slice; fear-source rules, sight/hearing-dependent checks, prone attack-distance rules, and condition expiry still need implementation.
+
+## Edge-engine acceptance gate and NPC damage flow — 2026-11-28, v98
+
+- CI now runs the Edge Function engine tests in a dedicated Node/Vitest configuration. Before this change, the regular application Vitest config included only `src/**` and silently skipped the three server-engine test files.
+- Fixed the server dice execution import, passed campaign weather into the travel tool, corrected skill-key whitespace normalization and Armor Class line matching, and aligned stale assertions with the current Russian labels/retrieval behavior.
+- NPC damage is now completed by server RNG when its verified attack hit exists; the completed damage is returned as a GM-owned server roll and the corresponding NPC-to-player combat event is preserved in the final tool-loop response. Player-owned pending rolls remain separate.
+- Added condition-aware movement and sensory checks as described above.
+- Latest CI on `cloud-api-client` commit `50db1c297fdc97d434cb53cf73b48b5943c39f64`: SUCCESS — 235 application tests + 56 Edge Function tests passed; TypeScript check and production build passed.
+- Supabase Edge Function `obsidian-gm` deployed as **version 98**, ACTIVE, JWT verification enabled, using the exact five source files from `cloud-api-client`.
+- Supabase static-host build/publication succeeded (workflow run `46187295321`). GitHub Pages deployment is independent; app-side rest UI had already passed and published in the preceding successful deployment.
+- **Android end-to-end acceptance is still pending.** The server engine and app build have passed automated gates, but an actual live-campaign session must still verify player dice UI, NPC auto-rolls, travel, conditions, and rest persistence.
