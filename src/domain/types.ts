@@ -96,6 +96,31 @@ export interface EntityRevision {
   reason: string;
 }
 
+export interface NpcCombatProfile {
+  /** Combat values are usable only when the source is explicitly verified. */
+  status: "NOT_REQUIRED" | "SRD_VERIFIED" | "UNKNOWN";
+  source: string;
+  armorClass: number | null;
+  hitPoints: number | null;
+  speed: string;
+  attacks: Array<{ name: string; attackBonus: number | null; damage: string; damageType: string }>;
+  resistances: string[];
+  vulnerabilities: string[];
+  immunities: string[];
+}
+
+export interface NpcPrivateProfile {
+  biography: string;
+  appearance: string;
+  personality: string;
+  motivation: string;
+  longTermGoal: string;
+  secrets: string;
+  relationships: string;
+  skillsAndAbilities: string;
+  combatProfile: NpcCombatProfile;
+}
+
 export interface NpcRecord {
   id: string;
   /** False hides GM-only records from the player-facing NPC registry; the GM model still receives them. */
@@ -105,6 +130,8 @@ export interface NpcRecord {
   locationId: string | null;
   factionId: string | null;
   goals: string;
+  /** GM-only dossier. Never render this in the player-facing NPC journal. */
+  gmProfile?: NpcPrivateProfile;
   /** GM-only summary of possessions, assets and resources currently controlled by this NPC. */
   resources?: string;
   attitudeToPlayer: string;
@@ -352,6 +379,8 @@ export interface NpcTurnChange {
   factionName: string | null;
   certainty: CertaintyStatus;
   reason: string;
+  /** Full GM-only card generated on first encounter and maintained on later updates. */
+  gmProfile?: NpcPrivateProfile;
   knowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
   playerKnowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
 }
