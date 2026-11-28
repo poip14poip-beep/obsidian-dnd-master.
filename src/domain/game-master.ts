@@ -780,19 +780,19 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const rawChallenge = record["rollChallenge"];
   const waitingRolls = turn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
   if (waitingRolls.length > 0) {
-    if (waitingRolls.length !== 1 || !rawChallenge || typeof rawChallenge !== "object" ||
-        !("userId" in rawChallenge) || typeof rawChallenge.userId !== "string" ||
-        !("formula" in rawChallenge) || rawChallenge.formula !== waitingRolls[0].formula ||
-        !("label" in rawChallenge) || rawChallenge.label !== waitingRolls[0].label ||
-        !("dc" in rawChallenge) || rawChallenge.dc !== waitingRolls[0].dc ||
-        !("targetType" in rawChallenge) || rawChallenge.targetType !== waitingRolls[0].targetType ||
-        !("roller" in rawChallenge) || rawChallenge.roller !== waitingRolls[0].roller ||
-        !("issuedAt" in rawChallenge) || !Number.isInteger(rawChallenge.issuedAt) ||
-        !("nonce" in rawChallenge) || typeof rawChallenge.nonce !== "string" ||
-        !("signature" in rawChallenge) || typeof rawChallenge.signature !== "string") {
+    const waitingRoll = waitingRolls[0];
+    if (waitingRolls.length !== 1 || !waitingRoll || !rawChallenge || typeof rawChallenge !== "object") {
       throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
     }
-    waitingRolls[0].challenge = rawChallenge as unknown as SignedDiceChallenge;
+    const candidate = rawChallenge as Record<string, unknown>;
+    if (typeof candidate.userId !== "string" || candidate.formula !== waitingRoll.formula ||
+        candidate.label !== waitingRoll.label || candidate.dc !== waitingRoll.dc ||
+        candidate.targetType !== waitingRoll.targetType || candidate.roller !== waitingRoll.roller ||
+        !Number.isInteger(candidate.issuedAt) || typeof candidate.nonce !== "string" ||
+        typeof candidate.signature !== "string") {
+      throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
+    }
+    waitingRoll.challenge = candidate as unknown as SignedDiceChallenge;
   } else if (rawChallenge !== undefined && rawChallenge !== null) {
     throw new GameMasterError("Сервер выдал задание броска без ожидающей проверки. Ход не продолжен.", "UNEXPECTED_DICE_CHALLENGE");
   }
