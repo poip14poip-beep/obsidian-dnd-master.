@@ -929,7 +929,7 @@ export async function restorePendingGameTurn(
   }
   let response: Response;
   try {
-    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\/+$/, "")}/functions/v1/obsidian-gm`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -1004,8 +1004,8 @@ export async function restorePendingGameTurn(
     throw new GameMasterError("Сервер восстановил задание броска без ожидающей проверки.", "UNEXPECTED_PENDING_CHALLENGE");
   }
   return {
-    pendingTurnId: record["pendingTurnId"],
-    action: record["action"],
+    pendingTurnId: record["pendingTurnId"] as string,
+    action: record["action"] as string,
     turn,
     completedRolls,
   };
