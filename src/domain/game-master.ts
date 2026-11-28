@@ -166,7 +166,7 @@ const turnSchema = {
         combatProfile: { type: "object", additionalProperties: false, properties: {
           status: { type: "string", enum: ["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"] },
           source: { type: "string" }, armorClass: { type: ["integer", "null"] },
-          hitPoints: { type: ["integer", "null"] }, speed: { type: "string" },
+          hitPointsCurrent: { type: ["integer", "null"] }, hitPointsMax: { type: ["integer", "null"] }, speed: { type: "string" },
           attacks: { type: "array", items: { type: "object", additionalProperties: false, properties: {
             name: { type: "string" }, attackBonus: { type: ["integer", "null"] },
             damage: { type: "string" }, damageType: { type: "string" },
@@ -174,7 +174,7 @@ const turnSchema = {
           resistances: { type: "array", items: { type: "string" } },
           vulnerabilities: { type: "array", items: { type: "string" } },
           immunities: { type: "array", items: { type: "string" } },
-        }, required: ["status", "source", "armorClass", "hitPoints", "speed", "attacks", "resistances", "vulnerabilities", "immunities"] },
+        }, required: ["status", "source", "armorClass", "hitPointsCurrent", "hitPointsMax", "speed", "attacks", "resistances", "vulnerabilities", "immunities"] },
       }, required: ["biography", "appearance", "personality", "motivation", "longTermGoal", "secrets", "relationships", "skillsAndAbilities", "combatProfile"] },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
@@ -516,13 +516,15 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     if (!["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(String(combat["status"])) ||
         typeof combat["source"] !== "string" || typeof combat["speed"] !== "string" ||
         !(combat["armorClass"] === null || (Number.isInteger(combat["armorClass"]) && Number(combat["armorClass"]) >= 1 && Number(combat["armorClass"]) <= 40)) ||
-        !(combat["hitPoints"] === null || (Number.isInteger(combat["hitPoints"]) && Number(combat["hitPoints"]) >= 1 && Number(combat["hitPoints"]) <= 5000)) ||
+        !(combat["hitPointsCurrent"] === null || (Number.isInteger(combat["hitPointsCurrent"]) && Number(combat["hitPointsCurrent"]) >= 0 && Number(combat["hitPointsCurrent"]) <= 5000)) ||
+        !(combat["hitPointsMax"] === null || (Number.isInteger(combat["hitPointsMax"]) && Number(combat["hitPointsMax"]) >= 1 && Number(combat["hitPointsMax"]) <= 5000)) ||
+        (combat["hitPointsCurrent"] !== null && combat["hitPointsMax"] !== null && Number(combat["hitPointsCurrent"]) > Number(combat["hitPointsMax"])) ||
         !Array.isArray(combat["attacks"]) || !Array.isArray(combat["resistances"]) ||
         !Array.isArray(combat["vulnerabilities"]) || !Array.isArray(combat["immunities"])) {
       throw new GameMasterError("Некорректный боевой профиль NPC.", "INVALID_NPC_COMBAT_PROFILE");
     }
     if (combat["status"] === "SRD_VERIFIED" &&
-        (!String(combat["source"]).trim() || combat["armorClass"] === null || combat["hitPoints"] === null)) {
+        (!String(combat["source"]).trim() || combat["armorClass"] === null || combat["hitPointsCurrent"] === null || combat["hitPointsMax"] === null)) {
       throw new GameMasterError("Боевые характеристики NPC помечены как подтверждённые без источника, КЗ или HP.", "UNSOURCED_NPC_COMBAT_PROFILE");
     }
     for (const attack of combat["attacks"] as Array<Record<string, unknown>>) {
