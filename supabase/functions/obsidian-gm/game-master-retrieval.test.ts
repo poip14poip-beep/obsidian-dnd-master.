@@ -98,7 +98,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       conditions: [],
     });
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("пассивное значение");
+    expect(result.error).toContain("Подтверждённый бонус навыка");
   });
 
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
