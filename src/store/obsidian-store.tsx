@@ -984,7 +984,8 @@ export function ObsidianStoreProvider({
         if (remaining <= 0) break;
       }
     }
-    const calculation = calculateRest({ ...pc, hitDicePool: pool }, kind, hitDiceToSpend, rolls);
+    const characterForRest: PlayerCharacterState = pool ? { ...pc, hitDicePool: pool } : pc;
+    const calculation = calculateRest(characterForRest, kind, hitDiceToSpend, rolls);
     if (!calculation.ok) {
       return { ok: false, error: calculation.error ?? "Не удалось рассчитать отдых.", report: lastIntegrityReport };
     }
@@ -1029,6 +1030,10 @@ export function ObsidianStoreProvider({
       return { ok: false, error: "Случайный старт можно создать только до подтверждения кампании и первого игрового хода.", report: lastIntegrityReport };
     }
     const now = new Date().toISOString();
+    const initialHitDicePool = input.characterPatch.hitDicePool ?? createInitialHitDicePool(
+      input.characterPatch.hitDice ?? collections.player_character_state.hitDice,
+      input.characterPatch.classLevel ?? collections.player_character_state.classLevel,
+    );
     const locationId = makeId("loc");
     const location: LocationRecord = {
       id: locationId,
@@ -1044,13 +1049,7 @@ export function ObsidianStoreProvider({
     const nextCharacter: PlayerCharacterState = {
       ...previousCharacter,
       ...input.characterPatch,
-      ...(!input.characterPatch.hitDicePool && createInitialHitDicePool(
-        input.characterPatch.hitDice ?? previousCharacter.hitDice,
-        input.characterPatch.classLevel ?? previousCharacter.classLevel,
-      ) ? { hitDicePool: createInitialHitDicePool(
-        input.characterPatch.hitDice ?? previousCharacter.hitDice,
-        input.characterPatch.classLevel ?? previousCharacter.classLevel,
-      ) } : {}),
+      ...(initialHitDicePool ? { hitDicePool: initialHitDicePool } : {}),
       stateVersion: previousCharacter.stateVersion + 1,
       currentLocationLabel: input.city.name,
       inventory: (input.replaceInventory ?? input.inventory.length > 0) ? input.inventory.map((item) => ({ ...item, id: makeId("inv") })) : previousCharacter.inventory,
