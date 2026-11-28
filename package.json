@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "test:edge": "vitest run --config vitest.edge.config.ts",
     "test:watch": "vitest"
   },
   "overrides": {
