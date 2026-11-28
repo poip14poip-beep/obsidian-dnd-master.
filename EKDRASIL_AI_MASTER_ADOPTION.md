@@ -1,6 +1,6 @@
 # Ekdrasil AI Master — integration status
 
-Last updated: 2026-11-27
+Last updated: 2026-11-28
 
 ## Active code base and safety
 
@@ -96,7 +96,7 @@ Useful patterns identified: bounded turn orchestration, engine/narration boundar
 ## Latest engine work — 2026-11-28, PRs #23, #29–#33
 
 Target branch: `cloud-api-client`  
-Current deployed Edge Function: `obsidian-gm` v93 (ACTIVE, JWT required).
+Current deployed Edge Function: `obsidian-gm` v94 (ACTIVE, JWT required).
 
 ### Adopted and deployed
 
@@ -124,3 +124,25 @@ Current deployed Edge Function: `obsidian-gm` v93 (ACTIVE, JWT required).
 - Manual acceptance must use a disposable test campaign first; do not reset or overwrite the user's existing campaign.
 
 The integrated engine is materially more capable, but it is **not yet a fully accepted autonomous D&D 2024 campaign engine**. Continue one isolated subsystem at a time, with CI and deployment verification after each merge.
+
+
+## Latest engine work — 2026-11-28, v94
+
+- Added the upstream-compatible `travel` tool to the active `cloud-api-client` branch and deployed it as `obsidian-gm` v94.
+- The server reads only the current campaign environment weather/precipitation when calculating travel.
+- The tool handles normal/fast/slow pace, normal/difficult terrain, distance/time, and weather penalties; it returns time delta, travel distance, passive Perception penalty and slow-pace stealth handling.
+- Forced march and journeys exceeding the supported 8-hour segment remain deliberately rejected until Constitution saves, exhaustion and rest recovery can be resolved as a complete server-owned sequence.
+- Verified that all five deployed Edge Function source files exactly match the five corresponding files on GitHub `cloud-api-client` at the time of verification.
+- GitHub Actions CI run `46184683431`: SUCCESS — `bun run test`, `bunx tsc --noEmit`, and `bun run build` all completed successfully.
+- Supabase confirms `obsidian-gm` is ACTIVE at version 94 with JWT verification enabled.
+- No version-94 runtime game request was present in the available function logs at verification time; Android acceptance is therefore still pending.
+
+### Next engine priorities
+
+1. Complete the D&D 2024 condition lifecycle: validated condition application/removal, mechanical effects, and explicit expiry triggers. Do not invent round-based durations until encounter turn tracking exists.
+2. Implement short/long rest recovery using verified character resources and time advancement; no spell-slot assumptions for Ekdrasil characters without spellcasting.
+3. Add initiative/action-economy and encounter state only as a separate deterministic subsystem, not as narrative-only labels.
+4. Continue NPC agency and world simulation with persisted, bounded updates.
+5. Complete Android end-to-end acceptance on a disposable campaign: non-combat check, player die, travel, social interaction, combat, save/read-back, reload and interrupted-turn recovery.
+
+The v94 deployment is an integration milestone, not final acceptance of the complete autonomous master.
