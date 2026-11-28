@@ -371,7 +371,7 @@ describe("hit point changes on committed turns", () => {
       relationships: "Доверяет двум караульным; конфликтует с начальником смены.",
       skillsAndAbilities: "Наблюдательность, строевая подготовка, владение копьём.",
       combatProfile: {
-        status: "UNKNOWN" as const, source: "", armorClass: null, hitPoints: null, speed: "UNKNOWN",
+        status: "UNKNOWN" as const, source: "", armorClass: null, hitPointsCurrent: null, hitPointsMax: null, speed: "UNKNOWN",
         attacks: [], resistances: [], vulnerabilities: [], immunities: [],
       },
     };
