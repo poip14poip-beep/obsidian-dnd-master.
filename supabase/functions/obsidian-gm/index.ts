@@ -113,7 +113,7 @@ async function consumeDiceNonces(userId: string, proofs: Array<{ nonce: string; 
   if (proofs.length === 0) return true;
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return false;
   try {
-    const response = await fetch(`${SUPABASE_URL.replace(/\\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonces`, {
+    const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonces`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
