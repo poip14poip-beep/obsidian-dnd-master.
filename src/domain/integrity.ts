@@ -1,6 +1,7 @@
 import type {
   BackupEnvelope,
   CollectionName,
+  CombatDamageEvent,
   GameTurnEntry,
   IntegrityCheckItem,
   IntegrityReport,
@@ -15,6 +16,49 @@ export interface HitPointDeltaResult {
   hpCurrent: number | null;
   hpTemp: number | null;
   error: string | null;
+}
+
+export interface NpcHitPointDamageResult {
+  hpCurrent: number | null;
+  appliedDamage: number;
+  error: string | null;
+}
+
+/** Apply D&D damage using only a verified NPC combat profile. */
+export function applyNpcHitPointDamage(
+  hpCurrent: number | null,
+  hpMax: number | null,
+  damage: number,
+  damageType: string | null,
+  resistances: string[],
+  vulnerabilities: string[],
+  immunities: string[],
+): NpcHitPointDamageResult {
+  if (!Number.isInteger(damage) || damage < 0 || damage > 10000) {
+    return { hpCurrent, appliedDamage: 0, error: "Урон NPC должен быть подтверждённым неотрицательным целым числом." };
+  }
+  if (!Number.isInteger(hpCurrent) || hpCurrent === null || hpCurrent < 0 ||
+      !Number.isInteger(hpMax) || hpMax === null || hpMax < 1 || hpCurrent > hpMax) {
+    return { hpCurrent, appliedDamage: 0, error: "Нельзя применить урон: текущие и максимальные HP NPC не подтверждены." };
+  }
+  const defenseLists = [resistances, vulnerabilities, immunities];
+  if (defenseLists.some((list) => !Array.isArray(list) || list.some((item) => typeof item !== "string"))) {
+    return { hpCurrent, appliedDamage: 0, error: "Защиты NPC имеют некорректный формат." };
+  }
+  const normalizedType = damageType?.trim().toLocaleLowerCase() ?? "";
+  const hasDefenses = defenseLists.some((list) => list.length > 0);
+  if (!normalizedType && hasDefenses) {
+    return { hpCurrent, appliedDamage: 0, error: "Тип урона неизвестен, поэтому нельзя безопасно применить сопротивления/уязвимости NPC." };
+  }
+  const matches = (list: string[]) => Boolean(normalizedType) &&
+    list.some((item) => item.trim().toLocaleLowerCase() === normalizedType);
+  let appliedDamage = damage;
+  const resistant = matches(resistances);
+  const vulnerable = matches(vulnerabilities);
+  if (matches(immunities)) appliedDamage = 0;
+  else if (resistant && !vulnerable) appliedDamage = Math.floor(damage / 2);
+  else if (vulnerable && !resistant) appliedDamage = damage * 2;
+  return { hpCurrent: Math.max(0, hpCurrent - appliedDamage), appliedDamage, error: null };
 }
 
 /**
@@ -189,6 +233,44 @@ export function validateTurnDraft(
     for (const knowledge of change.playerKnowledgeAdditions) {
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание персонажа о NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
+  }
+  for (const event of draft.combatEvents ?? []) {
+    if (!["PLAYER", "NPC"].includes(event.targetType) ||
+        typeof event.targetName !== "string" || !event.targetName.trim() ||
+        !Number.isInteger(event.damage) || event.damage < 0 || event.damage > 10000 ||
+        !(event.damageType === null || typeof event.damageType === "string") ||
+        typeof event.critical !== "boolean" ||
+        !["PLAYER", "NPC"].includes(event.source) ||
+        typeof event.formula !== "string" || !event.formula.trim() ||
+        typeof event.rollLabel !== "string" || !event.rollLabel.trim()) {
+      errors.push("Подтверждённое боевое событие имеет некорректные поля.");
+      continue;
+    }
+    if (event.targetType === "NPC") {
+      const existing = collectionsNpcs.find((npc) =>
+        npc.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
+      );
+      const pendingChange = (draft.npcChanges ?? []).find((change) =>
+        change.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
+      );
+      const profile = pendingChange?.gmProfile ?? existing?.gmProfile;
+      const combat = profile?.combatProfile;
+      if (!combat || combat.status !== "SRD_VERIFIED") {
+        errors.push(`Нельзя применить урон к NPC «${event.targetName}»: отсутствует подтверждённый боевой профиль SRD.`);
+        continue;
+      }
+      const applied = applyNpcHitPointDamage(
+        combat.hitPointsCurrent, combat.hitPointsMax, event.damage, event.damageType,
+        combat.resistances, combat.vulnerabilities, combat.immunities,
+      );
+      if (applied.error) errors.push(`NPC «${event.targetName}»: ${applied.error}`);
+    }
+  }
+  const playerDamage = (draft.combatEvents ?? [])
+    .filter((event) => event.targetType === "PLAYER")
+    .reduce((sum, event) => sum + event.damage, 0);
+  if (playerDamage > 0 && draft.hpDelta !== -playerDamage) {
+    errors.push("Изменение HP героя не совпадает с подтверждёнными результатами урона NPC.");
   }
   const existingQuests = worldState.quests ?? [];
   for (const change of draft.questChanges ?? []) {
