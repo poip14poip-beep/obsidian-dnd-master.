@@ -1363,7 +1363,7 @@ export function ObsidianStoreProvider({
           report: lastIntegrityReport,
         };
       }
-      const errors = validateTurnDraft(activeDraft, ws, pc);
+      const errors = validateTurnDraft(activeDraft, ws, pc, collections.npcs);
       if (errors.length > 0) {
         return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
       }
