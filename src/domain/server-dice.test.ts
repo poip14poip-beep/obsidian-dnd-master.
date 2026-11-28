@@ -3,6 +3,17 @@ import { rollDiceAtServer } from "./game-master";
 import { rollDiceFormula as rollServerDice } from "../../supabase/functions/obsidian-gm/dice";
 
 describe("server-authoritative dice", () => {
+  const testChallenge = {
+  userId: "test-user",
+  formula: "1d20+5",
+  dc: 15,
+  targetType: "DC" as const,
+  roller: "PLAYER" as const,
+  label: "Проверка Восприятия",
+  issuedAt: 1_798_000_000_000,
+  nonce: "challenge-nonce",
+  signature: "Y2hhbGxlbmdl",
+};
   it("resolves advantage with one kept die and applies the modifier once", () => {
     const values = [4, 17];
     const result = rollServerDice("2d20kh1 + 5", () => values.shift()!);
@@ -26,11 +37,11 @@ describe("server-authoritative dice", () => {
         dice: [{ value: 14, sides: 20, kept: true }],
         modifier: 5,
         total: 19,
-        proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==" },
+        proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==", challenge: testChallenge },
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
 
-    const result = await rollDiceAtServer("test-session-token", "1d20+5", {
+    const result = await rollDiceAtServer("test-session-token", "1d20+5", testChallenge, {
       fetcher,
       supabaseUrl: "https://example.supabase.co/",
       publishableKey: "sb_publishable_test",
@@ -39,7 +50,7 @@ describe("server-authoritative dice", () => {
     expect(requestedUrl).toBe("https://example.supabase.co/functions/v1/obsidian-gm");
     expect(requestInit?.method).toBe("POST");
     expect(new Headers(requestInit?.headers).get("Authorization")).toBe("Bearer test-session-token");
-    expect(JSON.parse(String(requestInit?.body))).toEqual({ operation: "ROLL_DICE", formula: "1d20+5" });
+    expect(JSON.parse(String(requestInit?.body))).toEqual({ operation: "ROLL_DICE", formula: "1d20+5", challenge: testChallenge });
     expect(result.total).toBe(19);
   });
 
@@ -51,7 +62,7 @@ describe("server-authoritative dice", () => {
       proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==" },
     }), { status: 200 });
 
-    await expect(rollDiceAtServer("test-session-token", "1d20+5", {
+    await expect(rollDiceAtServer("test-session-token", "1d20+5", testChallenge, {
       fetcher,
       supabaseUrl: "https://example.supabase.co",
       publishableKey: "sb_publishable_test",
