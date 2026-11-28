@@ -139,6 +139,34 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.toolCalls).toBe(0);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
+  it("cross-checks NPC attack bonuses against the persisted GM-only dossier", () => {
+    const monsterRules = {
+      ...rules,
+      content: "# Creatures\n\nGoblin\nScimitar. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Slashing damage.",
+    };
+    const found = executeEkdrasilReadTool("search_dnd_rules", JSON.stringify({ query: "Goblin Scimitar attack roll" }), monsterRules, canon);
+    const excerpts = (found.excerpts ?? []) as Array<{ text: string; lines: string }>;
+    const npcProfiles = [{
+      name: "Goblin",
+      gmProfile: { combatProfile: {
+        status: "SRD_VERIFIED", source: "D&D 2024 SRD 5.2.1",
+        attacks: [{ name: "Scimitar", attackBonus: 4, damage: "1d6+2", damageType: "slashing" }],
+      } },
+    }];
+    const character = { statsCertainty: "KNOWN", armorClass: 15 };
+    const valid = executeEkdrasilReadTool("prepare_npc_attack", JSON.stringify({
+      creatureName: "Goblin", attackName: "Scimitar", advantage: "NONE", reason: "Гоблин атакует героя",
+    }), monsterRules, canon, character, false, excerpts, [], npcProfiles);
+    expect(valid).toMatchObject({ ok: true, preparedRoll: { formula: "1d20+4", dc: 15, roller: "GM" } });
+
+    npcProfiles[0]!.gmProfile.combatProfile.attacks[0]!.attackBonus = 7;
+    const mismatch = executeEkdrasilReadTool("prepare_npc_attack", JSON.stringify({
+      creatureName: "Goblin", attackName: "Scimitar", advantage: "NONE", reason: "Гоблин атакует героя",
+    }), monsterRules, canon, character, false, excerpts, [], npcProfiles);
+    expect(mismatch).toMatchObject({ ok: false });
+    expect(mismatch.error).toContain("расходится");
+  });
+
   it("prepares a player skill check from the confirmed character sheet", () => {
     const character = {
       statsCertainty: "KNOWN",
