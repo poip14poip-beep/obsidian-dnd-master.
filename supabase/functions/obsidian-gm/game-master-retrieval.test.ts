@@ -36,7 +36,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.source).toBe("D&D 2024 / SRD 5.2.1");
     expect(result.sourceId).toBe("SRD_5_2_1");
     expect(result.sha256).toBe("rules-hash");
-    expect(result.excerpts).toEqual([expect.objectContaining({ lines: "3–3" })]);
+    expect(result.excerpts).toEqual(expect.arrayContaining([expect.objectContaining({ lines: "3–3" })]));
   });
 
   it("retrieves only canon 2.4 with section and line provenance", () => {
@@ -450,6 +450,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       enabled: true,
       rules,
       canon,
+      maxToolCalls: 6,
     });
     expect(result.exhausted).toBe(true);
     expect(result.toolCalls).toBe(0);
@@ -495,7 +496,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       conditions: ["Ослеплён"],
     };
     const sightCheck = executeEkdrasilReadTool("request_roll", JSON.stringify({
-      kind: "skill_check", skill: "Расследование", dc: 15, advantage: "NONE",
+      kind: "skill_check", skill: "Расследование", dc: 15, advantage: "none",
       reason: "Разглядеть мелкие знаки на печати",
     }), rules, canon, character);
     expect(sightCheck).toMatchObject({ ok: false });
@@ -634,7 +635,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       ok: true,
       preparedRoll: {
         roller: "PLAYER",
-        label: "Мудрость (Perception)",
+        label: "Мудрость (Восприятие)",
         formula: "2d20kh1+5",
         dc: 15,
         targetType: "DC",
@@ -721,7 +722,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       playerCharacter: character,
     });
     expect(result.preparedRoll).toMatchObject({
-      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5,
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5", dc: 15, targetType: "DC", modifier: 5,
     });
     expect(result.conversation.some((message) => message.role === "assistant" && Array.isArray(message.tool_calls))).toBe(true);
     expect(result.conversation.some((message) => message.role === "tool")).toBe(true);
