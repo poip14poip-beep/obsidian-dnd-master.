@@ -173,5 +173,5 @@ The v94 deployment is an integration milestone, not final acceptance of the comp
 - Unknown resource values are not silently filled. Resources without an explicit rest recovery rule are not changed.
 - Store-level tests cover confirmed dossier import initialization, atomic long-rest state updates, calendar advancement, and the legacy-save no-inference guard.
 - CI on `cloud-api-client` commit `35397c0bce666e9c2a1b471298c66fa30911548e`: SUCCESS — 235 tests passed, TypeScript check passed, production build passed.
-- Supabase static-host publication completed successfully (workflow run `46186368623`). GitHub Pages deployment is still running at the time of this note.
+- Supabase static-host publication completed successfully (workflow run `46186368623`). GitHub Pages deployment completed successfully (workflow run `46186368617`).
 - **Not yet accepted:** Android end-to-end test in a live campaign. Rest interruptions, food/water requirements, multiclass hit-die selection, and old-save Hit Dice reconciliation remain follow-up tasks. Supabase `obsidian-gm` function was not redeployed because this slice changes the app-side state/store, not the Edge Function.
