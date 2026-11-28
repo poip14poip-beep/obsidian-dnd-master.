@@ -12,7 +12,7 @@ ALTER TABLE public.gm_dice_nonce_consumptions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.gm_dice_nonce_consumptions FROM PUBLIC, anon, authenticated;
 GRANT ALL ON TABLE public.gm_dice_nonce_consumptions TO service_role;
 
-DROP FUNCTION IF EXISTS public.obsidian_consume_gm_dice_nonce(uuid, text, timestamptz);
+-- Leave any legacy helper untouched; the new plural RPC is used by the current engine.
 CREATE OR REPLACE FUNCTION public.obsidian_consume_gm_dice_nonces(
   p_user_id uuid,
   p_nonces text[],
