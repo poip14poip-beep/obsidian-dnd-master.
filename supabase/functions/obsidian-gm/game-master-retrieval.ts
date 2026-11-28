@@ -1514,7 +1514,7 @@ export async function callWithEkdrasilReadTools(options: {
           continue;
         }
       }
-      return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
+      return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, combatEvents, conversation: messages };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
       return { ...result, toolCalls, exhausted: true, preparedRoll, serverRolls, combatEvents, conversation: messages };
