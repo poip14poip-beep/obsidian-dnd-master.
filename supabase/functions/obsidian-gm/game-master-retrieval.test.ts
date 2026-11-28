@@ -196,7 +196,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       ok: true,
       socialContext: { npc: "Марта", approach: "persuade", attitude: "friendly", dc: 10 },
       preparedRoll: {
-        roller: "PLAYER", label: "Харизма (Убеждение) — Марта",
+        roller: "PLAYER", label: "Социальная проверка — Марта: Харизма (Убеждение)",
         formula: "1d20+4", dc: 10, targetType: "DC", kind: "SKILL_CHECK",
       },
     });
@@ -206,7 +206,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(hostile).toMatchObject({
       ok: true,
       socialContext: { attitude: "hostile", dc: 20 },
-      preparedRoll: { label: "Харизма (Запугивание) — Капитан стражи", dc: 20 },
+      preparedRoll: { label: "Социальная проверка — Капитан стражи: Харизма (Запугивание)", dc: 20 },
     });
     const neutral = executeEkdrasilReadTool("social_check", JSON.stringify({
       npc: "Торговец", approach: "deceive", reason: "Скрыть настоящую цель визита",
