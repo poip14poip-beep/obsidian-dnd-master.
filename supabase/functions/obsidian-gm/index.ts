@@ -1358,7 +1358,7 @@ Deno.serve(async (req: Request) => {
                 JSON.stringify({
                   weapon, targetName: "Commoner", targetAC: dc, advantage,
                   reason: typeof pending.reason === "string" && pending.reason.trim().length >= 3
-                    ? pending.reason.trim().slice(0, 200) : (action || label).slice(0, 200),
+                    ? pending.reason.trim().slice(0, 200) : label.slice(0, 200),
                 }),
                 { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
                 { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
