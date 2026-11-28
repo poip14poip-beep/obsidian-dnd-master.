@@ -356,6 +356,45 @@ describe("hit point changes on committed turns", () => {
   });
 
 
+  it("commits canonical condition changes and persists the normalized character state", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.player_character_state.conditions = ["Испуган"];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result, unmount } = await renderCampaignStore(storage);
+
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Состояния персонажа изменились",
+        worldOutcome: "Страх прошёл, наложено истощение и проклятие",
+        characterChanges: {
+          inventory: [],
+          resources: [],
+          conditions: [
+            { action: "REMOVE", name: "Frightened" },
+            { action: "ADD", name: "Exhaustion 2" },
+            { action: "ADD", name: "Проклятие чёрного инея" },
+          ],
+          currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+        },
+      });
+    });
+
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok, checked!.errors.join(" | ")).toBe(true);
+
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok, committed!.ok ? "" : committed!.error).toBe(true);
+    expect(result.current.character.conditions).toEqual(["Истощение 2", "Проклятие чёрного инея"]);
+    unmount();
+
+    const reloaded = await renderCampaignStore(storage);
+    expect(reloaded.result.current.character.conditions).toEqual(["Истощение 2", "Проклятие чёрного инея"]);
+  });
+
   it("applies verified player damage to a tracked NPC combat profile and persists it", async () => {
     const storage = createMemoryStorage();
     const initial = createReadySetupCollections();
