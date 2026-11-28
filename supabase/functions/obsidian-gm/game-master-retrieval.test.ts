@@ -466,6 +466,93 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(mismatch.error).toContain("расходится");
   });
 
+  it("applies poisoned disadvantage to checks and restrained disadvantage to Dexterity saves", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Восприятие", bonus: 5, basis: "WISDOM + владение" }],
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 5, charisma: -1 },
+      conditions: ["Отравлен"],
+    };
+    const check = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "skill_check", skill: "Восприятие", dc: 15, advantage: "none",
+      reason: "Осмотреть следы на земле",
+    }), rules, canon, character);
+    expect(check).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kl1+5" } });
+
+    character.conditions = ["Опутан"];
+    const save = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "saving_throw", ability: "dexterity", dc: 12, advantage: "none",
+      reason: "Увернуться от падающей балки",
+    }), rules, canon, character);
+    expect(save).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kl1+2" } });
+  });
+
+  it("automatically fails Strength and Dexterity saves under paralyzed, stunned, petrified or unconscious", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 5, charisma: -1 },
+      conditions: ["Парализован"],
+    };
+    const result = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "saving_throw", ability: "dexterity", dc: 12, advantage: "none",
+      reason: "Увернуться от ловушки",
+    }), rules, canon, character);
+    expect(result).toMatchObject({ ok: false });
+    expect(result.error).toContain("автоматически проваливает");
+  });
+
+  it("applies condition-based disadvantage to player attacks and blocks attacks while incapacitated", () => {
+    const excerpts = [{ text: "Goblin\nArmor Class 15 (leather armor, shield)\nHit Points 7", lines: "120–122" }];
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "Longsword", attackBonus: 5, damage: "1d8+3", mastery: "Sap" }],
+      conditions: ["Ослеплён"],
+    };
+    const disadvantaged = executeEkdrasilReadTool("prepare_player_attack", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", targetAC: 15,
+      advantage: "NONE", reason: "Атаковать гоблина",
+    }), rules, canon, character, false, excerpts);
+    expect(disadvantaged).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kl1+5" } });
+
+    character.conditions = ["Ошеломлён"];
+    const blocked = executeEkdrasilReadTool("prepare_player_attack", JSON.stringify({
+      weapon: "Longsword", targetName: "Goblin", targetAC: 15,
+      advantage: "NONE", reason: "Атаковать гоблина",
+    }), rules, canon, character, false, excerpts);
+    expect(blocked).toMatchObject({ ok: false });
+    expect(blocked.error).toContain("не может совершить атаку");
+  });
+
+  it("grants NPC attacks advantage against a paralyzed player and cancels it against an invisible player", () => {
+    const monsterRules = {
+      ...rules,
+      content: "# Creatures\n\nGoblin\nScimitar. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Slashing damage.",
+    };
+    const found = executeEkdrasilReadTool("search_dnd_rules", JSON.stringify({ query: "Goblin Scimitar attack roll" }), monsterRules, canon);
+    const excerpts = (found.excerpts ?? []) as Array<{ text: string; lines: string }>;
+    const npcProfiles = [{
+      name: "Goblin",
+      gmProfile: { combatProfile: {
+        status: "SRD_VERIFIED", source: "D&D 2024 SRD 5.2.1",
+        attacks: [{ name: "Scimitar", attackBonus: 4, damage: "1d6+2", damageType: "slashing" }],
+      } },
+    }];
+    const character = { statsCertainty: "KNOWN", armorClass: 15, conditions: ["Парализован"] };
+    const advantaged = executeEkdrasilReadTool("prepare_npc_attack", JSON.stringify({
+      creatureName: "Goblin", attackName: "Scimitar", advantage: "NONE", reason: "Гоблин атакует героя",
+    }), monsterRules, canon, character, false, excerpts, [], npcProfiles);
+    expect(advantaged).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kh1+4" } });
+
+    character.conditions = ["Невидим"];
+    const cancelled = executeEkdrasilReadTool("prepare_npc_attack", JSON.stringify({
+      creatureName: "Goblin", attackName: "Scimitar", advantage: "NONE", reason: "Гоблин атакует героя",
+    }), monsterRules, canon, character, false, excerpts, [], npcProfiles);
+    expect(cancelled).toMatchObject({ ok: true, preparedRoll: { formula: "2d20kl1+4" } });
+  });
+
   it("prepares a player skill check from the confirmed character sheet", () => {
     const character = {
       statsCertainty: "KNOWN",
