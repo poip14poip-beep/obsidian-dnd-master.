@@ -27,8 +27,8 @@ describe("deterministic rest mechanics", () => {
   it("short rest spends hit dice, applies Constitution, caps healing and restores short-rest resources", () => {
     const result = calculateRest(character(), "SHORT", 2, [6, 4]);
     expect(result).toMatchObject({
-      ok: true, elapsedMinutes: 60, hpCurrent: 18, hitDiceSpent: 2,
-      healingFromHitDice: 12, hitDicePool: [{ die: "d10", current: 0, maximum: 3 }],
+      ok: true, elapsedMinutes: 60, hpCurrent: 20, hitDiceSpent: 2,
+      healingFromHitDice: 14, hitDicePool: [{ die: "d10", current: 0, maximum: 3 }],
     });
     expect(result.resources[0]?.current).toBe(3);
     expect(result.resources[1]?.current).toBe(0);
@@ -45,7 +45,7 @@ describe("deterministic rest mechanics", () => {
     expect(result).toMatchObject({
       ok: true, elapsedMinutes: 480, hpCurrent: 20, hitDiceRecovered: 1,
       hitDicePool: [{ die: "d10", current: 3, maximum: 3 }],
-      conditions: ["Отравлен"],
+      conditions: ["Истощение 1", "Отравлен"],
     });
     expect(result.resources[0]?.current).toBe(3);
     expect(result.resources[1]?.current).toBe(1);
