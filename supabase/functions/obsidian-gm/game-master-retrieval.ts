@@ -484,6 +484,9 @@ function preparePlayerDamage(
       ok: true, hit: true, target: targetName,
       attackResolution: { ...resolution, outcome: resolution.critical ? "CRITICAL_HIT" : "HIT" },
       damageResolution: { total: completedDamage.total, formula, modifier: completedDamage.modifier, dice: completedDamage.dice },
+      damageLabel,
+      damageType: typeof entry.damageType === "string" ? entry.damageType : null,
+      weapon,
       preparedRoll: null,
       note: "Урон уже брошен и подтверждён сервером; повторный бросок запрещён.",
     };
@@ -569,6 +572,9 @@ function prepareNpcDamage(
       ok: true, hit: true, target: creatureName,
       attackResolution: { ...attackResolution, outcome: critical ? "CRITICAL_HIT" : "HIT" },
       damageResolution: { total: completedDamage.total, formula, modifier: completedDamage.modifier, dice: completedDamage.dice },
+      damageLabel,
+      damageType: /\)\s*([a-z]+)\s+damage/i.exec(sourceExcerpt.text)?.[1] ?? null,
+      damageTarget: "PLAYER",
       preparedRoll: null,
       damageSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
       critical,
@@ -1053,7 +1059,7 @@ export async function callWithEkdrasilReadTools(options: {
         const isNpcAttack = name === "prepare_npc_damage";
         const targetName = isPlayerAttack && typeof toolResult.target === "string"
           ? toolResult.target
-          : isNpcAttack ? "PLAYER" : "";
+          : isNpcAttack && toolResult.damageTarget === "PLAYER" ? "PLAYER" : "";
         if ((isPlayerAttack || isNpcAttack) && targetName &&
             Number.isInteger(damageTotal) && (damageTotal as number) >= 0 &&
             typeof damageFormula === "string" && parseDiceFormula(damageFormula)) {
@@ -1067,7 +1073,7 @@ export async function callWithEkdrasilReadTools(options: {
             critical: attackResolution.critical === true,
             source: isPlayerAttack ? "PLAYER" : "NPC",
             formula: damageFormula,
-            rollLabel: isPlayerAttack ? "Урон " + String(toolResult.weapon ?? "") : String(toolResult.damageLabel ?? ""),
+            rollLabel: typeof toolResult.damageLabel === "string" ? toolResult.damageLabel : "",
           };
           const duplicate = combatEvents.some((item) =>
             item.targetType === event.targetType && item.targetName === event.targetName &&
