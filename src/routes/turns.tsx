@@ -14,7 +14,7 @@ import { useAuth } from "@/auth/auth-context";
 import { toast } from "sonner";
 
 import { SetupGateBanner } from "@/components/StatusPill";
-import { resolvePlayerAction, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn } from "@/domain/game-master";
 import { formatGameMasterAnswer } from "@/domain/game-master-presentation";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -77,7 +77,7 @@ function TurnsPage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [pendingRollResult, setPendingRollResult] = useState("");
+  const [pendingRollBusy, setPendingRollBusy] = useState(false);
 
   const [rollLabel, setRollLabel] = useState("");
   const [rollFormula, setRollFormula] = useState("1d20");
@@ -86,7 +86,7 @@ function TurnsPage() {
   const nextTurnNumber = sessionLog.lastTurnNumber + 1;
   const formattedGmAnswer = gmTurn ? formatGameMasterAnswer(gmTurn, worldState, character, locations, nextTurnNumber) : "";
 
-  async function handleResolveAction(actionOverride?: string) {
+  async function handleResolveAction(actionOverride?: string, resolvedRoll?: GameMasterTurn["rolls"][number]) {
     if (gmRequestInFlight.current) return;
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim()) {
@@ -114,21 +114,24 @@ function TurnsPage() {
         timelineEvents,
         journal: sessionLog.entries,
       }, { model: "obsidian-free" });
-      setGmTurn(result.turn);
-      if (!result.turn.needsClarification && !result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
+      const completedTurn = resolvedRoll
+        ? { ...result.turn, rolls: [...result.turn.rolls, resolvedRoll] }
+        : result.turn;
+      setGmTurn(completedTurn);
+      if (!completedTurn.needsClarification && !completedTurn.rolls.some((roll) => roll.roller === "PLAYER" && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         updateTurnDraft({
-          summary: result.turn.summary,
+          summary: completedTurn.summary,
           playerIntent: actionToResolve.trim(),
-          worldOutcome: result.turn.worldOutcome,
-          gmNarration: result.turn.narration,
-          timeDeltaMinutes: result.turn.timeDeltaMinutes,
-          newInGameDate: result.turn.newInGameDate,
-          newLocationId: result.turn.newLocationId ?? "",
-          hpDelta: result.turn.hpDelta,
-          consequenceText: result.turn.consequenceText,
-          characterChanges: result.turn.characterChanges,
-          npcChanges: result.turn.npcChanges,
-          rolls: result.turn.rolls.map((roll, index) => ({
+          worldOutcome: completedTurn.worldOutcome,
+          gmNarration: completedTurn.narration,
+          timeDeltaMinutes: completedTurn.timeDeltaMinutes,
+          newInGameDate: completedTurn.newInGameDate,
+          newLocationId: completedTurn.newLocationId ?? "",
+          hpDelta: completedTurn.hpDelta,
+          consequenceText: completedTurn.consequenceText,
+          characterChanges: completedTurn.characterChanges,
+          npcChanges: completedTurn.npcChanges,
+          rolls: completedTurn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
           })),
@@ -143,18 +146,36 @@ function TurnsPage() {
     }
   }
 
-  function handleSubmitPendingRoll() {
-    if (!gmTurn || !pendingRollResult.trim()) return;
-    if (!Number.isInteger(Number(pendingRollResult.trim()))) {
-      setGmError("Результат броска должен быть целым числом. Введи итог с модификатором, если он применим.");
-      return;
-    }
-    const pending = gmTurn.rolls.find((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+  async function handleRollPendingCheck() {
+    if (!gmTurn || !session?.access_token || pendingRollBusy || gmBusy) return;
+    const pending = gmTurn.rolls.find((roll) =>
+      roll.roller === "PLAYER" && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА"
+    );
     if (!pending) return;
-    const action = playerAction.trim() + String.fromCharCode(10, 10) + `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${pendingRollResult.trim()}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
-    setPlayerAction(action);
-    setPendingRollResult("");
-    void handleResolveAction(action);
+    setGmError(null);
+    setPendingRollBusy(true);
+    try {
+      // The player starts the roll with the on-screen dice control; the
+      // cryptographic number is generated and verified by the authenticated server.
+      const result = await rollDiceAtServer(session.access_token, pending.formula);
+      const breakdown = result.dice.map((die) =>
+        `${die.value}${die.kept ? "" : " (не учитывается)"}`
+      ).join(", ");
+      const resolvedText = `ИТОГ ${result.total}; кости: ${breakdown}; модификатор: ${result.modifier >= 0 ? "+" : ""}${result.modifier}`;
+      const action = playerAction.trim() + String.fromCharCode(10, 10) +
+        `ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА: ${pending.label} (${pending.formula}) = ${resolvedText}. Используй именно этот результат, продолжи разрешение исходного действия; не начинай новый игровой ход и не проси повторить уже выполненный бросок.`;
+      setPlayerAction(action);
+      await handleResolveAction(action, {
+        roller: "PLAYER",
+        label: pending.label,
+        formula: pending.formula,
+        result: resolvedText,
+      });
+    } catch (error) {
+      setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок. Игровой ход не продолжен.");
+    } finally {
+      setPendingRollBusy(false);
+    }
   }
   function handleApplyClarification() {
     if (!gmTurn || !playerAction.trim() || !clarificationAnswer.trim()) return;
@@ -304,10 +325,20 @@ function TurnsPage() {
               <div className="space-y-1 rounded border border-border p-3">
                 <p className="text-xs font-semibold">Проверки и броски</p>
                 {gmTurn.rolls.map((roll, index) => <p key={index} className="text-xs">{roll.label}: {roll.formula} · {roll.result}</p>)}
-                {gmTurn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-2 rounded bg-status-approx/5 p-2">
-                  <p className="text-xs text-status-approx">Бросок выполняешь ты физически или любым своим кубиком. Введи итоговое значение с модификатором, если он применим. Мастер не бросает за тебя.</p>
-                  <Input type="number" step="1" value={pendingRollResult} onChange={(e) => setPendingRollResult(e.target.value)} placeholder="Итог броска, например 23" className="touch-target" />
-                  <Button type="button" className="touch-target w-full" disabled={!pendingRollResult.trim() || gmBusy} onClick={handleSubmitPendingRoll}>Передать результат и продолжить разрешение</Button>
+                {gmTurn.rolls.some((roll) => roll.roller === "PLAYER" && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") && <div className="space-y-3 rounded bg-status-approx/5 p-3">
+                  {gmTurn.rolls.filter((roll) => roll.roller === "PLAYER" && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА").map((roll, index) => (
+                    <div key={index} className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold">{roll.label}</p>
+                        <span className="rounded border px-2 py-1 text-xs font-mono">{roll.formula}</span>
+                      </div>
+                      <p className="text-xs text-status-approx">Проверка подготовлена механическим модулем D&D. Нажми кнопку, чтобы бросить кубик; результат создаст защищённый сервер.</p>
+                      <Button type="button" className="touch-target w-full" disabled={pendingRollBusy || gmBusy} onClick={() => void handleRollPendingCheck()}>
+                        <Dices className="mr-2 h-4 w-4" />
+                        {pendingRollBusy ? "Кубик бросается…" : "Бросить кубик"}
+                      </Button>
+                    </div>
+                  ))}
                 </div>}
               </div>
             )}
