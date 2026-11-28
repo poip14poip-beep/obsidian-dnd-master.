@@ -1,676 +1,323 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { CertaintyBadge } from "@/components/StatusPill";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import type { CertaintyStatus, PlayerCharacterState } from "@/domain/types";
-import { extractDossierBasics } from "@/domain/dossier-parser";
 import { calculatePlayerInventoryWeight } from "@/domain/inventory-weight";
-import { getSkillDescription, localizeInventoryItemName, localizeSkillName } from "@/domain/dnd-localization";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/character")({
   head: () => ({
     meta: [
       { title: "Персонаж — Obsidian Control" },
-      {
-        name: "description",
-        content: "Изолированный лист персонажа PLAYER_CHARACTER_STATE: HP, ресурсы, инвентарь.",
-      },
-      { property: "og:title", content: "Персонаж — Obsidian Control" },
-      {
-        property: "og:description",
-        content: "Изолированный лист персонажа PLAYER_CHARACTER_STATE: HP, ресурсы, инвентарь.",
-      },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary" },
+      { name: "description", content: "Только чтение подтверждённого состояния PLAYER_CHARACTER_STATE." },
     ],
   }),
   component: CharacterPage,
 });
 
-function parseOptionalNonNegInt(raw: string): number | null | "INVALID" {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const num = Number(trimmed);
-  if (!Number.isInteger(num) || num < 0) return "INVALID";
-  return num;
+const RU_TERMS: Array<[RegExp, string]> = [
+[/Second Wind/gi,"Второе дыхание"],[/Action Surge/gi,"Всплеск действий"],[/Indomitable/gi,"Несгибаемость"],[/Fighting Style/gi,"Боевой стиль"],[/Weapon Mastery/gi,"Мастерство владения оружием"],[/Tactical Mind/gi,"Тактический ум"],[/Tactical Shift/gi,"Тактическое смещение"],[/Tactical Master/gi,"Тактическое мастерство"],[/Studied Attacks/gi,"Изученные атаки"],[/Improved Critical/gi,"Улучшенный критический удар"],[/Remarkable Athlete/gi,"Выдающийся атлет"],[/Additional Fighting Style/gi,"Дополнительный боевой стиль"],[/Ability Score Improvement/gi,"Увеличение характеристик"],[/Extra Attack/gi,"Дополнительная атака"],[/Heroic Warrior/gi,"Героический воин"],[/Superior Critical/gi,"Превосходный критический удар"],[/Sneak Attack/gi,"Скрытая атака"],[/Cunning Action/gi,"Хитрое действие"],[/Steady Aim/gi,"Точная цель"],[/Uncanny Dodge/gi,"Уклонение"],[/Evasion/gi,"Изворотливость"],[/Reliable Talent/gi,"Надёжный талант"],[/Blindsense/gi,"Слепое чутьё"],[/Slippery Mind/gi,"Хитрый разум"],[/Elusive/gi,"Неуловимость"],[/Stroke of Luck/gi,"Удар удачи"],[/Expertise/gi,"Экспертность"],[/Rage/gi,"Ярость"],[/Unarmored Defense/gi,"Защита без доспехов"],[/Reckless Attack/gi,"Безрассудная атака"],[/Danger Sense/gi,"Чутьё опасности"],[/Primal Knowledge/gi,"Первобытное знание"],[/Fast Movement/gi,"Быстрое передвижение"],[/Feral Instinct/gi,"Звериный инстинкт"],[/Brutal Strike/gi,"Жестокий удар"],[/Relentless Rage/gi,"Неукротимая ярость"],[/Persistent Rage/gi,"Неугасающая ярость"],[/Indomitable Might/gi,"Несгибаемая мощь"],[/Primal Champion/gi,"Первобытный чемпион"],[/Lightly Encumbered/gi,"Незначительная нагрузка"],[/Heavily Encumbered/gi,"Тяжёлая нагрузка"],[/ENCUMBERED/g,"Перегружен"],[/UNENCUMBERED/g,"Не перегружен"],[/LIGHT/g,"Лёгкий"],[/HEAVY/g,"Тяжёлый"],[/PROFICIENT/g,"Владеет"],[/NOT_PROFICIENT/g,"Не владеет"],[/ADVANTAGE/g,"Преимущество"],[/DISADVANTAGE/g,"Помеха"],[/Longbow/gi,"Длинный лук"],[/Shortbow/gi,"Короткий лук"],[/Shortsword/gi,"Короткий меч"],[/Greatsword/gi,"Двуручный меч"],[/Battleaxe/gi,"Боевой топор"],[/Handaxe/gi,"Ручной топор"],[/Warhammer/gi,"Боевой молот"],[/Greataxe/gi,"Секира"],[/Rapier/gi,"Рапира"],[/Spear/gi,"Копьё"],[/Javelin/gi,"Метательное копьё"],[/Crossbow/gi,"Арбалет"],[/Champion/gi,"Чемпион"],[/Fighter/gi,"Воин"],[/Rogue/gi,"Плут"],[/Barbarian/gi,"Варвар"],[/Human/gi,"Человек"],[/Elf/gi,"Эльф"],[/Gnome/gi,"Гном"],[/Red Dwarf/gi,"Красный дворф"],[/Acolyte/gi,"Послушник"],[/Criminal/gi,"Преступник"],[/Sage/gi,"Мудрец"],[/Soldier/gi,"Солдат"],[/^KNOWN$/gi,"Подтверждено"],[/^APPROXIMATE$/gi,"Приблизительно"],[/^ATTACHED$/gi,"Прикреплён"],[/^NOT_ATTACHED$/gi,"Не прикреплён"],[/^NONE$/gi,"Нет"],[/Finesse/gi,"Фехтовальное"],[/Thrown/gi,"Метательное"],[/Versatile/gi,"Универсальное"],[/Two-Handed/gi,"Двуручное"],[/Ammunition/gi,"Боеприпасы"],[/Loading/gi,"Перезарядка"],[/Reach/gi,"Досягаемость"],[/Heavy/gi,"Тяжёлое"],[/Light/gi,"Лёгкое"],[/Simple/gi,"Простое"],[/Martial/gi,"Воинское"],[/Medium/gi,"Средний"],[/Small/gi,"Маленький"],[/Tiny/gi,"Крошечный"],[/Large/gi,"Большой"],[/Huge/gi,"Огромный"],[/Gargantuan/gi,"Гигантский"],[/Dark Elf/gi,"Тёмный эльф"],[/Half-Elf/gi,"Полуэльф"],[/Beastfolk/gi,"Зверолюд"],[/Athletics/gi,"Атлетика"],[/Acrobatics/gi,"Акробатика"],[/Sleight of Hand/gi,"Ловкость рук"],[/Stealth/gi,"Скрытность"],[/Arcana/gi,"Магия"],[/History/gi,"История"],[/Investigation/gi,"Расследование"],[/Insight/gi,"Проницательность"],[/Perception/gi,"Внимательность"],[/Survival/gi,"Выживание"],[/Animal Handling/gi,"Обращение с животными"],[/Medicine/gi,"Медицина"],[/Nature/gi,"Природа"],[/Religion/gi,"Религия"],[/Deception/gi,"Обман"],[/Intimidation/gi,"Запугивание"],[/Performance/gi,"Выступление"],[/Persuasion/gi,"Убеждение"],[/Dueling/gi,"Дуэлянт"],[/Defense/gi,"Защита"],[/Longsword/gi,"Длинный меч"],[/Dagger/gi,"Кинжал"],[/Short Rest/gi,"Короткий отдых"],[/Long Rest/gi,"Продолжительный отдых"],[/Attack/gi,"Атака"],[/Sap/gi,"Ослабление"],[/Nick/gi,"Дополнительный удар"],[/Push/gi,"Отталкивание"],[/Slow/gi,"Замедление"],[/Cloak of Protection/gi,"Защитный плащ"],[/Boots of Elvenkind/gi,"Эльфийские сапоги"],[/Studded Leather/gi,"Украшенный заклёпками кожаный доспех"],[/UNKNOWN/g,"Неизвестно"],[/WORN/g,"Надето"],[/CARRIED/g,"При себе"],[/STORED/g,"Хранится отдельно"],[/DROPPED/g,"Оставлено"],[/OTHER/g,"Другое"],[/MEDIUM/g,"Средний"],[/SMALL/g,"Маленький"],[/TINY/g,"Крошечный"],[/LARGE/g,"Большой"],[/HUGE/g,"Огромный"],[/GARGANTUAN/g,"Гигантский"],[/STANDARD/g,"Обычный"],[/VARIANT/g,"Вариантный"],[/ABSTRACT/g,"Условный"]];
+function ru(value: string | number | null | undefined): string {
+ if (value === null || value === undefined || value === "") return "Неизвестно";
+ let result = String(value);
+ for (const [pattern, replacement] of RU_TERMS) result = result.replace(pattern, replacement);
+ return result.replace(/\bft\b/gi, "фут.").replace(/\blb\b/gi, "фунт").replace(/\bHP\b/g, "ОЗ");
 }
 
+function Value({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="rounded-md border border-border bg-background/50 p-3">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mono-code mt-1 break-words text-sm font-semibold text-foreground">
+        {ru(value)}
+      </p>
+    </div>
+  );
+}
+
+function extractDossierSection(content: string, start: RegExp, end: RegExp): string {
+ const lines = content.split(/\r?\n/);
+ const first = lines.findIndex(line => start.test(line.trim()));
+ if (first < 0) return '';
+ const last = lines.findIndex((line, index) => index > first && end.test(line.trim()));
+ return lines.slice(first + 1, last < 0 ? lines.length : last).filter(line => !/^<PARSED TEXT FOR PAGE:/i.test(line.trim())).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 function CharacterPage() {
-  const {
-    sources,
-    worldState,
-    character,
-    updatePlayerCharacter,
-    addCharacterResource,
-    updateCharacterResource,
-    addInventoryItem,
-    removeInventoryItem,
-    updateInventoryItem,
-  } = useObsidianStore();
-
-  const [name, setName] = useState(character.name);
-  const [speciesAndClass, setSpeciesAndClass] = useState(character.speciesAndClass);
-  const [levelStr, setLevelStr] = useState(character.level !== null ? String(character.level) : "");
-  const [hpCurrentStr, setHpCurrentStr] = useState(
-    character.hpCurrent !== null ? String(character.hpCurrent) : "",
-  );
-  const [hpMaxStr, setHpMaxStr] = useState(character.hpMax !== null ? String(character.hpMax) : "");
-  const [hpTempStr, setHpTempStr] = useState(
-    character.hpTemp !== null ? String(character.hpTemp) : "",
-  );
-  const [acStr, setAcStr] = useState(
-    character.armorClass !== null ? String(character.armorClass) : "",
-  );
-  const [statsCertainty, setStatsCertainty] = useState<CertaintyStatus>(character.statsCertainty);
-  const [notes, setNotes] = useState(character.notes);
-  const [dossierImportSummary, setDossierImportSummary] = useState<string[]>([]);
-
-  const [resName, setResName] = useState("");
-  const [resCur, setResCur] = useState("");
-  const [resMax, setResMax] = useState("");
-  const [resRec, setResRec] = useState("Долгий отдых");
-
-  const [invName, setInvName] = useState("");
-  const [invQty, setInvQty] = useState("1");
-  const [invNotes, setInvNotes] = useState("");
-  const [invWeight, setInvWeight] = useState("");
-  const [invLocation, setInvLocation] = useState<"CARRIED" | "WORN" | "STORED" | "DROPPED">("CARRIED");
-
-  useEffect(() => {
-    setName(character.name);
-    setSpeciesAndClass(character.speciesAndClass);
-    setLevelStr(character.level !== null ? String(character.level) : "");
-    setHpCurrentStr(character.hpCurrent !== null ? String(character.hpCurrent) : "");
-    setHpMaxStr(character.hpMax !== null ? String(character.hpMax) : "");
-    setHpTempStr(character.hpTemp !== null ? String(character.hpTemp) : "");
-    setAcStr(character.armorClass !== null ? String(character.armorClass) : "");
-    setCoinCp(character.currency ? String(character.currency.cp) : "");
-    setCoinSp(character.currency ? String(character.currency.sp) : "");
-    setCoinEp(character.currency ? String(character.currency.ep) : "");
-    setCoinGp(character.currency ? String(character.currency.gp) : "");
-    setCoinPp(character.currency ? String(character.currency.pp) : "");
-    setStatsCertainty(character.statsCertainty);
-    setNotes(character.notes);
-  }, [character]);
-
-  const dossier = sources.find((s) => s.id === character.sourceDossierId);
-  const inventoryWeight = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
-
-  function handleImportDossier() {
-    if (!dossier || dossier.contentStatus !== "ATTACHED") {
-      toast.error("Сначала загрузите досье персонажа в разделе «Источники».");
-      return;
-    }
-    const extracted = extractDossierBasics(dossier.content);
-    if (extracted.evidence.length === 0) {
-      toast.error("В досье не найдена распознаваемая сводка характеристик. Заполните лист вручную.");
-      return;
-    }
-    if (extracted.name) setName(extracted.name);
-    if (extracted.speciesAndClass) setSpeciesAndClass(extracted.speciesAndClass);
-    if (extracted.level !== null) setLevelStr(String(extracted.level));
-    if (extracted.hitPointMaximum !== null) setHpMaxStr(String(extracted.hitPointMaximum));
-    if (extracted.armorClass !== null) setAcStr(String(extracted.armorClass));
-    const hasExplicitStats = extracted.level !== null || extracted.hitPointMaximum !== null ||
-      extracted.armorClass !== null || extracted.abilityScores !== null;
-    if (hasExplicitStats) setStatsCertainty("KNOWN");
-    const importedInventory = extracted.inventory.map((item, index) => ({
-      id: `dossier-item-${index + 1}`, name: item.name, quantity: item.quantity,
-      notes: item.notes, location: item.location, unitWeightLb: null, certainty: item.certainty,
-    }));
-    const saved = updatePlayerCharacter({
-      ...(extracted.name ? { name: extracted.name, nameCertainty: "KNOWN" as const } : {}),
-      ...(extracted.speciesAndClass ? { speciesAndClass: extracted.speciesAndClass } : {}),
-      ...(extracted.level !== null ? { level: extracted.level } : {}),
-      ...(extracted.classLevel !== null ? { classLevel: extracted.classLevel } : {}),
-      ...(extracted.level !== null || extracted.classLevel !== null ? { epicCampaignLevels: extracted.epicCampaignLevels } : {}),
-      ...(extracted.hitPointMaximum !== null ? { hpMax: extracted.hitPointMaximum } : {}),
-      ...(extracted.armorClass !== null ? { armorClass: extracted.armorClass } : {}),
-      ...(extracted.abilityScores ? { abilityScores: extracted.abilityScores } : {}),
-      ...(extracted.proficiencyBonus !== null ? { proficiencyBonus: extracted.proficiencyBonus } : {}),
-      ...(extracted.speedFeet !== null ? { speedFeet: extracted.speedFeet } : {}),
-      ...(extracted.hitDice ? { hitDice: extracted.hitDice } : {}),
-      ...(extracted.savingThrowBonuses ? { savingThrowBonuses: extracted.savingThrowBonuses } : {}),
-      ...(extracted.skillBonuses.length ? { skillBonuses: extracted.skillBonuses } : {}),
-      ...(extracted.classFeaturesByLevel.length ? { classFeaturesByLevel: extracted.classFeaturesByLevel } : {}),
-      ...(extracted.weaponAttacks.length ? { weaponAttacks: extracted.weaponAttacks } : {}),
-      ...(importedInventory.length > 0 ? { inventory: importedInventory } : {}),
-      ...(extracted.resources.length > 0 ? { resources: extracted.resources.map((resource, index) => ({ id: `dossier-resource-${index + 1}`, ...resource })) } : {}),
-      ...(hasExplicitStats ? { statsCertainty: "KNOWN" as const } : {}),
-    });
-    if (!saved.ok) {
-      toast.error(saved.error);
-      return;
-    }
-    setDossierImportSummary(extracted.evidence);
-    toast.success("Из досье сохранены только явно найденные поля. Текущие HP, неуказанные ресурсы и неизвестные веса не выдуманы.");
-  }
-
-  function handleSaveSheet(e: FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      toast.error("Укажите имя персонажа.");
-      return;
-    }
-    const level = parseOptionalNonNegInt(levelStr);
-    const hpCurrent = parseOptionalNonNegInt(hpCurrentStr);
-    const hpMax = parseOptionalNonNegInt(hpMaxStr);
-    const hpTemp = parseOptionalNonNegInt(hpTempStr);
-    const armorClass = parseOptionalNonNegInt(acStr);
-
-    if (
-      level === "INVALID" ||
-      hpCurrent === "INVALID" ||
-      hpMax === "INVALID" ||
-      hpTemp === "INVALID" ||
-      armorClass === "INVALID"
-    ) {
-      toast.error(
-        "Числовые характеристики должны быть целыми неотрицательными или пустыми (UNKNOWN).",
-      );
-      return;
-    }
-    if (level !== null && (level < 1 || level > 20) && !(level === (character.classLevel ?? 20) + (character.epicCampaignLevels ?? 0) && (character.epicCampaignLevels ?? 0) > 0 && (character.classLevel ?? 21) <= 20 && speciesAndClass.toLowerCase().includes("эпический уровень кампании"))) {
-      toast.error("Уровень 21 допустим только при явно указанном эпическом домашнем правиле кампании.");
-      return;
-    }
-    const coinStrings = [coinCp, coinSp, coinEp, coinGp, coinPp];
-    let currency: PlayerCharacterState["currency"] = undefined;
-    if (coinStrings.some((value) => value.trim())) {
-      const parsed = coinStrings.map((value) => value.trim() ? Number(value) : Number.NaN);
-      if (parsed.some((value) => !Number.isInteger(value) || value < 0)) {
-        toast.error("Укажите все пять номиналов монет целыми неотрицательными числами; пустые поля означают UNKNOWN.");
-        return;
-      }
-      currency = { cp: parsed[0], sp: parsed[1], ep: parsed[2], gp: parsed[3], pp: parsed[4] };
-    }
-    const res = updatePlayerCharacter({
-      name: name.trim(),
-      nameCertainty: name.trim() === "UNKNOWN" ? "UNKNOWN" : "KNOWN",
-      speciesAndClass: speciesAndClass.trim() || "UNKNOWN",
-      level,
-      classLevel: character.classLevel ?? level,
-      epicCampaignLevels: character.epicCampaignLevels ?? 0,
-      hpCurrent,
-      hpMax,
-      hpTemp,
-      armorClass,
-      currency,
-      statsCertainty,
-      notes,
-    });
-    if (res.ok) {
-      toast.success("PLAYER_CHARACTER_STATE сохранён в изолированном контуре.");
-    } else {
-      toast.error(res.error);
-    }
-  }
-
-  function handleAddResource(e: FormEvent) {
-    e.preventDefault();
-    if (!resName.trim()) {
-      toast.error("Укажите название ресурса (например: Ячейки 1 круга).");
-      return;
-    }
-    const cur = parseOptionalNonNegInt(resCur);
-    const max = parseOptionalNonNegInt(resMax);
-    if (cur === "INVALID" || max === "INVALID") {
-      toast.error("Значения ресурса должны быть неотрицательными целыми числами.");
-      return;
-    }
-    const res = addCharacterResource({
-      name: resName.trim(),
-      current: cur,
-      max,
-      certainty: cur !== null ? "KNOWN" : "UNKNOWN",
-      recovery: resRec.trim() || "UNKNOWN",
-    });
-    if (res.ok) {
-      toast.success("Ресурс добавлен в лист персонажа.");
-      setResName("");
-      setResCur("");
-      setResMax("");
-    } else {
-      toast.error(res.error);
-    }
-  }
-
-  function handleAddInventory(e: FormEvent) {
-    e.preventDefault();
-    const qty = Number(invQty);
-    if (!invName.trim() || !Number.isInteger(qty) || qty < 1) {
-      toast.error("Укажите название предмета и положительное количество.");
-      return;
-    }
-    const parsedWeight = invWeight.trim() ? Number(invWeight) : null;
-    if (parsedWeight !== null && (!Number.isFinite(parsedWeight) || parsedWeight < 0)) {
-      toast.error("Вес должен быть неотрицательным числом в фунтах.");
-      return;
-    }
-    const res = addInventoryItem({
-      name: invName.trim(), quantity: qty, notes: invNotes.trim(), certainty: "KNOWN",
-      location: invLocation, unitWeightLb: parsedWeight,
-    });
-    if (res.ok) {
-      toast.success("Предмет добавлен в инвентарь.");
-      setInvName("");
-      setInvQty("1");
-      setInvNotes("");
-      setInvWeight("");
-      setInvLocation("CARRIED");
-    } else {
-      toast.error(res.error);
-    }
-  }
+  const { sources, worldState, character, updateCharacterResource } = useObsidianStore();
+  const [resourceDrafts, setResourceDrafts] = useState<Record<string, string>>({});
+  const dossier = sources.find((source) => source.id === character.sourceDossierId);
+  const dossierLifeHistory = dossier?.content ? extractDossierSection(dossier.content, /^5\.\s*Подробная биография/i, /^6\.\s*Области опыта/i) : ''; 
+  const dossierAppearance = dossier?.content ? extractDossierSection(dossier.content, /^1\.\s*Внешность и экипировка/i, /^2\.\s*Прозвища/i) : '';
+  const load = calculatePlayerInventoryWeight(character, worldState.encumbranceMode);
+  const campaignStarted = worldState.setup.confirmed;
+  const stats = character.abilityScores;
 
   return (
     <div className="space-y-4">
-      <header className="space-y-1">
+      <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-xl font-bold text-foreground">Лист персонажа</h1>
-          <span className="mono-code rounded border border-layer-player/40 bg-layer-player/10 px-2 py-0.5 text-[11px] text-layer-player">
-            PLAYER_CHARACTER_STATE · v{character.stateVersion}
+          <span className="mono-code rounded border border-layer-player/40 bg-layer-player/10 px-2 py-1 text-xs text-layer-player">
+            ЛИСТ ПЕРСОНАЖА · v{character.stateVersion}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          Хранится в отдельном контуре (не вложен в CAMPAIGN_STATE). Источник досье:{" "}
-          <span className="text-foreground">{dossier?.title ?? character.sourceDossierId}</span> (
-          {dossier?.contentStatus === "ATTACHED" ? "файл прикреплён" : "файл не загружен"}).
+          Режим просмотра. Это подтверждённое состояние персонажа, а не форма редактирования.
+          Изменения в ходе игры фиксируются мастером; игрок может отдельно внести только фактически проверенное текущее количество ресурса.
         </p>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <CertaintyBadge status={character.statsCertainty} />
+          <span className="text-muted-foreground">
+            Источник: {ru(dossier?.title ?? character.sourceDossierId)} · {dossier?.contentStatus === "ATTACHED" ? "прикреплён" : "не прикреплён"}
+          </span>
+        </div>
       </header>
 
-      <form onSubmit={handleSaveSheet} className="panel-surface space-y-3 p-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-foreground">Основные параметры</h2>
-          <CertaintyBadge status={character.statsCertainty} />
-        </div>
-        {dossier?.contentStatus === "ATTACHED" && <div className="space-y-2 rounded border border-primary/30 bg-primary/5 p-3"><p className="text-xs text-muted-foreground">В досье обнаружены исходные данные. Импорт не меняет канон мира и не запускает кампанию.</p><Button type="button" variant="secondary" className="touch-target" onClick={handleImportDossier}>Извлечь данные из досье</Button>{dossierImportSummary.length > 0 && <ul className="space-y-1 text-xs text-muted-foreground">{dossierImportSummary.map((item) => <li key={item}>· {item}</li>)}</ul>}</div>}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-name">Имя персонажа</Label>
-            <Input
-              id="pc-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="touch-target"
-            />
+      {dossierLifeHistory && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">История жизни до кампании</h2>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierLifeHistory)}</div>
+        </section>
+      )}
+      {character.biography && !dossierLifeHistory && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">История жизни до кампании</h2>
+          <p className="text-sm leading-relaxed">{ru(character.biography.biography)}</p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <Value label="Возраст" value={character.biography.ageYears === null ? "Неизвестно" : character.biography.ageYears} />
+            <Value label="Место рождения" value={ru(character.biography.birthplace)} />
+            <Value label="Внешность" value={ru(character.biography.appearance)} />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-class">Вид и класс (или UNKNOWN)</Label>
-            <Input
-              id="pc-class"
-              value={speciesAndClass}
-              onChange={(e) => setSpeciesAndClass(e.target.value)}
-              className="touch-target"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-lvl">Общий уровень (классовые уровни и эпические уровни указаны отдельно)</Label>
-            <Input
-              id="pc-lvl"
-              inputMode="numeric"
-              value={levelStr}
-              onChange={(e) => setLevelStr(e.target.value)}
-              placeholder="UNKNOWN"
-              className="touch-target mono-code"
-            />
-            {character.classLevel !== null && character.classLevel !== undefined && (character.epicCampaignLevels ?? 0) > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Стандартные классовые уровни: {character.classLevel}. Эпические уровни кампании: {character.epicCampaignLevels}.
-                Эпический уровень не добавляет классовые особенности D&D 2024 без отдельного согласованного правила.
-              </p>
-            )}
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="pc-cert">Уверенность параметров</Label>
-            <select
-              id="pc-cert"
-              value={statsCertainty}
-              onChange={(e) => setStatsCertainty(e.target.value as CertaintyStatus)}
-              className="touch-target w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
-            >
-              <option value="UNKNOWN">UNKNOWN</option>
-              <option value="APPROXIMATE">APPROXIMATE</option>
-              <option value="KNOWN">KNOWN</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <div className="space-y-1">
-            <Label htmlFor="pc-hp">Текущие HP</Label>
-            <Input
-              id="pc-hp"
-              inputMode="numeric"
-              value={hpCurrentStr}
-              onChange={(e) => setHpCurrentStr(e.target.value)}
-              placeholder="UNKNOWN"
-              className="touch-target mono-code"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="pc-hp-max">Макс. HP</Label>
-            <Input
-              id="pc-hp-max"
-              inputMode="numeric"
-              value={hpMaxStr}
-              onChange={(e) => setHpMaxStr(e.target.value)}
-              placeholder="UNKNOWN"
-              className="touch-target mono-code"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="pc-hp-tmp">Врем. HP</Label>
-            <Input
-              id="pc-hp-tmp"
-              inputMode="numeric"
-              value={hpTempStr}
-              onChange={(e) => setHpTempStr(e.target.value)}
-              placeholder="0"
-              className="touch-target mono-code"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="pc-ac">КД (AC)</Label>
-            <Input
-              id="pc-ac"
-              inputMode="numeric"
-              value={acStr}
-              onChange={(e) => setAcStr(e.target.value)}
-              placeholder="UNKNOWN"
-              className="touch-target mono-code"
-            />
-          </div>
-        </div>
-
-        {character.abilityScores && (
-          <div className="space-y-2 rounded-md border border-border p-3">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold">Характеристики и базовые параметры</h3>
-              <span className="text-xs text-muted-foreground">Извлечено из досье</span>
+          <p className="text-xs text-muted-foreground">{ru(character.biography.inventedDetailsNotice)}</p>
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-medium">Подробности личности и прошлого</summary>
+            <div className="mt-2 space-y-2 text-sm">
+              <p><strong>Семья:</strong> {ru(character.biography.family)}</p>
+              <p><strong>Воспитание:</strong> {ru(character.biography.upbringing)}</p>
+              <p><strong>События:</strong> {ru(character.biography.lifeEvents.join(" "))}</p>
+              <p><strong>Характер:</strong> {ru(character.biography.personalityTraits.join(", "))}</p>
+              <p><strong>Идеал:</strong> {ru(character.biography.ideal)}</p>
+              <p><strong>Привязанность:</strong> {ru(character.biography.bond)}</p>
+              <p><strong>Слабость:</strong> {ru(character.biography.flaw)}</p>
+              <p><strong>Мотивация:</strong> {ru(character.biography.motivation)}</p>
+              <p className="text-xs text-muted-foreground">Основа канона: {ru(character.biography.canonBasis.join("; "))}</p>
             </div>
+          </details>
+        </section>
+      )}
+      {dossierAppearance && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
+          <div className="whitespace-pre-wrap text-sm leading-relaxed">{ru(dossierAppearance)}</div>
+        </section>
+      )}
+      {character.biography?.appearanceDetails && !dossierAppearance && (
+        <section className="panel-surface space-y-3 p-4">
+          <h2 className="text-sm font-semibold text-foreground">Внешность</h2>
+          <p className="text-sm leading-relaxed">{ru(character.biography.appearance)}</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {([
+              ["Рост", character.biography.appearanceDetails.height], ["Телосложение", character.biography.appearanceDetails.build],
+              ["Кожа", character.biography.appearanceDetails.skin], ["Волосы", character.biography.appearanceDetails.hair],
+              ["Глаза", character.biography.appearanceDetails.eyes], ["Лицо", character.biography.appearanceDetails.face],
+              ["Одежда", character.biography.appearanceDetails.clothing], ["Обувь", character.biography.appearanceDetails.footwear],
+              ["Аксессуары", character.biography.appearanceDetails.accessories], ["Отличительные черты", character.biography.appearanceDetails.distinctiveFeatures],
+              ["Первое впечатление", character.biography.appearanceDetails.firstImpression],
+            ] as const).map(([label, value]) => (
+              <div key={label} className="rounded-md border border-border bg-background/50 p-3">
+                <p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-sm leading-relaxed">{ru(value)}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+      <section className="panel-surface space-y-3 p-4">
+        <h2 className="text-sm font-semibold text-foreground">Основные параметры</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <Value label="Имя" value={character.name} />
+          <Value label="Вид и класс" value={character.speciesAndClass} />
+          <Value label="Уровень" value={character.level} />
+          <Value label="Текущие очки здоровья" value={character.hpCurrent} />
+          <Value label="Максимальные очки здоровья" value={character.hpMax} />
+          <Value label="Временные очки здоровья" value={character.hpTemp} />
+          <Value label="Класс Доспеха (КД)" value={character.armorClass} />
+          <Value label="Бонус мастерства" value={character.proficiencyBonus} />
+          <Value label="Размер существа" value={ru(character.size ?? "UNKNOWN")} />
+          <Value label="Скорость" value={character.speedFeet === null || character.speedFeet === undefined ? "UNKNOWN" : `${character.speedFeet} фут.`} />
+        </div>
+        {stats && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Характеристики</h3>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
               {([
-                ["СИЛ", character.abilityScores.strength], ["ЛОВ", character.abilityScores.dexterity],
-                ["ТЕЛ", character.abilityScores.constitution], ["ИНТ", character.abilityScores.intelligence],
-                ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma],
-              ] as const).map(([label, value]) => (
-                <div key={label} className="rounded bg-muted/40 p-2 text-center">
-                  <p className="text-[10px] text-muted-foreground">{label}</p>
-                  <p className="mono-code text-lg font-semibold">{value}</p>
-                  <p className="mono-code text-xs text-muted-foreground">{value >= 10 ? "+" : ""}{Math.floor((value - 10) / 2)}</p>
-                </div>
+                ["СИЛ", stats.strength], ["ЛОВ", stats.dexterity], ["ТЕЛ", stats.constitution],
+                ["ИНТ", stats.intelligence], ["МДР", stats.wisdom], ["ХАР", stats.charisma],
+              ] as const).map(([label, score]) => (
+                <Value key={label} label={label} value={score} />
               ))}
-            </div>
-            <div className="grid grid-cols-3 gap-2 text-xs sm:grid-cols-3">
-              <p>Бонус мастерства: <strong>{character.proficiencyBonus ?? "UNKNOWN"}</strong></p>
-              <p>Скорость: <strong>{character.speedFeet !== null && character.speedFeet !== undefined ? `${character.speedFeet} футов` : "UNKNOWN"}</strong></p>
-              <p>Кость хитов: <strong>{character.hitDice ?? "UNKNOWN"}</strong></p>
             </div>
           </div>
         )}
-
-        <div className="space-y-2">
-          <Label>Монеты (пусто = UNKNOWN; для фиксации денег заполни все номиналы)</Label>
-          <div className="grid grid-cols-5 gap-2">
-            {([["CP", coinCp, setCoinCp], ["SP", coinSp, setCoinSp], ["EP", coinEp, setCoinEp], ["GP", coinGp, setCoinGp], ["PP", coinPp, setCoinPp]] as const).map(([label, value, setter]) => <div key={label} className="space-y-1"><Label htmlFor={`coin-${label}`} className="text-[10px]">{label}</Label><Input id={`coin-${label}`} inputMode="numeric" value={value} onChange={(e) => setter(e.target.value)} placeholder="?" className="touch-target mono-code" /></div>)}
-          </div>
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="pc-notes">Заметки по листу персонажа</Label>
-          <Textarea
-            id="pc-notes"
-            rows={2}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            placeholder="Особенности, состояния, пометки из досье Лии Вейн..."
-          />
-        </div>
-
-        <Button type="submit" className="touch-target w-full sm:w-auto">
-          Сохранить лист персонажа
-        </Button>
-      </form>
-
-      {character.abilityScores && (
-        <section className="panel-surface space-y-3 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-foreground">Характеристики D&D</h2>
-            <span className="mono-code text-xs text-muted-foreground">PB +{character.proficiencyBonus ?? "?"} · Скорость {character.speedFeet ?? "?"} ft · Кости хитов {character.hitDice ?? "UNKNOWN"}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-            {([
-              ["СИЛ", character.abilityScores.strength], ["ЛОВ", character.abilityScores.dexterity],
-              ["ТЕЛ", character.abilityScores.constitution], ["ИНТ", character.abilityScores.intelligence],
-              ["МДР", character.abilityScores.wisdom], ["ХАР", character.abilityScores.charisma],
-            ] as const).map(([label, value]) => <div key={label} className="rounded border border-border bg-background/60 p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code text-lg font-semibold">{value}</p><p className="mono-code text-xs text-muted-foreground">{value >= 10 ? "+" : ""}{Math.floor((value - 10) / 2)}</p></div>)}
-          </div>
-        </section>
-      )}
-
-      {(character.savingThrowBonuses || character.skillBonuses?.length || character.classFeaturesByLevel?.length || character.weaponAttacks?.length) && (
-        <section className="panel-surface space-y-3 p-4">
-          <h2 className="text-sm font-semibold text-foreground">Подробности листа из досье</h2>
-          {character.savingThrowBonuses && <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Спасброски</p>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-              {([["СИЛ", character.savingThrowBonuses.strength], ["ЛОВ", character.savingThrowBonuses.dexterity], ["ТЕЛ", character.savingThrowBonuses.constitution], ["ИНТ", character.savingThrowBonuses.intelligence], ["МДР", character.savingThrowBonuses.wisdom], ["ХАР", character.savingThrowBonuses.charisma]] as const).map(([label, value]) => <div key={label} className="rounded border border-border p-2 text-center"><p className="text-[10px] text-muted-foreground">{label}</p><p className="mono-code font-semibold">{value >= 0 ? "+" : ""}{value}</p></div>)}
-            </div>
-          </div>}
-          {character.skillBonuses && character.skillBonuses.length > 0 && <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Навыки</p>
-            <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-              {character.skillBonuses.map((skill) => <div key={skill.name} className="flex justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><span>{localizeSkillName(skill.name)}<span className="ml-1 text-muted-foreground">· {skill.basis}</span><span className="mt-1 block text-muted-foreground">{getSkillDescription(skill.name)}</span></span><strong className="mono-code">{skill.bonus >= 0 ? "+" : ""}{skill.bonus}</strong></div>)}
-            </div>
-          </div>}
-          {character.weaponAttacks && character.weaponAttacks.length > 0 && <div className="space-y-1">
-            <p className="text-xs font-medium text-muted-foreground">Оружие и Weapon Mastery</p>
-            {character.weaponAttacks.map((attack) => <div key={attack.weapon} className="flex flex-wrap justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"><strong>{attack.weapon}</strong><span>Атака <span className="mono-code">{attack.attackBonus >= 0 ? "+" : ""}{attack.attackBonus}</span> · {attack.damage} · Mastery: {attack.mastery}</span></div>)}
-          </div>}
-          {character.classFeaturesByLevel && character.classFeaturesByLevel.length > 0 && <details className="rounded border border-border p-2">
-            <summary className="cursor-pointer text-xs font-medium">Особенности класса по уровням ({character.classFeaturesByLevel.length})</summary>
-            <div className="mt-2 space-y-1">{character.classFeaturesByLevel.map((feature) => <p key={feature.level} className="text-xs"><span className="mono-code text-muted-foreground">{feature.level} ур.</span> · {feature.features}</p>)}</div>
-          </details>}
-        </section>
-      )}
-
-      {/* Resources */}
-      <section className="panel-surface space-y-3 p-4">
-        <h2 className="text-sm font-semibold text-foreground">
-          Ресурсы и ячейки ({character.resources.length})
-        </h2>
-        <form onSubmit={handleAddResource} className="grid grid-cols-1 gap-2 sm:grid-cols-4">
-          <Input
-            value={resName}
-            onChange={(e) => setResName(e.target.value)}
-            placeholder="Название ресурса"
-            className="touch-target sm:col-span-2"
-          />
-          <div className="grid grid-cols-2 gap-2">
-            <Input
-              inputMode="numeric"
-              value={resCur}
-              onChange={(e) => setResCur(e.target.value)}
-              placeholder="Тек."
-              className="touch-target mono-code"
-            />
-            <Input
-              inputMode="numeric"
-              value={resMax}
-              onChange={(e) => setResMax(e.target.value)}
-              placeholder="Макс."
-              className="touch-target mono-code"
-            />
-          </div>
-          <Button type="submit" variant="secondary" className="touch-target">
-            <Plus className="mr-1 h-4 w-4" />
-            Ресурс
-          </Button>
-        </form>
-        {character.resources.length > 0 && (
+        <Value label="Текущее местоположение персонажа" value={character.currentLocationLabel} />
+        {character.hitDice && <Value label="Кости хитов" value={character.hitDice} />}
+        {(character.savingThrowBonuses ?? character.baseSavingThrowBonuses) && (
           <div className="space-y-2">
-            {character.resources.map((r) => (
-              <div
-                key={r.id}
-                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-background/60 p-2.5"
-              >
-                <div>
-                  <p className="text-sm font-medium text-foreground">{r.name}</p>
-                  <p className="text-xs text-muted-foreground">Восстановление: {r.recovery}</p>
+            <h3 className="text-xs font-semibold text-muted-foreground">Текущие спасброски</h3>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              {([
+                ["СИЛ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.strength], ["ЛОВ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.dexterity],
+                ["ТЕЛ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.constitution], ["ИНТ", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.intelligence],
+                ["МДР", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.wisdom], ["ХАР", (character.savingThrowBonuses ?? character.baseSavingThrowBonuses)!.charisma],
+              ] as const).map(([label, value]) => <Value key={label} label={label} value={value >= 0 ? `+${value}` : value} />)}
+            </div>
+          </div>
+        )}
+        {character.skillBonuses && character.skillBonuses.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Навыки</h3>
+            <ul className="divide-y divide-border">
+              {character.skillBonuses.map((skill) => (
+                <li key={skill.name} className="flex items-center justify-between gap-3 py-2 text-sm">
+                  <span>{ru(skill.name)}</span><span className="mono-code font-semibold">{skill.bonus >= 0 ? `+${skill.bonus}` : skill.bonus}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {character.weaponAttacks && character.weaponAttacks.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground">Атаки оружием</h3>
+            <div className="space-y-2">
+              {character.weaponAttacks.map((attack) => (
+                <div key={attack.weapon} className="rounded-md border border-border p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <strong>{ru(attack.weapon)}</strong><span className="mono-code">Атака {attack.attackBonus >= 0 ? `+${attack.attackBonus}` : attack.attackBonus}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">Урон: {ru(attack.damage)} · Владение оружием: {ru(attack.mastery)}</p>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Button
+              ))}
+            </div>
+          </div>
+        )}
+        {character.classFeaturesByLevel && character.classFeaturesByLevel.length > 0 && (
+          <details className="rounded-md border border-border p-3">
+            <summary className="cursor-pointer text-sm font-semibold">Классовые особенности по уровням ({character.classFeaturesByLevel.length})</summary>
+            <ul className="mt-2 space-y-2">
+              {character.classFeaturesByLevel.map((feature) => (
+                <li key={feature.level} className="text-sm">
+                  <strong className="mono-code mr-2">{feature.level} ур.</strong>{ru(feature.features)}
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
+
+      <section className="panel-surface space-y-3 p-4">
+        <h2 className="text-sm font-semibold text-foreground">Ресурсы и состояния</h2>
+        {character.resources.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Подтверждённые ресурсы не внесены.</p>
+        ) : (
+          <div className="space-y-2">
+            {character.resources.map((resource) => (
+              <div key={resource.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border p-3">
+                <div>
+                  <p className="text-sm font-medium">{ru(resource.name)}</p>
+                  <p className="text-xs text-muted-foreground">Восстановление: {ru(resource.recovery)}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <p className="mono-code text-sm font-semibold">{resource.current ?? "?"}/{resource.max ?? "?"}</p>
+                  <input
+                    aria-label={`Фактический остаток ресурса ${ru(resource.name)}`}
+                    type="number" min={0} max={resource.max ?? undefined} step={1}
+                    value={resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current))}
+                    onChange={(event) => setResourceDrafts((current) => ({ ...current, [resource.id]: event.target.value }))}
+                    placeholder="Неизвестно"
+                    className="w-20 rounded-md border border-border bg-background px-2 py-1 text-xs"
+                  />
+                  <button
                     type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="touch-target"
-                    onClick={() => updateCharacterResource(r.id, Math.max(0, (r.current ?? 0) - 1))}
-                  >
-                    −1
-                  </Button>
-                  <span className="mono-code min-w-14 text-center text-sm font-semibold">
-                    {r.current ?? "?"}/{r.max ?? "?"}
-                  </span>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="touch-target"
-                    onClick={() =>
-                      updateCharacterResource(
-                        r.id,
-                        r.max !== null
-                          ? Math.min(r.max, (r.current ?? 0) + 1)
-                          : (r.current ?? 0) + 1,
-                      )
-                    }
-                  >
-                    +1
-                  </Button>
+                    className="rounded-md border border-border px-2 py-1 text-xs"
+                    onClick={() => {
+                      const raw = resourceDrafts[resource.id] ?? (resource.current === null ? "" : String(resource.current));
+                      const value = Number(raw);
+                      if (raw.trim() === "" || !Number.isInteger(value) || value < 0 || (resource.max !== null && value > resource.max)) {
+                        toast.error(`Укажи целое значение от 0 до ${resource.max ?? "допустимого максимума"}.`);
+                        return;
+                      }
+                      const result = updateCharacterResource(resource.id, value);
+                      if (result.ok) {
+                        setResourceDrafts((current) => { const { [resource.id]: _saved, ...rest } = current; return rest; });
+                        toast.success(`Остаток ресурса «${ru(resource.name)}» обновлён без продвижения игрового времени.`);
+                      }
+                      else toast.error(result.error);
+                    }}
+                  >Зафиксировать</button>
                 </div>
               </div>
             ))}
           </div>
         )}
+        <Value label="Состояния" value={character.conditions.length ? character.conditions.join(", ") : "Нет подтверждённых состояний"} />
       </section>
 
-      {/* Inventory */}
       <section className="panel-surface space-y-3 p-4">
-        <h2 className="text-sm font-semibold text-foreground">
-          Инвентарь ({character.inventory.length})
-        </h2>
-        <div className="grid grid-cols-2 gap-2 rounded border border-border bg-background/50 p-3 text-xs sm:grid-cols-4">
-          <div><p className="text-muted-foreground">Известный переносимый вес</p><p className="mono-code font-semibold">{inventoryWeight.knownCarriedWeightLb.toFixed(2)} lb</p></div>
-          <div><p className="text-muted-foreground">Вес монет</p><p className="mono-code font-semibold">{inventoryWeight.currencyWeightLb === null ? "UNKNOWN" : inventoryWeight.currencyWeightLb.toFixed(2) + " lb"}</p></div>
-          <div><p className="text-muted-foreground">Вместимость</p><p className="mono-code font-semibold">{inventoryWeight.carryingCapacityLb === null ? "UNKNOWN" : inventoryWeight.carryingCapacityLb + " lb"}</p></div>
-          <div><p className="text-muted-foreground">Проверка нагрузки</p><p className="mono-code font-semibold">{inventoryWeight.encumbranceStatus}</p></div>
-          {inventoryWeight.unknownCarriedItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Вес неизвестен: {inventoryWeight.unknownCarriedItems.join(", ")}</p>}
-          {inventoryWeight.unknownLocationItems.length > 0 && <p className="col-span-2 text-status-approx sm:col-span-4">Не распределено по местам: {inventoryWeight.unknownLocationItems.join(", ")}. Нагрузка UNKNOWN до уточнения местоположения.</p>}
+        <h2 className="text-sm font-semibold text-foreground">Инвентарь ({character.inventory.length})</h2>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Value label="Известный переносимый вес" value={!campaignStarted && load.unknownCarriedItems.length > 0 ? "Рассчитывается при старте" : `${load.knownCarriedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Вес монет" value={load.currencyWeightLb === null ? campaignStarted ? "Неизвестно" : "Будет рассчитан при старте" : `${load.currencyWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Предел переносимой нагрузки" value={load.carryingCapacityLb === null ? "Неизвестно" : `${load.carryingCapacityLb} фунт.`} />
+          <Value label="Статус нагрузки" value={!campaignStarted && load.encumbranceStatus === "UNKNOWN" ? "Будет рассчитан при старте" : ru(load.encumbranceStatus)} />
         </div>
-        <form onSubmit={handleAddInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-6">
-          <Input
-            value={invName}
-            onChange={(e) => setInvName(e.target.value)}
-            placeholder="Предмет"
-            className="touch-target sm:col-span-2"
-          />
-          <Input
-            inputMode="numeric"
-            value={invQty}
-            onChange={(e) => setInvQty(e.target.value)}
-            placeholder="Кол-во"
-            className="touch-target mono-code"
-          />
-          <Input inputMode="decimal" value={invWeight} onChange={(e) => setInvWeight(e.target.value)} placeholder="Вес / ед. lb" className="touch-target mono-code" />
-          <select value={invLocation} onChange={(e) => setInvLocation(e.target.value as typeof invLocation)} className="touch-target rounded-md border border-input bg-background px-3 text-sm text-foreground">
-            <option value="CARRIED">При себе</option><option value="WORN">Надето</option><option value="STORED">Хранится отдельно</option><option value="DROPPED">Оставлено</option>
-          </select>
-          <Button type="submit" variant="secondary" className="touch-target">
-            <Plus className="mr-1 h-4 w-4" />
-            Добавить
-          </Button>
-        </form>
-        {character.inventory.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Инвентарь пуст (не заполняется вымышленно).
+        {!campaignStarted && (
+          <p className="rounded border border-border bg-background/50 p-2 text-xs text-muted-foreground">
+            До запуска это предварительный лист. Масса предметов, стартовый денежный баланс и итоговая нагрузка рассчитываются автоматически при создании кампании; вручную вводить их не нужно.
           </p>
+        )}
+        {campaignStarted && load.unknownCarriedItems.length > 0 && (
+          <p className="rounded border border-status-approx/30 bg-status-approx/5 p-2 text-xs">
+            Вес не установлен для предметов: {load.unknownCarriedItems.join(", ")}. Полная нагрузка пока не определена.
+          </p>
+        )}
+        {campaignStarted && load.unknownLocationItems.length > 0 && (
+          <p className="rounded border border-status-approx/30 bg-status-approx/5 p-2 text-xs">
+            Не установлено местоположение: {load.unknownLocationItems.join(", ")}.
+          </p>
+        )}
+        {character.inventory.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Инвентарь не содержит подтверждённых предметов.</p>
         ) : (
-          <ul className="space-y-2">
+          <ul className="divide-y divide-border">
             {character.inventory.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-center justify-between gap-2 rounded-md border border-border bg-background/60 px-3 py-2 text-sm"
-              >
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                 <div>
-                  <span className="font-medium text-foreground">{localizeInventoryItemName(item.name)}</span>
-                  <span className="mono-code ml-2 text-xs text-primary">×{item.quantity}</span>
-                  <div className="mt-1 flex flex-wrap items-center gap-2">
-                    <select
-                      aria-label={`Местоположение: ${localizeInventoryItemName(item.name)}`}
-                      value={item.location ?? "CARRIED"}
-                      onChange={(e) => {
-                        const result = updateInventoryItem(item.id, { location: e.target.value as NonNullable<typeof item.location> });
-                        if (!result.ok) toast.error(result.error);
-                      }}
-                      className="h-8 rounded-md border border-input bg-background px-2 text-[11px] text-foreground"
-                    >
-                      <option value="WORN">Надето</option>
-                      <option value="CARRIED">При себе</option>
-                      <option value="STORED">Хранится отдельно</option>
-                      <option value="DROPPED">Оставлено</option>
-                      <option value="OTHER">Местоположение не установлено</option>
-                    </select>
-                    <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                      Вес/ед. (lb)
-                      <Input
-                        aria-label={`Вес единицы: ${localizeInventoryItemName(item.name)}`}
-                        inputMode="decimal"
-                        defaultValue={item.unitWeightLb ?? ""}
-                        placeholder="?"
-                        className="h-8 w-20 mono-code"
-                        onBlur={(e) => {
-                          const raw = e.target.value.trim();
-                          if (!raw) {
-                            const result = updateInventoryItem(item.id, { unitWeightLb: null });
-                            if (!result.ok) toast.error(result.error);
-                            return;
-                          }
-                          const weight = Number(raw.replace(",", "."));
-                          if (!Number.isFinite(weight) || weight < 0) {
-                            toast.error("Вес должен быть неотрицательным числом.");
-                            e.target.value = item.unitWeightLb == null ? "" : String(item.unitWeightLb);
-                            return;
-                          }
-                          const result = updateInventoryItem(item.id, { unitWeightLb: weight });
-                          if (!result.ok) toast.error(result.error);
-                        }}
-                      />
-                    </label>
-                  </div>
+                  <span className="font-medium">{ru(item.name)}</span>
+                  <span className="mono-code ml-2 text-xs text-muted-foreground">×{item.quantity}</span>
+                  {item.notes && <p className="text-xs text-muted-foreground">{ru(item.notes)}</p>}
+                  {item.attunement && <p className="text-xs text-muted-foreground">Настройка: {ru(item.attunement)}</p>}
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="touch-target text-muted-foreground hover:text-destructive"
-                  aria-label={`Удалить ${localizeInventoryItemName(item.name)}`}
-                  onClick={() => removeInventoryItem(item.id)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <span className="text-xs text-muted-foreground">
+                  {ru(item.location ?? "Неизвестно")} · {item.unitWeightLb === null || item.unitWeightLb === undefined ? campaignStarted ? "вес не установлен" : "вес рассчитается при старте" : `${item.unitWeightLb} фунт/ед.`}
+                </span>
               </li>
             ))}
           </ul>
         )}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <Value label="Хранится отдельно" value={`${load.storedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Оставлено" value={`${load.droppedWeightLb.toFixed(2)} фунт.`} />
+          <Value label="Режим нагрузки" value={!campaignStarted && worldState.encumbranceMode === "UNSET" ? "Будет STANDARD при старте" : ru(worldState.encumbranceMode)} />
+          <Value label="Перегруз" value={load.overCapacity === null ? "Неизвестно" : load.overCapacity ? "Да" : "Нет"} />
+        </div>
       </section>
+
+      {character.notes.trim() && (
+        <section className="panel-surface space-y-2 p-4">
+          <h2 className="text-sm font-semibold">Примечания</h2>
+          <p className="whitespace-pre-wrap text-sm text-muted-foreground">{ru(character.notes)}</p>
+        </section>
+      )}
     </div>
   );
 }

@@ -6,6 +6,25 @@ type ClassKey = "Fighter" | "Rogue" | "Barbarian";
 type BackgroundKey = "Acolyte" | "Criminal" | "Sage" | "Soldier";
 type SpeciesKey = "Human" | "Elf" | "Dark Elf" | "Gnome" | "Red Dwarf" | "Half-Elf" | "Beastfolk";
 
+export type RandomCharacterProfile = {
+  name: string;
+  species: SpeciesKey;
+  className: ClassKey;
+  background: BackgroundKey;
+  birthplace: string;
+  ageYears: number;
+  genderPresentation: string;
+  family: string;
+  upbringing: string;
+  lifeEvents: string[];
+  personalityTraits: string[];
+  ideal: string;
+  bond: string;
+  flaw: string;
+  motivation: string;
+  preCampaignDesire: string;
+};
+
 const CLASS_LABELS: Record<ClassKey, string> = { Fighter: "Воин", Rogue: "Плут", Barbarian: "Варвар" };
 const SPECIES_LABELS: Record<SpeciesKey, string> = {
   Human: "Человек", Elf: "Эльф", "Dark Elf": "Тёмный эльф", Gnome: "Гном",
@@ -80,14 +99,15 @@ const item = (name:string,quantity:number,notes:string,slot:number):InventoryIte
 
 export interface RandomCharacterResult {
   character: Partial<PlayerCharacterState>;
-  summary: { name:string; className:string; background:string; species:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
+  summary: { name:string; className:string; classNameRu:string; background:string; backgroundRu:string; species:string; speciesRu:string; abilityScores:Record<Ability,number>; hitPoints:number; armorClass:number; skills:string[]; equipment:string[]; features:string[] };
   rolls: string[];
+  generationSeed?: string;
 }
 
-export function generateRandomCharacter(random:Random):RandomCharacterResult {
-  const className=choose(["Fighter","Rogue","Barbarian"] as const,random);
-  const background=choose(["Acolyte","Criminal","Sage","Soldier"] as const,random);
-  const species=choose(["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] as const,random);
+export function generateRandomCharacter(random:Random, profile?:RandomCharacterProfile):RandomCharacterResult {
+  const className=profile?.className ?? choose(["Fighter","Rogue","Barbarian"] as const,random);
+  const background=profile?.background ?? choose(["Acolyte","Criminal","Sage","Soldier"] as const,random);
+  const species=profile?.species ?? choose(["Human","Elf","Dark Elf","Gnome","Red Dwarf","Half-Elf","Beastfolk"] as const,random);
   const classData=CLASS_DATA[className];
   const backgroundData=BACKGROUND_DATA[background];
   const speciesData=SPECIES_DATA[species];
@@ -162,7 +182,7 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     ["Вальдрум","Северная область","Нордвальд"],["Скайнхейм","Северная область","Нордвальд"],
     ["Эйргард","Северная область","Нордвальд"],["Морнхольд","Северная область","Нордвальд"],
   ] as const;
-  const origin=choose(origins,random);
+  const origin=profile ? (origins.find((entry)=>entry[0]===profile.birthplace) ?? choose(origins,random)) : choose(origins,random);
   const appearance=choose([
     "стройное телосложение, внимательный взгляд и заметный шрам на руке",
     "крепкое телосложение, короткие волосы и следы тяжёлой работы на ладонях",
@@ -170,51 +190,52 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     "высокий рост, дорожная одежда и несколько старых отметин от ран",
     "подвижная фигура, выразительные глаза и привычка осматривать помещение",
   ],random);
-  const family=choose([
+  const family=profile?.family ?? choose([
     "Вырос(ла) в большой семье ремесленников; отношения с родными остались непростыми.",
     "Родители рано разошлись, и большую часть детства воспитывал близкий родственник.",
     "Семья жила скромно; с детства приходилось помогать с работой и заботиться о младших.",
     "Почти не помнит ранних лет и поддерживает связь только с одним родственником.",
     "Происходит из семьи торговцев, часто переезжавшей между поселениями.",
   ],random);
-  const event=choose([
+  const event=profile?.lifeEvents?.[0] ?? choose([
     "В юности пережил(а) неудачное ученичество и с тех пор предпочитает полагаться на собственные навыки.",
     "Однажды помог(ла) незнакомцу в беде; тот поступок изменил отношение к чужим проблемам.",
     "Потерял(а) работу после конфликта и был(а) вынужден(а) начать заново.",
     "Несколько лет провёл(а) в дороге, работая за еду и ночлег.",
     "Принял(а) неверное решение, последствия которого до сих пор старается исправить.",
   ],random);
-  const traits=choose([
+  const traits=profile?.personalityTraits ?? choose([
     ["сдержанный","наблюдательный"],["прямолинейный","упорный"],
     ["дружелюбный","любознательный"],["осторожный","недоверчивый"],
     ["ироничный","импульсивный"],
   ] as const,random);
-  const motivation=choose([
+  const motivation=profile?.motivation ?? choose([
     "Найти дело, которое позволит жить независимо и не быть никому обязанным.",
     "Отыскать человека, с которым давно потеряна связь.",
     "Доказать себе, что прошлые ошибки не определяют всю жизнь.",
     "Заработать достаточно, чтобы обеспечить безопасность близким.",
     "Понять, почему прежняя жизнь закончилась именно так.",
   ],random);
-  const age=18+random(63);
+  const age=profile?.ageYears ?? (18+random(63));
   const biography = {
-    ageYears:age, ageCertainty:"KNOWN" as const, genderPresentation:"UNKNOWN",
+    ageYears:age, ageCertainty:"KNOWN" as const, genderPresentation:profile?.genderPresentation ?? "UNKNOWN",
     appearance, birthplace:origin[0]+", "+origin[1]+", "+origin[2],
     birthplaceSource:"Хроника Экдрасиля, Том XI, §44: подтверждённый главный город и государство/область; конкретное рождение в городе сгенерировано.",
-    family, upbringing:"Детство прошло в "+origin[0]+". "+family,
-    lifeEvents:[event], personalityTraits:[...traits],
-    ideal:"Самостоятельность и право самому выбирать свой путь.",
-    bond:"Сохраняет личную вещь, напоминающую о семье.",
-    flaw:"Неохотно просит о помощи, даже когда она необходима.",
+    family, upbringing:profile?.upbringing ?? ("Детство прошло в "+origin[0]+". "+family),
+    lifeEvents:profile?.lifeEvents ?? [event], personalityTraits:[...traits],
+    ideal:profile?.ideal ?? "Самостоятельность и право самому выбирать свой путь.",
+    bond:profile?.bond ?? "Сохраняет личную вещь, напоминающую о семье.",
+    flaw:profile?.flaw ?? "Неохотно просит о помощи, даже когда она необходима.",
     motivation,
-    preCampaignDesire:motivation,
+    preCampaignDesire:profile?.preCampaignDesire ?? motivation,
     biography:"Персонаж родился в "+origin[0]+", в области "+origin[1]+" на континенте "+origin[2]+". "+family+" "+event+" Сейчас он(а) ищет собственное место в мире. "+motivation,
     canonBasis:["Хроника Экдрасиля, Том XI, §44: город "+origin[0]+" — "+origin[1]+", континент "+origin[2]+"."],
     inventedDetailsNotice:"Возраст, семья, внешность, личные события, черты характера и мотивация сгенерированы для персонажа и не являются установленными фактами хроники.",
   };
   const character:Partial<PlayerCharacterState>={
-    name:`${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography:{...biography,skillOrigins:[],weaponBackground:"",equipmentBackground:""},
+    name:profile?.name ?? `${choose(GIVEN_NAMES,random)} ${choose(FAMILY_NAMES,random)}`,nameCertainty:"KNOWN",biography:{...biography,skillOrigins:[],weaponBackground:"",equipmentBackground:""},
     speciesAndClass:`${speciesLabel} · ${classLabel}, 1 уровень · Предыстория: ${backgroundLabel}`,
+    background: backgroundLabel,
     level:1,classLevel:1,epicCampaignLevels:0,hpCurrent:hpMax,hpMax,hpTemp:0,armorClass,
     abilityScores,proficiencyBonus:proficiency,size:speciesData.size,speedFeet:speciesData.speed,
     hitDice:`1d${classData.die}`,baseSavingThrowBonuses:saves,savingThrowBonuses:saves,
@@ -224,5 +245,5 @@ export function generateRandomCharacter(random:Random):RandomCharacterResult {
     currency:{cp:0,sp:0,ep:0,gp:gold,pp:0},
     notes:`Случайный персонаж 1 уровня, создан по адаптированному генератору Экдрасиля на основе D&D 2024 / SRD 5.2.1. Свободная повседневная магия в Экдрасиле отсутствует; сверхъестественные явления редки, ограничены и требуют конкретного источника. Класс: ${classLabel}; предыстория: ${backgroundLabel}; народ: ${speciesLabel}. Броски характеристик: ${rolls.map(r=>`${r.ability} ${r.total}`).join(", ")}; затем применены повышения характеристик предыстории. Выбранные навыки: ${skills.join(", ")}. Происхождение: ${biography.birthplace}. Биография: ${biography.biography} Origin Feat: ${backgroundData.feat}. Видовые черты: ${speciesData.traits} Видовые профили, помеченные как домашнее правило Экдрасиля, требуют отдельного тестирования баланса. Дополнительные опции не подразумеваются.`,
   };
-  return {character,summary:{name:character.name!,className,background,species,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
+  return {character,summary:{name:character.name!,className,classNameRu:classLabel,background,backgroundRu:backgroundLabel,species,speciesRu:speciesLabel,abilityScores,hitPoints:hpMax,armorClass,skills,equipment:inventory.map(i=>`${i.name} × ${i.quantity}`),features:featureText},rolls:rolls.map(r=>`${r.ability}: 4d6 drop lowest = ${r.total}`)};
 }

@@ -1,0 +1,63 @@
+name: Deploy Obsidian static app for Supabase host
+
+on:
+  push:
+    branches:
+      - cloud-api-client
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: obsidian-supabase-static-site
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          ref: cloud-api-client
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build for Supabase static host
+        env:
+          GITHUB_STATIC_SITE: "true"
+          VITE_GITHUB_STATIC_SITE: "true"
+          VITE_SUPABASE_URL: "https://dbchfgkdrqpjspptoezh.supabase.co"
+          VITE_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_DSbvWZk4wHJ3CAcXeqwuUA_9F-FzB7J"
+        run: bun run build
+
+      - name: Publish to static-site branch
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test -s .output/public/_shell.html
+          cp .output/public/_shell.html .output/public/index.html
+          cp .output/public/_shell.html .output/public/404.html
+
+          git fetch origin static-site
+          git worktree add /tmp/obsidian-static-site origin/static-site
+          rsync -a --delete --exclude='.git' .output/public/ /tmp/obsidian-static-site/
+
+          git -C /tmp/obsidian-static-site config user.name "github-actions[bot]"
+          git -C /tmp/obsidian-static-site config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C /tmp/obsidian-static-site add --all
+          if git -C /tmp/obsidian-static-site diff --cached --quiet; then
+            echo "Static site already matches source build."
+          else
+            git -C /tmp/obsidian-static-site commit -m "Deploy Obsidian static app from ${SOURCE_SHA}"
+            git -C /tmp/obsidian-static-site push origin HEAD:static-site
+          fi

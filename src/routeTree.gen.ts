@@ -15,6 +15,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as CanonRouteImport } from './routes/canon'
 import { Route as CharacterRouteImport } from './routes/character'
 import { Route as FactionsRouteImport } from './routes/factions'
+import { Route as GameRouteImport } from './routes/game'
 import { Route as NpcsRouteImport } from './routes/npcs'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -22,6 +23,7 @@ import { Route as SourcesRouteImport } from './routes/sources'
 import { Route as TimeMapRouteImport } from './routes/time-map'
 import { Route as TurnsRouteImport } from './routes/turns'
 import { Route as WorldRouteImport } from './routes/world'
+import { Route as PlayRouteImport } from './routes/play'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -51,6 +53,11 @@ const CharacterRoute = CharacterRouteImport.update({
 const FactionsRoute = FactionsRouteImport.update({
   id: '/factions',
   path: '/factions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameRoute = GameRouteImport.update({
+  id: '/game',
+  path: '/game',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NpcsRoute = NpcsRouteImport.update({
@@ -88,6 +95,11 @@ const WorldRoute = WorldRouteImport.update({
   path: '/world',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -96,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -103,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/time-map': typeof TimeMapRoute
   '/turns': typeof TurnsRoute
   '/world': typeof WorldRoute
+  '/play': typeof PlayRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -111,6 +125,7 @@ export interface FileRoutesByTo {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -118,6 +133,7 @@ export interface FileRoutesByTo {
   '/time-map': typeof TimeMapRoute
   '/turns': typeof TurnsRoute
   '/world': typeof WorldRoute
+  '/play': typeof PlayRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -127,6 +143,7 @@ export interface FileRoutesById {
   '/canon': typeof CanonRoute
   '/character': typeof CharacterRoute
   '/factions': typeof FactionsRoute
+  '/game': typeof GameRoute
   '/npcs': typeof NpcsRoute
   '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
@@ -144,6 +161,7 @@ export interface FileRouteTypes {
     | '/canon'
     | '/character'
     | '/factions'
+    | '/game'
     | '/npcs'
     | '/reset-password'
     | '/settings'
@@ -151,6 +169,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -159,6 +178,7 @@ export interface FileRouteTypes {
     | '/canon'
     | '/character'
     | '/factions'
+    | '/game'
     | '/npcs'
     | '/reset-password'
     | '/settings'
@@ -166,6 +186,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   id:
     | '__root__'
     | '/'
@@ -174,6 +195,7 @@ export interface FileRouteTypes {
     | '/canon'
     | '/character'
     | '/factions'
+    | '/game'
     | '/npcs'
     | '/reset-password'
     | '/settings'
@@ -181,6 +203,7 @@ export interface FileRouteTypes {
     | '/time-map'
     | '/turns'
     | '/world'
+    | '/play'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -190,6 +213,7 @@ export interface RootRouteChildren {
   CanonRoute: typeof CanonRoute
   CharacterRoute: typeof CharacterRoute
   FactionsRoute: typeof FactionsRoute
+  GameRoute: typeof GameRoute
   NpcsRoute: typeof NpcsRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
@@ -197,6 +221,7 @@ export interface RootRouteChildren {
   TimeMapRoute: typeof TimeMapRoute
   TurnsRoute: typeof TurnsRoute
   WorldRoute: typeof WorldRoute
+  PlayRoute: typeof PlayRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -241,6 +266,13 @@ declare module '@tanstack/react-router' {
       path: '/factions'
       fullPath: '/factions'
       preLoaderRoute: typeof FactionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/game': {
+      id: '/game'
+      path: '/game'
+      fullPath: '/game'
+      preLoaderRoute: typeof GameRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/npcs': {
@@ -292,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorldRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -302,6 +341,7 @@ const rootRouteChildren: RootRouteChildren = {
   CanonRoute: CanonRoute,
   CharacterRoute: CharacterRoute,
   FactionsRoute: FactionsRoute,
+  GameRoute: GameRoute,
   NpcsRoute: NpcsRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
@@ -309,6 +349,7 @@ const rootRouteChildren: RootRouteChildren = {
   TimeMapRoute: TimeMapRoute,
   TurnsRoute: TurnsRoute,
   WorldRoute: WorldRoute,
+  PlayRoute: PlayRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

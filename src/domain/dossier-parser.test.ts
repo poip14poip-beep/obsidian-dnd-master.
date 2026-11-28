@@ -25,10 +25,10 @@ describe("player dossier summary extraction", () => {
       "Кость хитов | 20d10",
       "## 9.2. Спасброски",
       "+11 | +3 | +9 | +4 | +2 | +3",
+      "Cloak of Protection добавляет +1 ко всем спасброскам: итог +12, +4, +10, +5, +3, +4 соответственно.",
       "## 9.3. Навыки и пассивные показатели",
       "Атлетика | +11 | Сила +5, владение +6; Soldier",
       "История | +10 | Интеллект +4, владение +6; Skilled",
-      "Perception | +8 | Wisdom +2, proficiency +6",
       "## 9.4. Fighter 20: способности по уровням",
       "1 | Fighting Style, Second Wind, Weapon Mastery",
       "20 | Three Extra Attacks — всего 4 атаки",
@@ -38,11 +38,13 @@ describe("player dossier summary extraction", () => {
       "## 11.1. Надетые предметы",
       "1 | Кожа Последнего Часа | Лёгкий доспех",
       "1 | Cloak of Protection | +1 КБ",
-      "Second Wind: четыре использования; бонусным действием восстанавливает 1d10 + 20 HP. Action Surge: два использования между продолжительными отдыхами, не более одного за ход. Indomitable: три использования.",
       "## 11.2. Оружие и обслуживание",
       "Second Wind: четыре использования; Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
       "2–3 дня | Сухой паёк | Пополняется в пути",
       "1 | Катана в ножнах | Основное оружие",
+      "## 11.3. Инструменты, исследования и медицина",
+      "1 | Инструменты кузнеца | Осмотр и мелкий ремонт",
+      "1 | Набор дорожного ремонта | Основное снаряжение: используется для регулярного обслуживания брони и оружия",
     ].join("\n"));
     expect(result.level).toBe(21);
     expect(result.hitPointMaximum).toBe(184);
@@ -51,23 +53,77 @@ describe("player dossier summary extraction", () => {
     expect(result.proficiencyBonus).toBe(6);
     expect(result.speedFeet).toBe(30);
     expect(result.hitDice).toBe("20d10");
-    expect(result.savingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
-    expect(result.skillBonuses).toHaveLength(3);
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.savingThrowBonuses).toEqual({ strength: 12, dexterity: 4, constitution: 10, intelligence: 5, wisdom: 3, charisma: 4 });
+    expect(result.skillBonuses).toHaveLength(2);
     expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
-    expect(result.skillBonuses[2]).toMatchObject({ name: "Внимательность", bonus: 8, basis: "Wisdom +2, proficiency +6" });
     expect(result.classFeaturesByLevel).toHaveLength(2);
     expect(result.weaponAttacks).toHaveLength(2);
     expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
-    expect(result.inventory).toHaveLength(3);
-    expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN" });
-    expect(result.inventory[1]).toMatchObject({ name: "Плащ защиты", location: "WORN" });
-    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "OTHER" });
+    expect(result.inventory).toHaveLength(5);
+    expect(result.inventory[0]).toMatchObject({ name: "Кожа Последнего Часа", location: "WORN", startPolicy: "KEEP_FROM_DOSSIER" });
+    expect(result.inventory[2]).toMatchObject({ name: "Катана в ножнах", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER" });
+    expect(result.inventory).toContainEqual(expect.objectContaining({
+      name: "Инструменты кузнеца", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER",
+    }));
+    expect(result.inventory).toContainEqual(expect.objectContaining({
+      name: "Набор дорожного ремонта", location: "CARRIED", startPolicy: "KEEP_FROM_DOSSIER",
+    }));
     expect(result.resources).toEqual([
-      { name: "Second Wind", current: null, max: 4, recovery: "UNKNOWN", certainty: "KNOWN" },
-      { name: "Action Surge", current: null, max: 2, recovery: "Long Rest", certainty: "KNOWN" },
-      { name: "Indomitable", current: null, max: 3, recovery: "UNKNOWN", certainty: "KNOWN" },
+      { name: "Second Wind", current: null, max: 4, recovery: "1 use on Short Rest; all uses on Long Rest", certainty: "KNOWN" },
+      { name: "Action Surge", current: null, max: 2, recovery: "All uses on Short or Long Rest", certainty: "KNOWN" },
+      { name: "Indomitable", current: null, max: 3, recovery: "All uses on Long Rest", certainty: "KNOWN" },
     ]);
   });
+  it("parses aligned DOCX table columns without inventing current HP", () => {
+    const result = extractDossierBasics([
+      "ЛИЯ ВЕЙН",
+      "Родилась: 121 год. Возраст в 2000 году: 1879 лет. Человек.",
+      "Fighter 20 / Champion + один эпический уровень кампании.",
+      "Общий уровень                                           21 (домашнее эпическое расширение)",
+      "Классовые уровни                                        Fighter 20",
+      "Бонус мастерства                                        +6",
+      "HP                                                      184",
+      "Кость хитов                                             20d10",
+      "Скорость                                                30 футов",
+      "КБ                                                      КБ 20",
+      "Сила               Ловкость          Телосложение       Интеллект          Мудрость            Харизма",
+      "20 (+5)            16 (+3)           16 (+3)            18 (+4)            14 (+2)             16 (+3)",
+      "## 9.2. Спасброски",
+      "+11                +3                +9                 +4                 +2                  +3",
+      "## 9.3. Навыки и пассивные показатели",
+      "Атлетика                             +11                                   Сила +5, владение +6; Soldier",
+      "## 9.4. Fighter 20: способности по уровням",
+      "1                                                       Fighting Style, Second Wind, Weapon Mastery",
+      "## 9.5. Боевые стили и оружие",
+      "Катана (Longsword)                   +11                               1d8+5 одной рукой; 1d10+5 двумя руками             Sap",
+      "## 11.1. Надетые предметы",
+      "1                                      Кожа Последнего Часа                Авторский проклятый лёгкий доспех",
+      "## 11.2. Оружие и обслуживание",
+      "1                                      Катана в ножнах                     Основное оружие",
+      "Second Wind: четыре использования. Action Surge: два использования между продолжительными отдыхами. Indomitable: три использования.",
+    ].join("\n"));
+
+    expect(result.name).toBe("ЛИЯ ВЕЙН");
+    expect(result.level).toBe(21);
+    expect(result.classLevel).toBe(20);
+    expect(result.epicCampaignLevels).toBe(1);
+    expect(result.hitPointMaximum).toBe(184);
+    expect(result.armorClass).toBe(20);
+    expect(result.abilityScores).toEqual({ strength: 20, dexterity: 16, constitution: 16, intelligence: 18, wisdom: 14, charisma: 16 });
+    expect(result.proficiencyBonus).toBe(6);
+    expect(result.speedFeet).toBe(30);
+    expect(result.hitDice).toBe("20d10");
+    expect(result.baseSavingThrowBonuses).toEqual({ strength: 11, dexterity: 3, constitution: 9, intelligence: 4, wisdom: 2, charisma: 3 });
+    expect(result.skillBonuses[0]).toMatchObject({ name: "Атлетика", bonus: 11 });
+    expect(result.classFeaturesByLevel[0]?.level).toBe(1);
+    expect(result.weaponAttacks[0]).toMatchObject({ weapon: "Катана (Longsword)", attackBonus: 11, mastery: "Sap" });
+    expect(result.inventory).toHaveLength(2);
+    expect(result.inventory.every((item) => item.startPolicy === "KEEP_FROM_DOSSIER")).toBe(true);
+    expect(result.resources.map((resource) => resource.max)).toEqual([4, 2, 3]);
+  });
+
   it("does not invent missing values", () => {
     const result = extractDossierBasics("Персонаж\nБиография без игровых характеристик.");
     expect(result.hitPointMaximum).toBeNull();

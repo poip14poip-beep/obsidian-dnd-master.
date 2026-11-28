@@ -59,8 +59,18 @@ export function loadAllCollections(storage: StorageLike | null): ObsidianCollect
   if (!storage) {
     return defaults;
   }
+  const savedSources = safeParse(storage.getItem(STORAGE_KEYS.sources), () => defaults.sources);
+  // Always refresh the immutable server-managed source markers from the current
+  // application defaults. Older localStorage snapshots may predate this field,
+  // which otherwise leaves the campaign permanently blocked after an upgrade.
+  const serverManagedDefaults = defaults.sources.filter((source) => source.serverManaged === true);
+  const nonManagedSources = savedSources.filter((source) => source.serverManaged !== true);
+  const sources = [
+    ...serverManagedDefaults,
+    ...nonManagedSources.filter((source) => !serverManagedDefaults.some((managed) => managed.id === source.id)),
+  ];
   return {
-    sources: safeParse(storage.getItem(STORAGE_KEYS.sources), () => defaults.sources),
+    sources,
     canon_facts: safeParse(storage.getItem(STORAGE_KEYS.canon_facts), () => defaults.canon_facts),
     world_state: safeParse(storage.getItem(STORAGE_KEYS.world_state), () => defaults.world_state),
     player_character_state: safeParse(
@@ -93,109 +103,80 @@ export function persistAndVerifyCollections(
   collections: ObsidianCollections,
   expectedTailTurnNumber?: number,
 ): PersistVerifyResult {
-  if (!storage) {
-    return {
-      ok: false,
-      error: "Локальное хранилище браузера недоступно — сохранение не подтверждено.",
-      report: null,
-    };
-  }
-
+  if (!storage) return { ok: false, error: "Локальное хранилище браузера недоступно — сохранение не подтверждено.", report: null };
   const nestedBeforeWrite = detectNestedPlayerState(collections.world_state, "world_state");
-  if (nestedBeforeWrite) {
-    return {
-      ok: false,
-      error: `Запись отклонена: player_character_state обнаружен внутри world_state (${nestedBeforeWrite}).`,
-      report: null,
-    };
-  }
+  if (nestedBeforeWrite) return { ok: false, error: `Запись отклонена: player_character_state обнаружен внутри world_state (${nestedBeforeWrite}).`, report: null };
 
   const expectedCanonical: Record<CollectionName, string> = {} as Record<CollectionName, string>;
   const expectedChecksums = computeCollectionChecksums(collections);
-  for (const name of COLLECTION_NAMES) {
-    expectedCanonical[name] = canonicalStringify(collections[name]);
+  for (const name of COLLECTION_NAMES) expectedCanonical[name] = canonicalStringify(collections[name]);
+
+  const original: Record<CollectionName, string | null> = {} as Record<CollectionName, string | null>;
+  try {
+    for (const name of COLLECTION_NAMES) original[name] = storage.getItem(STORAGE_KEYS[name]);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "неизвестная ошибка чтения";
+    return { ok: false, error: `Не удалось создать снимок перед сохранением: ${msg}. Ничего не записано.`, report: null };
   }
 
-  try {
-    for (const name of COLLECTION_NAMES) {
-      storage.setItem(STORAGE_KEYS[name], JSON.stringify(collections[name]));
+  const rollback = (reason: string, report: IntegrityReport | null = null): PersistVerifyResult => {
+    const rollbackErrors: string[] = [];
+    for (const name of [...COLLECTION_NAMES].reverse()) {
+      try {
+        const previous = original[name];
+        if (previous === null) storage.removeItem(STORAGE_KEYS[name]);
+        else storage.setItem(STORAGE_KEYS[name], previous);
+      } catch (err) {
+        rollbackErrors.push(`${name}: ${err instanceof Error ? err.message : "ошибка отката"}`);
+      }
     }
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "неизвестная ошибка записи";
+    for (const name of COLLECTION_NAMES) {
+      try {
+        if (storage.getItem(STORAGE_KEYS[name]) !== original[name]) rollbackErrors.push(`${name}: read-back отката не совпал`);
+      } catch {
+        rollbackErrors.push(`${name}: read-back отката недоступен`);
+      }
+    }
     return {
       ok: false,
-      error: `Ошибка записи в localStorage: ${msg}. Сохранение НЕ выполнено.`,
-      report: null,
+      error: rollbackErrors.length
+        ? `${reason} ОТКАТ НЕ ПОДТВЕРЖДЁН: ${rollbackErrors.join("; ")}. Не продолжайте игру до восстановления из резервной копии.`
+        : `${reason} Предыдущий снимок всех коллекций восстановлен и проверен обратным чтением.`,
+      report,
     };
+  };
+
+  try {
+    for (const name of COLLECTION_NAMES) storage.setItem(STORAGE_KEYS[name], JSON.stringify(collections[name]));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "неизвестная ошибка записи";
+    return rollback(`Ошибка записи в localStorage: ${msg}. Новый снимок не принят.`);
   }
 
-  // Mandatory read-back + exact payload comparison across all 11 collections
   try {
     const readBack = {} as Record<CollectionName, unknown>;
     for (const name of COLLECTION_NAMES) {
       const raw = storage.getItem(STORAGE_KEYS[name]);
-      if (raw === null) {
-        return {
-          ok: false,
-          error: `Проверка обратного чтения не удалась: коллекция «${name}» отсутствует в хранилище.`,
-          report: null,
-        };
-      }
+      if (raw === null) return rollback(`Проверка обратного чтения не удалась: коллекция «${name}» отсутствует.`);
       const parsed: unknown = JSON.parse(raw);
-      const readCanonical = canonicalStringify(parsed);
-      if (readCanonical !== expectedCanonical[name]) {
-        return {
-          ok: false,
-          error: `Несовпадение payload при обратном чтении коллекции «${name}»: сохранённые данные отличаются от записываемых.`,
-          report: null,
-        };
-      }
+      if (canonicalStringify(parsed) !== expectedCanonical[name]) return rollback(`Несовпадение payload при обратном чтении коллекции «${name}».`);
       readBack[name] = parsed;
     }
-
     const readCollections = readBack as unknown as ObsidianCollections;
     const report = runIntegrityAudit(readCollections);
-
     for (const name of COLLECTION_NAMES) {
-      if (report.checksums[name] !== expectedChecksums[name]) {
-        return {
-          ok: false,
-          error: `Контрольная сумма коллекции «${name}» не совпала после обратного чтения.`,
-          report,
-        };
-      }
+      if (report.checksums[name] !== expectedChecksums[name]) return rollback(`Контрольная сумма коллекции «${name}» не совпала после обратного чтения.`, report);
     }
-
-    if (
-      expectedTailTurnNumber !== undefined &&
-      readCollections.session_log.lastTurnNumber !== expectedTailTurnNumber
-    ) {
-      return {
-        ok: false,
-        error: `Обратное чтение session_log не подтвердило ход №${expectedTailTurnNumber}.`,
-        report,
-      };
+    if (expectedTailTurnNumber !== undefined && readCollections.session_log.lastTurnNumber !== expectedTailTurnNumber) {
+      return rollback(`Обратное чтение session_log не подтвердило ход №${expectedTailTurnNumber}.`, report);
     }
-
     if (!report.ok) {
-      const failed = report.checks
-        .filter((c) => !c.passed)
-        .map((c) => c.label)
-        .join("; ");
-      return {
-        ok: false,
-        error: `Проверка целостности после записи выявила нарушения: ${failed}.`,
-        report,
-      };
+      const failed = report.checks.filter((check) => !check.passed).map((check) => check.label).join("; ");
+      return rollback(`Проверка целостности после записи выявила нарушения: ${failed}.`, report);
     }
-
     return { ok: true, report };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "ошибка разбора JSON";
-    return {
-      ok: false,
-      error: `Обратное чтение повреждено (${msg}). Сохранение не подтверждено.`,
-      report: null,
-    };
+    return rollback(`Обратное чтение повреждено (${msg}). Новый снимок не принят.`);
   }
 }

@@ -1,3 +1,5 @@
+import type { CanonDateMention, CanonSection } from "./canon-ingestion";
+
 export type CertaintyStatus = "KNOWN" | "APPROXIMATE" | "UNKNOWN";
 
 export type EpistemicLayer =
@@ -6,22 +8,46 @@ export type EpistemicLayer =
 export type SourceType = "GOVERNING_DOC" | "WORLD_CANON" | "PLAYER_DOSSIER" | "SUPPLEMENTAL";
 
 export type SourceContentStatus = "NOT_ATTACHED" | "ATTACHED";
+export type SourceReviewStatus = "UNREVIEWED" | "VERIFIED";
 
 export type FactScope = "GLOBAL" | "REGION" | "LOCATION" | "FACTION" | "PERSONAL";
 
+export interface SourceProcessingSummary {
+  status: "NOT_PROCESSED" | "PROCESSED" | "FAILED";
+  sha256: string | null;
+  characterCount: number;
+  lineCount: number;
+  sectionCount: number;
+  chunkCount: number;
+  dateCandidateCount: number;
+  processedAt: string | null;
+  warnings: string[];
+}
+
 export interface SourceDocument {
   id: string;
+  /** False hides GM-only source material from player-facing source lists while retaining it in GM context. */
+  playerVisible?: boolean;
+  /** Server-managed master material is never stored in browser campaign state. */
+  serverManaged?: boolean;
   title: string;
   type: SourceType;
   targetPartition: "CAMPAIGN_STATE" | "PLAYER_CHARACTER_STATE" | "SYSTEM_RULES";
   originLabel: string;
   contentStatus: SourceContentStatus;
+  /** Explicit human review of the currently attached source content. */
+  reviewStatus?: SourceReviewStatus;
+  /** Only verified sources explicitly enabled here may enter the AI context. */
+  contextEnabled?: boolean;
   certainty: CertaintyStatus;
   fileName: string | null;
   content: string;
   checksum: string;
   attachedAt: string | null;
   notes: string;
+  processing?: SourceProcessingSummary;
+  canonSections?: CanonSection[];
+  dateMentions?: CanonDateMention[];
 }
 
 export interface FactRevision {
@@ -70,17 +96,51 @@ export interface EntityRevision {
   reason: string;
 }
 
+export interface NpcCombatProfile {
+  /** Combat values are usable only when the source is explicitly verified. */
+  status: "NOT_REQUIRED" | "SRD_VERIFIED" | "UNKNOWN";
+  source: string;
+  armorClass: number | null;
+  hitPointsCurrent: number | null;
+  hitPointsMax: number | null;
+  speed: string;
+  attacks: Array<{ name: string; attackBonus: number | null; damage: string; damageType: string }>;
+  resistances: string[];
+  vulnerabilities: string[];
+  immunities: string[];
+}
+
+export interface NpcPrivateProfile {
+  biography: string;
+  appearance: string;
+  personality: string;
+  motivation: string;
+  longTermGoal: string;
+  secrets: string;
+  relationships: string;
+  skillsAndAbilities: string;
+  combatProfile: NpcCombatProfile;
+}
+
 export interface NpcRecord {
   id: string;
+  /** False hides GM-only records from the player-facing NPC registry; the GM model still receives them. */
+  playerVisible?: boolean;
   name: string;
   role: string;
   locationId: string | null;
   factionId: string | null;
   goals: string;
+  /** GM-only dossier. Never render this in the player-facing NPC journal. */
+  gmProfile?: NpcPrivateProfile;
+  /** GM-only summary of possessions, assets and resources currently controlled by this NPC. */
+  resources?: string;
   attitudeToPlayer: string;
   certainty: CertaintyStatus;
   sourceId: string;
   locked: boolean;
+  /** What the player character has personally learned about this NPC. Never mix with the NPC's own knowledge. */
+  playerKnowledge?: NpcKnowledgeEntry[];
   knowledge: NpcKnowledgeEntry[];
   version: number;
   history: EntityRevision[];
@@ -103,6 +163,9 @@ export interface LocationRecord {
   id: string;
   name: string;
   region: string;
+  /** City and exact in-city place for a campaign start, when known. */
+  cityName?: string;
+  placeName?: string;
   description: string;
   certainty: CertaintyStatus;
   sourceId: string;
@@ -152,6 +215,12 @@ export interface CampaignSetupState {
  * from sources, canon_facts, npcs, factions, locations, timeline_events,
  * turn_drafts, session_log, and audit_log.
  */
+export interface CampaignPreferences {
+  allowedBooksAndOptions: string; diceMethod: string; advancement: string; foodAndWater: string;
+  randomEncounters: string; pvp: string; deathAndResurrection: string; economyDetail: string;
+  contentBoundaries: string; houseRules: string;
+}
+
 export interface WorldState {
   schemaVersion: number;
   stateVersion: number;
@@ -162,7 +231,25 @@ export interface WorldState {
   currentInGameDate: string;
   elapsedMinutes: number;
   encumbranceMode: "UNSET" | "STANDARD" | "VARIANT" | "ABSTRACT";
+  campaignPreferences?: CampaignPreferences;
+  /** Current observable environment. Unknown values stay explicit; no automatic weather guessing. */
+  environment?: WorldEnvironment;
+  /** Quests and leads that have actually become known to the player character. */
+  quests?: CampaignQuest[];
   startLocationName: string;
+  startNarrative?: string;
+  /** Immutable GM opening scene, persisted separately from the generated starting-location description. */
+  openingScene?: string;
+  openingSceneGeneratedAt?: string;
+  startGeneration?: {
+    method: "WEB_CRYPTO_GETRANDOMVALUES";
+    generatedAt: string;
+    cityIndex: number;
+    sceneIndex: number;
+    healthProfileRoll: number;
+    hpRoll: number;
+    hpRange: [number, number];
+  };
   currentLocationId: string | null;
   setup: CampaignSetupState;
   routes: TravelRoute[];
@@ -185,14 +272,45 @@ export interface InventoryItem {
   quantity: number;
   notes: string;
   certainty: CertaintyStatus;
-  location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER";
+  location?: "CARRIED" | "WORN" | "STORED" | "DROPPED" | "OTHER" | "UNKNOWN";
+  attunement?: "ATTUNED" | "NOT_ATTUNED" | "UNKNOWN";
   unitWeightLb?: number | null;
+  /** Whether this item is fixed character equipment or is recreated for each campaign start. */
+  startPolicy?: "KEEP_FROM_DOSSIER" | "REGENERATE_AT_START";
 }
 
 /**
  * PLAYER_CHARACTER_STATE — isolated root storage partition.
  * NEVER nested inside CAMPAIGN_STATE.
  */
+export interface CharacterBiography {
+  ageYears: number | null;
+  ageCertainty: CertaintyStatus;
+  genderPresentation: string;
+  appearance: string;
+  appearanceDetails?: {
+    height: string; build: string; skin: string; hair: string; eyes: string; face: string;
+    clothing: string; footwear: string; accessories: string; distinctiveFeatures: string; firstImpression: string;
+  };
+  birthplace: string;
+  birthplaceSource: string;
+  family: string;
+  upbringing: string;
+  lifeEvents: string[];
+  personalityTraits: string[];
+  ideal: string;
+  bond: string;
+  flaw: string;
+  motivation: string;
+  preCampaignDesire: string;
+  biography: string;
+  skillOrigins: string[];
+  weaponBackground: string;
+  equipmentBackground: string;
+  canonBasis: string[];
+  inventedDetailsNotice: string;
+}
+
 export interface PlayerCharacterState {
   schemaVersion: number;
   stateVersion: number;
@@ -200,6 +318,11 @@ export interface PlayerCharacterState {
   name: string;
   nameCertainty: CertaintyStatus;
   speciesAndClass: string;
+  /** Background/предыстория used to generate the campaign's random non-fixed starter kit. */
+  background?: string;
+  biography?: CharacterBiography;
+  /** Персональная хроника последнего месяца перед началом кампании. */
+  recentPreCampaignHistory?: string;
   level: number | null;
   classLevel?: number | null;
   epicCampaignLevels?: number;
@@ -209,9 +332,12 @@ export interface PlayerCharacterState {
   armorClass: number | null;
   abilityScores?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   proficiencyBonus?: number | null;
+  /** Size is required for carrying-capacity multipliers; UNKNOWN is never treated as Medium. */
+  size?: "TINY" | "SMALL" | "MEDIUM" | "LARGE" | "HUGE" | "GARGANTUAN" | "UNKNOWN";
   speedFeet?: number | null;
   hitDice?: string;
   savingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
+  baseSavingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   skillBonuses?: Array<{ name: string; bonus: number; basis: string }>;
   classFeaturesByLevel?: Array<{ level: number; features: string }>;
   weaponAttacks?: Array<{ weapon: string; attackBonus: number; damage: string; mastery: string }>;
@@ -232,44 +358,76 @@ export interface CharacterChangeSet {
   currencyDelta: { cp: number; sp: number; ep: number; gp: number; pp: number };
 }
 
-export interface WorldChangeSet {
-  facts: Array<{
-    title: string; statement: string; rationale: string; layer: Exclude<EpistemicLayer, "NPC_KNOWLEDGE">;
-    subjectNpcId: string | null; certainty: CertaintyStatus; scope: FactScope;
-  }>;
-  npcUpdates: Array<{
-    npcId: string; role: string | null; locationId: string | null; factionId: string | null;
-    goals: string | null; attitudeToPlayer: string | null; certainty: CertaintyStatus | null; reason: string;
-  }>;
-  npcKnowledgeAdditions: Array<{
-    npcId: string; factSummary: string; sourceId: string; acquisitionPath: string; certainty: CertaintyStatus;
-  }>;
-  newLocations: Array<{
-    tempId: string; name: string; region: string; description: string; certainty: CertaintyStatus;
-    sourceId: string; distanceFromCurrent: string; travelTimeHours: number | null; routeCertainty: CertaintyStatus; routeNotes: string;
-  }>;
-  newNpcs: Array<{
-    tempId: string; name: string; role: string; locationId: string | null; factionId: string | null;
-    goals: string; attitudeToPlayer: string; certainty: CertaintyStatus;
-  }>;
-  factionUpdates: Array<{
-    factionId: string; goals: string | null; resources: string | null; standing: string | null;
-    certainty: CertaintyStatus | null; reason: string;
-  }>;
-  newFactions: Array<{
-    tempId: string; name: string; goals: string; resources: string; standing: string; certainty: CertaintyStatus;
-  }>;
-  delayedEvents: Array<{
-    title: string; triggerInGameDate: string; consequence: string;
-    status: "SCHEDULED" | "TRIGGERED" | "RESOLVED"; certainty: CertaintyStatus;
-  }>;
-}
-
 export interface RollRecord {
   id: string;
   label: string;
   formula: string;
+  dc?: number | null;
+  targetType?: "DC" | "AC" | "NONE";
+  roller?: "PLAYER" | "GM";
   result: string;
+}
+
+export interface NpcTurnChange {
+  action: "CREATE" | "UPDATE";
+  playerVisible: boolean;
+  name: string;
+  role: string;
+  goals: string;
+  resources: string;
+  attitudeToPlayer: string;
+  locationName: string | null;
+  factionName: string | null;
+  certainty: CertaintyStatus;
+  reason: string;
+  /** Full GM-only card generated on first encounter and maintained on later updates. */
+  gmProfile?: NpcPrivateProfile;
+  knowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
+  playerKnowledgeAdditions: Array<{ factSummary: string; acquisitionPath: string; certainty: CertaintyStatus }>;
+}
+
+export interface CampaignQuest {
+  id: string;
+  title: string;
+  description: string;
+  objectives: string[];
+  status: "RUMOR" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "FAILED";
+  giverName: string | null;
+  locationName: string | null;
+  deadline: string | null;
+  reward: string;
+  sourcePath: string;
+  certainty: CertaintyStatus;
+  lastUpdatedInGameDate: string;
+  playerVisible: true;
+}
+
+export interface QuestTurnChange {
+  action: "CREATE" | "UPDATE";
+  title: string;
+  description: string;
+  objectives: string[];
+  status: "RUMOR" | "ACTIVE" | "ON_HOLD" | "COMPLETED" | "FAILED";
+  giverName: string | null;
+  locationName: string | null;
+  deadline: string | null;
+  reward: string;
+  sourcePath: string;
+  certainty: CertaintyStatus;
+  reason: string;
+}
+
+export interface WorldEnvironment {
+  temperatureC: number | null;
+  temperatureCertainty: CertaintyStatus;
+  weather: string;
+  lighting: string;
+  visibility: string;
+  wind: string;
+  precipitation: string;
+  ambientSounds: string;
+  ambientSmells: string;
+  notes: string;
 }
 
 export interface TurnDraft {
@@ -280,9 +438,13 @@ export interface TurnDraft {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  /** Compact campaign memory produced for retrieval in future turns. */
+  campaignMemory?: string;
+  environment?: WorldEnvironment;
+  environmentReason?: string;
+  questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
-  worldChanges?: WorldChangeSet;
-  newLocationKey?: string | null;
+  npcChanges?: NpcTurnChange[];
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -311,9 +473,11 @@ export interface GameTurnEntry {
   playerIntent: string;
   worldOutcome: string;
   gmNarration?: string;
+  campaignMemory?: string;
+  environment?: WorldEnvironment;
+  questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
-  worldChanges?: WorldChangeSet;
-  newLocationKey?: string | null;
+  npcChanges?: NpcTurnChange[];
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];
@@ -343,13 +507,18 @@ export interface AuditEntry {
   id: string;
   timestamp: string;
   action:
+    | "CAMPAIGN_RESET_FOR_TRIAL"
+    | "OPENING_SCENE_SAVED"
     | "SETUP_CONFIRMED"
+    | "PLAYER_CHARACTER_UPDATED"
     | "TURN_COMMITTED"
     | "TURN_COMMIT_FAILED"
     | "TECHNICAL_NOTE_ADDED"
     | "FACT_AMENDED"
     | "ENTITY_AMENDED"
     | "SOURCE_ATTACHED"
+    | "SOURCE_VERIFIED"
+    | "SOURCE_CONTEXT_CHANGED"
     | "BACKUP_EXPORTED"
     | "BACKUP_IMPORTED"
     | "INTEGRITY_CHECK";

@@ -35,21 +35,25 @@ export function evaluateAuthGuard(params: {
 }): GuardDecision {
   const { pathname, status, redirectParam } = params;
 
-  if (isPublicAuthRoute(pathname)) {
-    if (pathname === "/auth" && status === "authenticated") {
-      return { action: "redirect_to_app", target: sanitizeRedirectPath(redirectParam) };
-    }
-    return { action: "allow_public" };
-  }
-
+  // A missing Supabase configuration must not silently unlock a campaign.
+  // Route the user to /auth, where local-only guest mode requires an explicit opt-in.
   if (status === "unconfigured") {
-    return { action: "render_unconfigured" };
+    return isPublicAuthRoute(pathname)
+      ? { action: "allow_public" }
+      : { action: "redirect_to_auth", redirectTo: sanitizeRedirectPath(pathname) };
   }
   if (status === "loading") {
     return { action: "render_loading" };
   }
   if (status === "error") {
     return { action: "render_error" };
+  }
+
+  if (isPublicAuthRoute(pathname)) {
+    if (pathname === "/auth" && status === "authenticated") {
+      return { action: "redirect_to_app", target: sanitizeRedirectPath(redirectParam) };
+    }
+    return { action: "allow_public" };
   }
 
   if (status !== "authenticated") {

@@ -1,55 +1,95 @@
-# Cloud sync implementation status
+> **Исторический снимок, не текущий статус (обновление 2026-11-27).** Этот файл описывает состояние на 2026-11-26 и сохранён как техническая история. Текущая рабочая ветка — `cloud-api-client`; `obsidian-gm` развёрнут как ACTIVE v65, `obsidian-api` — v7, `obsidian-app` — v8. Единственная активная мировая хроника — Экдрасиль 2.4 (SHA-256 `6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4`, server record v4). Последующая реализация и оставшиеся acceptance gates фиксируются в `EKDRASIL_AI_MASTER_ADOPTION.md`; не использовать более старые номера версий из тела этого снимка как действующие.
+>
+# Obsidian D&D Master — implementation status
 
-Updated: 2026-11-25
+Updated: 2026-11-26
 
-## Source baseline
-- Lovable project: `f1a28b3c-1045-4cea-a6be-745d1ef02a64`
-- Source commit captured: `e2a529bc76908503dc06a5a361ec5dd3cd87de03`
-- GitHub snapshot: `main` at `a1c8ec885b760116b1e2e8578830609cedd92d44`
-- Work branch: `cloud-api-client`
-- The snapshot excludes `.env` and `public/favicon.ico`. No secrets were committed.
+## Source of truth and working rules
 
-## Implemented on cloud-api-client
-- `src/lib/obsidian-api.ts`: typed client for the existing `obsidian-api` Edge Function.
-- Uses the existing authenticated Supabase client and requires an active user session.
-- Calls only existing actions: `create_campaign`, `bootstrap`, `save_draft`, `commit_turn`.
-- Does not accept or send `owner_id` / `user_id`; the server derives actor from the verified JWT.
-- Handles Edge Function errors and rejects empty campaign/draft identifiers and incomplete draft text.
-- Draft status union matches the SQL contract: `draft` / `ready_to_commit`.
-- `src/lib/obsidian-api.test.ts`: validation-guard tests.
-- `.github/workflows/ci.yml`: Bun install, Vitest, and production build workflow.
+- GitHub repository: `poip14poip-beep/obsidian-dnd-master.` (the final period belongs to the repository name).
+- Active development branch: `cloud-api-client`.
+- GitHub is the code, review, CI and publication source of truth. Lovable is not used.
+- No force-push, history rewrite, or merge into the default branch is part of this work.
+- The app must support any valid imported player character. No named example character is a built-in protagonist or required fixture.
+- Keep the three epistemic layers separate: D&D 2024/SRD rules, Ekdrasil world canon, and campaign-local state. A player dossier is a separate character source, never global world canon.
 
-## Verified backend contract
-Edge Function `obsidian-api` is ACTIVE v1 with `verify_jwt=true`. It verifies the supplied JWT with `auth.getUser` and supports:
-- `create_campaign`: title + optional object settings.
-- `bootstrap`: campaign_id.
-- `save_draft`: campaign_id + draft keys limited to id, proposed_turn, player_action, gm_resolution, pending_changes, status.
-- `commit_turn`: draft_id.
+## Current architecture
 
-SQL inspection confirmed `obsidian_api_save_draft` accepts only statuses `draft` and `ready_to_commit`. Commit requires an active campaign, campaign date and location, verified player character, and verified required sources (master_rules, world_canon, player_character). Do not assume a created preparation campaign is ready to commit turns.
+- Mobile-first React/TypeScript app, local browser persistence, source ingestion and review lifecycle, campaign setup gate, character sheet, GM structured turn output, explicit turn preview/confirmation, append-only local journal, integrity audit and JSON backup/restore.
+- Rules source: D&D 2024 / SRD 5.2.1.
+- Procedure source: ОБСИДИАН 4.1.
+- World source: the Ekdrasil Chronicle stored in the private GM base.
+- The GM distinguishes objective world facts, player-character knowledge, NPC-specific knowledge and out-of-character information.
+- Unknown facts remain UNKNOWN; uncertain facts are not silently upgraded to canon.
+- The AI proposes a structured turn. The local store validates the proposed deltas and requires explicit confirmation before committing the turn.
 
-## Not yet implemented / not yet verified
-- The React store and UI still use localStorage; the new client is not wired into the store.
-- No UI campaign picker or selected campaign_id exists yet.
-- No automatic migration/import from localStorage. Any import must remain an explicit, reviewed user action.
-- No UI -> DB serializer/mapper for the 11 local collections and 13 DB tables.
-- No `upsert_entity` or `verify_readback` action currently exists.
-- No browser JWT end-to-end test has been performed.
-- GitHub Actions run has not yet been observed; initial workflow query returned no runs.
-- No campaign or character data has been created.
+## Recent GM improvements
 
-## Next safe implementation steps
-1. Add pure, tested mappers for `campaigns + world_state`, `player_character_state.character_data`, `npcs + npc_knowledge`, and sources metadata.
-2. Keep `TECHNICAL_NOTE` out of the append-only game `session_log`.
-3. Add explicit cloud campaign selection and read-only bootstrap before any write/sync.
-4. Add server-side entity upsert and read-back/checksum endpoint only after mapping and ownership rules are reviewed.
-5. Run authenticated E2E tests with a dedicated test account and clean up test rows.
-6. Wire save/commit only after all preconditions and read-back verification pass.
+- The server prompt now defines an explicit source hierarchy: rules, governing procedure, world chronicle, campaign state, character sheet and player intent.
+- The server receives a compact chronicle index for the last 300 committed turns plus detailed recent and query-relevant journal entries.
+- The GM is instructed to consult that chronicle before every action and preserve earlier consequences, promises, debts, relationships, injuries and discoveries.
+- Canon retrieval now also uses campaign date, current/start location, start narrative, player species/class and known NPC/faction/location names when selecting relevant Chronicle passages.
+- The GM model router uses DeepSeek V4.1 Flash for routine actions, Claude Sonnet 5.5 first for high-impact actions and biographies, and Gemini 4 Argon as a later fallback. Only one model is called on a successful attempt; subsequent models are fallbacks, not parallel calls.
+- High-impact routing includes combat, attacks, damage, injuries, death, saving throws, spells, resources, inventory, currency, factions, NPCs, negotiations, stealth, quests and consequential world changes.
+- The deployed `obsidian-gm` Edge Function is ACTIVE version 14, JWT verification enabled. The deployed source was checked after publication: it contains the new model routes, source hierarchy, chronicle instructions and character appearance schema. The old Lovable origin has been removed from its allowlist.
+- RouterAI model IDs used by the router were checked against the provider's current catalogue: `anthropic/claude-sonnet-5.5`, `google/gemini-4-argon`, and `deepseek/deepseek-v4.1-flash`.
 
-## Safety invariants
-- Never put Supabase service-role/secret keys in the browser, repo, or `VITE_*` variables.
-- Do not expose `obsidian` tables directly to the browser.
-- Never trust client-supplied owner IDs.
-- Do not auto-import local state or overwrite it with cloud data.
-- Preserve append-only semantics for `session_log` and `audit_log`.
-- Keep player-character state separate from world state.
+## Character portability
+
+- Removed hardcoded named-character assumptions from campaign setup copy and the player/NPC knowledge instructions.
+- The character biography schema has a structured appearance section: height, build, skin, hair, eyes, face, clothing, footwear, accessories, distinctive features and first impression.
+- The preview renders these fields separately.
+- The import flow accepts a supplied character sheet; it is not tied to a sample character.
+- The random level-one generator remains limited to three supported classes (Fighter, Rogue, Barbarian). This is a limitation of the random generator, not of importing a ready-made character.
+
+## Cloud snapshot persistence — implemented stage
+
+Supabase project contains a private `obsidian` schema with 16 tables and 12 registered migrations. RLS is enabled. Direct `anon` and `authenticated` access to the private schema remains locked down.
+
+Added:
+
+- `obsidian.campaign_snapshots`: append-only cloud snapshot table, RLS enabled, no direct client policies or grants.
+- `public.obsidian_api_save_campaign_snapshot`: service-role-only RPC. Validates the complete backup envelope, collection separation, turn number and all 11 collection checksums; uses a per-campaign advisory lock and optimistic revision checks; stores a SHA-256 digest; verifies the saved row by reading it back; appends an audit record.
+- `public.obsidian_api_get_latest_campaign_snapshot`: service-role-only RPC. Checks campaign ownership and verifies the stored SHA-256 before returning the latest snapshot.
+- The authenticated `obsidian-api` Edge Function exposes `save_snapshot` and `latest_snapshot`. It is ACTIVE version 6 with JWT verification enabled.
+- Snapshot writes now enforce monotonic turn numbers, at most one new committed turn per revision, and exact preservation of the previous session-log and audit-log prefixes. Rewriting or truncating committed history is rejected server-side.
+- Settings now supports creating a cloud campaign, loading the latest snapshot, and explicitly restoring it. Restore downloads a backup of the current local state first and requires player acknowledgement before replacing all 11 local collections.
+- After every locally confirmed game turn, the store attempts to append a full cloud snapshot. The game and journal screens show saving/success/failure status and allow retry.
+- A local cloud-campaign pointer stores only campaign UUID and last known revision. Revision conflicts block overwriting a newer snapshot from another device.
+- Resetting the active local trial campaign clears the cloud link but does not delete older cloud snapshots.
+- The internal RLS event-trigger function no longer grants direct EXECUTE to anon/authenticated. A transaction probe confirmed the event trigger still automatically enables RLS on newly created tables.
+
+Important boundary: cloud snapshots are full backup archives of all 11 local collections. They are not yet a relational projection/upsert of every collection into the existing normalized campaign tables, and the app's normal gameplay path still commits locally rather than using the server-side `commit_turn` transaction as the authoritative turn commit. This is the next cloud-persistence stage.
+
+## Backend inventory
+
+- Private schema: 16 tables, RLS enabled.
+- Registered migrations: 12. The three new snapshot/security migration files are versioned in this branch; the nine older migration SQL files are not present in the current repository tree. The live database state has been inspected, but a clean Supabase project cannot yet be reconstructed from this branch's migration folder alone. Recover and version the original schema baseline before treating infrastructure as reproducible.
+- `obsidian-gm`: ACTIVE v14, JWT required.
+- `obsidian-api`: ACTIVE v6, JWT required.
+- `obsidian-app`: ACTIVE v8, serves the public app shell; JWT disabled only for this static public endpoint.
+- GitHub Actions now publishes both GitHub Pages and the `static-site` branch used by `obsidian-app`. The static-site branch was read back after deployment: its HTML has the correct Supabase-host base path and no build-time “Supabase Auth not configured” error shell.
+- Supabase service-role credentials and RouterAI key remain server-side; no service-role secret is placed in browser code or `VITE_*` variables.
+- Security advisor currently reports three RLS-enabled private tables with no policies (`campaign_snapshots`, `gm_base_documents`, `gm_source_documents`). This is intentional: the schema is not directly exposed to browser roles and access is mediated by server functions.
+- Leaked-password protection in Supabase Auth is still disabled and should be enabled as a separate account-security hardening task.
+
+## Verification status
+
+- GitHub Actions CI runs: `bun run test`, `bunx tsc --noEmit`, and `bun run build`. The latest CI on commit `bdd12d42008263d0a27b18928f579862808f31c1` passed; GitHub Pages deployment and Supabase static-host publication also passed.
+- Cloud snapshot client validation and local-only mode have unit coverage.
+- Database migration application, private table/RLS state, RPC existence and service-role-only execution grants were checked.
+- `obsidian-gm` v14 was deployed and its deployed source was read back to verify the expected changes.
+- The GitHub Pages artifact from the build was inspected: both `index.html` and `_shell.html` render the app title, do not contain the previous auth-configuration error, and reference the expected GitHub Pages asset base path. The client bundle contains the public Supabase publishable key and no Lovable telemetry URL.
+- No authenticated end-to-end cloud save/restore test has yet been completed using a real player session.
+- No full Android-device acceptance run has yet been completed.
+- No claim of complete production-ready autonomous gameplay is made at this stage.
+
+## Remaining implementation sequence
+
+1. **Relational cloud state and authoritative turn commit.** Map all 11 local collections into the existing normalized tables; create an atomic server transaction for the complete turn delta; preserve append-only session/audit history; add idempotency, optimistic locking and read-back; migrate the gameplay commit path to the server only after authenticated integration tests pass.
+2. **Deterministic D&D 2024 mechanics.** Separate trusted dice generation and mechanical calculations from model narration. Validate action economy, attacks, damage, conditions, concentration, rests, HP, inventory, encumbrance, currency, movement and spell resources in code.
+3. **Canon ingestion and review.** Preserve exact source references and section boundaries; add candidate facts, temporal validity, contradiction review and explicit approval. Never auto-select a winning version or promote candidate dates.
+4. **NPC/world simulation.** Persist individual NPC goals, resources, knowledge boundaries, relationships, schedules and delayed consequences; ensure no NPC receives knowledge without an in-world channel.
+5. **Android acceptance.** Test touch targets, keyboard, long text, offline/error states, reload, cloud recovery and the complete action → model proposal → roll → delta preview → player confirmation → save → read-back → restart → restore scenario.
+
+Do not call the prototype accepted/playable until the complete end-to-end Definition of Done has been verified.

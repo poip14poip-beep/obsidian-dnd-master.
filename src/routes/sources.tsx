@@ -2,14 +2,18 @@ import { createFileRoute } from "@tanstack/react-router";
 import { FileUp, Plus } from "lucide-react";
 import { useState, type ChangeEvent, type FormEvent } from "react";
 import { toast } from "sonner";
+import { useAuth } from "@/auth/auth-context";
+import { readSupabaseEnv } from "@/lib/supabase-auth";
 
 import { CertaintyBadge, SourceTypeBadge } from "@/components/StatusPill";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import type { SourceDocument } from "@/domain/types";
 import { extractDocxText } from "@/domain/docx-text";
+import { processSourceContent } from "@/domain/source-processing";
 import { useObsidianStore } from "@/store/obsidian-store";
 
 export const Route = createFileRoute("/sources")({
@@ -35,12 +39,49 @@ export const Route = createFileRoute("/sources")({
 });
 
 function SourcesPage() {
-  const { sources, attachSourceContent, addSupplementalSource } = useObsidianStore();
+  const { sources, attachSourceContent, addSupplementalSource, verifySource, setSourceContextEnabled } = useObsidianStore();
+  const { session } = useAuth();
+  const [vaultBusy, setVaultBusy] = useState<"OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE" | "CHARACTER_GENERATION_GUIDE" | null>(null);
+  const [vaultStatus, setVaultStatus] = useState<Record<string, string>>({});
+  async function uploadMasterDocument(kind: "OBSIDIAN_MASTER_PROMPT" | "SRD_5_2_1" | "EKDRASIL_WORLD_BIBLE" | "CHARACTER_GENERATION_GUIDE", event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file || vaultBusy) return;
+    const env = readSupabaseEnv();
+    if (!session?.access_token || !env.ok) {
+      toast.error("Для загрузки служебных документов требуется активная сессия Supabase.");
+      event.target.value = "";
+      return;
+    }
+    setVaultBusy(kind);
+    try {
+      if (file.name.toLowerCase().endsWith(".pdf")) throw new Error("PDF пока не поддерживается. Загрузи текстовую версию .txt/.md.");
+      const content = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
+      if (!content.trim()) throw new Error("Файл пуст или текст не удалось извлечь.");
+      const response = await fetch(env.config.url + "/functions/v1/obsidian-gm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + session.access_token, apikey: env.config.publishableKey },
+        body: JSON.stringify({ operation: "STORE_GM_SOURCE", sourceKind: kind, title: file.name, content }),
+      });
+      const payload = await response.json().catch(() => null) as { stored?: boolean; source?: { sha256?: string; version?: number }; error?: { message?: string } } | null;
+      if (!response.ok || !payload?.stored) throw new Error(payload?.error?.message ?? "Сервер не подтвердил сохранение.");
+      const version = String(payload.source?.version ?? "UNKNOWN");
+      const hash = payload.source?.sha256 ?? "UNKNOWN";
+      setVaultStatus((current) => ({ ...current, [kind]: file.name + " · версия " + version + " · SHA-256 " + hash.slice(0, 12) }));
+      toast.success(kind === "OBSIDIAN_MASTER_PROMPT" ? "ОБСИДИАН 4.1 сохранён в постоянном ядре мастера." : kind === "SRD_5_2_1" ? "SRD 5.2.1 сохранён в постоянном ядре мастера." : kind === "EKDRASIL_WORLD_BIBLE" ? "Хроника Экдрасиля сохранена в постоянной библии мира." : "Методика генерации персонажей сохранена отдельно от канона и правил.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось сохранить служебный документ.");
+    } finally {
+      setVaultBusy(null);
+      event.target.value = "";
+    }
+  }
+  const playerVisibleSources = sources.filter((source) => source.playerVisible !== false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftContent, setDraftContent] = useState("");
   const [draftOrigin, setDraftOrigin] = useState("");
   const [draftNotes, setDraftNotes] = useState("");
   const [draftFileName, setDraftFileName] = useState<string | null>(null);
+  const [savingSource, setSavingSource] = useState(false);
 
   const [newTitle, setNewTitle] = useState("");
   const [newOrigin, setNewOrigin] = useState("");
@@ -60,6 +101,9 @@ function SourcesPage() {
     if (!file) return;
     let text: string;
     try {
+      if (file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf") {
+        throw new Error("PDF не преобразуется в текст в текущей версии приложения. Загрузи .txt или .md с извлечённым текстом; встроенная проверенная справка SRD 5.2.1 уже доступна мастеру.");
+      }
       text = file.name.toLowerCase().endsWith(".docx") ? await extractDocxText(file) : await file.text();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось прочитать файл.");
@@ -72,20 +116,39 @@ function SourcesPage() {
     toast.info(`Прочитан файл ${file.name} (${text.length} симв.). Нажмите «Сохранить источник».`);
   }
 
-  function handleSaveSource(e: FormEvent) {
+  async function handleSaveSource(e: FormEvent) {
     e.preventDefault();
-    if (!editingId) return;
-    const res = attachSourceContent(editingId, {
-      fileName: draftFileName,
-      content: draftContent,
-      originLabel: draftOrigin,
-      notes: draftNotes,
-    });
-    if (res.ok) {
-      toast.success("Источник сохранён и проверен обратным чтением.");
-      setEditingId(null);
-    } else {
-      toast.error(res.error);
+    if (!editingId || savingSource) return;
+    const source = sources.find((item) => item.id === editingId);
+    if (!source) {
+      toast.error("Источник больше не найден. Обновите страницу и проверьте состояние.");
+      return;
+    }
+    setSavingSource(true);
+    try {
+      const processed = await processSourceContent(
+        { id: source.id, title: source.title, type: source.type, fileName: draftFileName },
+        draftContent,
+      );
+      const res = attachSourceContent(editingId, {
+        fileName: draftFileName,
+        content: draftContent,
+        originLabel: draftOrigin,
+        notes: draftNotes,
+        processing: processed.processing,
+        canonSections: processed.canonSections,
+        dateMentions: processed.dateMentions,
+      });
+      if (res.ok) {
+        toast.success(`Источник обработан: SHA-256 подтверждён, ${processed.processing.lineCount} строк, ${processed.processing.sectionCount} разделов.`);
+        setEditingId(null);
+      } else {
+        toast.error(res.error);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось обработать источник.");
+    } finally {
+      setSavingSource(false);
     }
   }
 
@@ -114,13 +177,44 @@ function SourcesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4"><div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+      <div className="space-y-1">
+        <h2 className="text-base font-semibold text-foreground">Закрытое хранилище мастера</h2>
+        <p className="text-xs text-muted-foreground">Это постоянное ядро мастера Экдрасиля, общее для всех кампаний. Документы хранятся на сервере отдельно от кампаний и персонажей; загрузить их нужно один раз. В игровых ходах сервер подключает правила и релевантные фрагменты мировой хроники автоматически.</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>ОБСИДИАН 4.1 · полный управляющий промт</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("OBSIDIAN_MASTER_PROMPT", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">MD, TXT или DOCX. Загружается один раз и далее подключается сервером.</span>
+          {vaultStatus["OBSIDIAN_MASTER_PROMPT"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["OBSIDIAN_MASTER_PROMPT"]}</span>}
+        </label>
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>SRD 5.2.1 · правила D&D 2024</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("SRD_5_2_1", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">Нужна текстовая версия MD/TXT/DOCX; PDF пока не поддерживается.</span>
+          {vaultStatus["SRD_5_2_1"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["SRD_5_2_1"]}</span>}
+        </label>
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>Хроника Экдрасиля · постоянный лор мира</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("EKDRASIL_WORLD_BIBLE", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">Подключается ко всем кампаниям Экдрасиля. Персонажи и события кампаний сюда не попадают.</span>
+          {vaultStatus["EKDRASIL_WORLD_BIBLE"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["EKDRASIL_WORLD_BIBLE"]}</span>}
+        </label>
+        <label className="space-y-1.5 text-sm font-medium">
+          <span>Методика генерации персонажей · референс мастера</span>
+          <input type="file" accept=".md,.txt,.docx" disabled={!session || vaultBusy !== null} onChange={(event) => void uploadMasterDocument("CHARACTER_GENERATION_GUIDE", event)} className="block w-full text-xs" />
+          <span className="block text-[11px] text-muted-foreground">Отдельные инструкции о случайной генерации биографий и предысторий. Не является каноном, не меняет SRD и не импортируется в кампании.</span>
+          {vaultStatus["CHARACTER_GENERATION_GUIDE"] && <span className="block text-[11px] text-emerald-500">{vaultStatus["CHARACTER_GENERATION_GUIDE"]}</span>}
+        </label>
+      </div>
+      {vaultBusy && <p className="text-xs text-muted-foreground">Сохраняю документ в постоянной базе мастера…</p>}
+    </div>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h1 className="text-xl font-bold text-foreground">Источники (Provenance)</h1>
+          <h1 className="text-xl font-bold text-foreground">Служебные источники мастера</h1>
           <p className="text-xs text-muted-foreground">
-            Три раздельных типа документов: управляющий документ, канон мира и отдельный лист
-            персонажа. Содержимое не выдумывается; загрузка файла не запускает кампанию.
+            Постоянные документы мастера (ОБСИДИАН 4.1, SRD 5.2.1 и хроника Экдрасиля) не относятся к отдельной кампании и не загружаются заново при её создании. Лист персонажа и изменяемое состояние мира остаются отдельными данными прохождения.
           </p>
         </div>
         <Button
@@ -184,7 +278,7 @@ function SourcesPage() {
       )}
 
       <div className="space-y-3">
-        {sources.map((src) => {
+        {playerVisibleSources.map((src) => {
           const isEditing = editingId === src.id;
           return (
             <article key={src.id} className="panel-surface space-y-3 p-4">
@@ -221,11 +315,53 @@ function SourcesPage() {
                       : "Файл не загружен (содержимое не выдумано)"}
                   </strong>
                 </span>
-                <span className="mono-code">SHA/FNV: {src.checksum}</span>
+                <span className="mono-code">Хеш записи: {src.checksum}</span>
+                <span className="mono-code">SHA-256: {src.processing?.sha256 ?? "НЕ ПРОВЕРЕН"}</span>
                 {src.fileName && <span className="mono-code">Файл: {src.fileName}</span>}
+                <span>Обработка: <strong className="text-foreground">{src.processing?.status === "PROCESSED" ? "ПРОВЕРЕН" : "НЕ ОБРАБОТАН"}</strong></span>
+                {src.processing?.status === "PROCESSED" && <span>{src.processing.lineCount} строк · {src.processing.sectionCount} разделов · {src.processing.chunkCount} фрагментов</span>}
+                {src.processing?.dateCandidateCount ? <span>Кандидатов дат: {src.processing.dateCandidateCount} (не утверждены)</span> : null}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-background/50 p-3">
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-xs font-medium text-foreground">
+                    Проверка содержимого: {src.reviewStatus === "VERIFIED" ? "ПОДТВЕРЖДЁН ПОЛЬЗОВАТЕЛЕМ" : "НЕ ПРОВЕРЕНО"}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Загрузка и SHA-256 не означают, что содержимое сверено с оригиналом.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="touch-target"
+                  disabled={src.contentStatus !== "ATTACHED" || src.processing?.status !== "PROCESSED" || src.reviewStatus === "VERIFIED"}
+                  onClick={() => {
+                    const result = verifySource(src.id);
+                    if (result.ok) toast.success("Содержимое источника отмечено как проверенное.");
+                    else toast.error(result.error);
+                  }}
+                >
+                  Подтвердить содержимое
+                </Button>
+                <label className="flex min-h-11 items-center gap-2 text-xs text-foreground">
+                  <Checkbox
+                    checked={src.contextEnabled === true}
+                    disabled={src.contentStatus !== "ATTACHED" || src.processing?.status !== "PROCESSED" || src.reviewStatus !== "VERIFIED"}
+                    onCheckedChange={(checked) => {
+                      const result = setSourceContextEnabled(src.id, checked === true);
+                      if (result.ok) toast.success(checked ? "Источник включён в контекст ИИ." : "Источник исключён из контекста ИИ.");
+                      else toast.error(result.error);
+                    }}
+                  />
+                  Включить в контекст ИИ
+                </label>
               </div>
 
               {src.notes && <p className="text-xs text-muted-foreground">{src.notes}</p>}
+              {src.processing?.warnings.map((warning, index) => <p key={index} className="text-xs text-status-approx">Предупреждение обработки: {warning}</p>)}
 
               {src.contentStatus === "ATTACHED" && !isEditing && (
                 <details className="rounded border border-border bg-background/60 p-2.5 text-xs">
