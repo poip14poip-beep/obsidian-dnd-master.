@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, cloud-api-client]
+    branches: [main, cloud-api-client, adopt/open-dungeon-master-ekdrasil]
   pull_request:
     branches: [main]
 
