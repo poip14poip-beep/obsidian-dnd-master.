@@ -283,6 +283,34 @@ describe("game master resolver", () => {
     expect(npc.history).toHaveLength(12);
   });
 
+  it("passes completed dice as structured records separate from free-form action text", async () => {
+    const completedRoll = {
+      id: "gm-roll-test",
+      label: "Проверка Восприятия",
+      formula: "1d20+4",
+      dc: 15,
+      targetType: "DC" as const,
+      roller: "PLAYER" as const,
+      dice: [{ value: 13, sides: 20, kept: true }],
+      modifier: 4,
+      total: 17,
+      success: true,
+      result: "кости=[d20:13]; модификатор=+4; итог=17",
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction("test-user-jwt", {
+      ...context,
+      action: "Осмотреть дверь",
+      completedRolls: [completedRoll],
+    }, testOptions(fetcher as unknown as typeof fetch));
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const sent = JSON.parse(request.input);
+    expect(sent.action).toBe("Осмотреть дверь");
+    expect(sent.completedRolls).toEqual([completedRoll]);
+    expect(sent.completedRolls[0].total).toBe(17);
+    expect(sent.completedRolls[0].success).toBe(true);
+  });
+
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
