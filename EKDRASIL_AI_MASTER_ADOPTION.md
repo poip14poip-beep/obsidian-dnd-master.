@@ -111,3 +111,12 @@ Current status: **PARTIAL INTEGRATION — NOT READY FOR PLAYER TESTING AS A COMP
 - Added a server-side acceptance gate: when the analyst identifies a required player-character roll, the final response must request the player roll and must not change HP, time, inventory, resources, currency, conditions, NPC/world facts, or location before the roll result exists.
 - Request budgets are bounded to 20 seconds for analysis, 42 seconds for the primary narration model, and 18 seconds for the Gemini fallback. This is intended to keep the ordinary path within the mobile request window; real provider latency still requires live testing.
 - This is an incremental implementation, not yet a complete autonomous engine. Deterministic D&D 2024 attack/check resolution, server RNG for NPC rolls, durable pending-roll persistence/resume, idempotent commit, and full end-to-end tests remain required.
+
+
+### Implementation log — 28 November 2026 — player dice UI and engine-boundary enforcement
+- Added `src/domain/dice-roll.ts`: bounded dice-expression parser and cryptographically secure player-side roller. It accepts simple D&D expressions such as `1d20+5` and `2d6-1`, rejects unsupported expressions and out-of-range inputs, and uses rejection sampling to avoid modulo bias.
+- Added `src/domain/dice-roll.test.ts`: deterministic tests for modifiers, multiple dice, unsupported formulas, range limits, and invalid random-source values.
+- Updated `src/routes/turns.tsx`: pending player checks now show an on-screen dice control. The player taps “Бросить кубик”; the generated result is displayed and passed to the existing continuation flow. The previous free-text result field is removed for pending GM rolls.
+- Added the upstream-adapted engine-boundary contract to both the analyst and narrator system prompts, so the two-stage pipeline is explicitly governed by the same no-fabricated-roll/no-premature-mutation rules.
+- The dice UI still uses the existing same-action continuation mechanism. A durable server-side pending-roll record, signed/verified roll submission, resume after page reload, and idempotent continuation are not yet implemented.
+- Validation status: source files and tests were committed to the feature branch, but GitHub Actions has not returned a workflow run for the current PR head. Do not treat tests/build as passed until a CI run or equivalent local test is available.
