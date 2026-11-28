@@ -756,6 +756,8 @@ export async function callWithEkdrasilReadTools(options: {
   playerCharacter?: JsonRecord | null;
   completedRolls?: JsonRecord[];
   npcProfiles?: JsonRecord[];
+  /** Deterministic test seam; production defaults to cryptographic server RNG. */
+  rollRandom?: (sides: number) => number;
   maxToolRounds?: number;
   maxToolCalls?: number;
   timeoutMs?: number;
@@ -859,7 +861,7 @@ export async function callWithEkdrasilReadTools(options: {
             preparedRoll = prepared;
           } else if (prepared.roller === "GM") {
             try {
-              const completed = executePreparedServerRoll(prepared);
+              const completed = executePreparedServerRoll(prepared, options.rollRandom);
               serverRolls.push(completed);
               completedRolls.push(completed);
               toolResult = { ...toolResult, preparedRoll: null, serverRoll: completed };
