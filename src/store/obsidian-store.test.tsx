@@ -389,10 +389,10 @@ describe("hit point changes on committed turns", () => {
     });
     let checked: ReturnType<typeof result.current.checkTurnDraft>;
     act(() => { checked = result.current.checkTurnDraft(); });
-    expect(checked!.ok).toBe(true);
+    expect(checked!.ok, checked!.errors.join(" | ")).toBe(true);
     let committed: ReturnType<typeof result.current.commitTurnDraft>;
     act(() => { committed = result.current.commitTurnDraft(true); });
-    expect(committed!.ok).toBe(true);
+    expect(committed!.ok, committed!.error).toBe(true);
     expect(result.current.npcs[0]?.gmProfile?.combatProfile.hitPointsCurrent).toBe(6);
     unmount();
     const reloaded = await renderCampaignStore(storage);
