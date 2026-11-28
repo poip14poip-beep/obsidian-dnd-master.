@@ -390,6 +390,9 @@ describe("hit point changes on committed turns", () => {
         }],
       });
     });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok).toBe(true);
     let committed: ReturnType<typeof result.current.commitTurnDraft>;
     act(() => { committed = result.current.commitTurnDraft(true); });
     expect(committed!.ok).toBe(true);
