@@ -1323,7 +1323,7 @@ Deno.serve(async (req: Request) => {
         // Some compatible providers emit the final JSON roll but omit the
         // function call. Derive only from its Russian check label and DC;
         // the actual modifier/formula always comes from the verified sheet.
-        if (pendingPlayerRolls.length === 1 && modelCall.preparedRoll === null) {
+        if (pendingPlayerRolls.length === 1 && modelCall.preparedRoll == null) {
           const pending = pendingPlayerRolls[0]!;
           const label = typeof pending.label === "string" ? pending.label.trim() : "";
           const prefix = /^(спасбросок|проверка)\\s+/i.exec(label);
