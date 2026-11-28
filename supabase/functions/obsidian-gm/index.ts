@@ -144,6 +144,28 @@ async function verifyDiceProof(value: {
   return verifyPayload(diceProofPayload(payload), signature);
 }
 
+/** Atomically consume short-lived dice challenges/proofs to prevent replay. */
+async function consumeDiceNonces(
+  userId: string,
+  entries: Array<{ nonce: string; issuedAt: number }>,
+): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY || !userId || entries.length < 1 || entries.length > 5) return false;
+  if (entries.some((entry) => !entry.nonce || entry.nonce.length > 80 || !Number.isInteger(entry.issuedAt))) return false;
+  const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await serviceClient.rpc("obsidian_consume_gm_dice_nonces", {
+    p_user_id: userId,
+    p_nonces: entries.map((entry) => entry.nonce),
+    p_expires_at: entries.map((entry) => new Date(entry.issuedAt + 120_000).toISOString()),
+  });
+  if (error) {
+    console.error("[obsidian-gm] dice nonce storage failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -551,6 +573,7 @@ Deno.serve(async (req: Request) => {
       Number(rules.version) >= 2;
     checks.EKDRASIL_WORLD_BIBLE = isEkdrasilCanonV24(data.EKDRASIL_WORLD_BIBLE);
     checks.ROUTERAI_API_KEY = Boolean(ROUTERAI_API_KEY);
+    checks.SUPABASE_SERVICE_ROLE_KEY = Boolean(SUPABASE_SERVICE_ROLE_KEY);
     const canon = isRecord(data.EKDRASIL_WORLD_BIBLE) ? data.EKDRASIL_WORLD_BIBLE : {};
     const ready = Object.values(checks).every(Boolean);
     return json({
