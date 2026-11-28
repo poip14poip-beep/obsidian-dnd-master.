@@ -809,7 +809,7 @@ export async function callWithEkdrasilReadTools(options: {
     const result = await send(toolBody);
     if (!result.response.ok) return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     if (!result.payload || typeof result.payload !== "object" || Array.isArray(result.payload)) {
-      return { ...result, toolCalls, exhausted: false, preparedRoll, conversation: messages };
+      return { ...result, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     }
     const root = result.payload as JsonRecord;
     const choices = Array.isArray(root.choices) ? root.choices : [];
