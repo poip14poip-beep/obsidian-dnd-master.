@@ -51,7 +51,7 @@ function GamePage() {
   const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; targetType: "DC" | "AC" | "NONE"; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc?: number | null; targetType?: "DC" | "AC" | "NONE"; roller?: "PLAYER" | "GM"; result: string }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -156,7 +156,7 @@ function GamePage() {
     }
   }, [turnCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft, nextTurnNumber]);
 
-  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null }> = []) {
+  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string }> = []) {
     return {
       action,
       mode,
@@ -347,6 +347,7 @@ function GamePage() {
       modifier: rolled.modifier,
       total: rolled.total,
       success,
+      result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
     const allRolls = [...completedPlayerRolls, rollRecord];
     setCompletedPlayerRolls(allRolls);
