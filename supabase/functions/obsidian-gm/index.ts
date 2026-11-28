@@ -919,7 +919,7 @@ Deno.serve(async (req: Request) => {
           !submittedPlayerRolls.some((submitted) => rollKey(check.checkType, check.formula) === rollKey(submitted.label, submitted.formula))
         );
         const analystRequiresNewRoll = turnAnalysisReport?.requiresPlayerRoll === true &&
-          (!playerRollContinuationReceived || unresolvedAnalystChecks.length > 0);
+          (!playerRollContinuationReceived || analystChecks.length === 0 || unresolvedAnalystChecks.length > 0);
         const hasPendingPlayerRoll = candidateRolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
         if (analystRequiresNewRoll && !hasPendingPlayerRoll) {
           failures.push(`${attempt.id}: analyst required a new player roll but final turn omitted it`);
