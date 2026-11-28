@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createEmptyTurnDraft, createInitialCollections } from "./defaults";
-import { runIntegrityAudit, validateTurnDraft } from "./integrity";
+import { applyHitPointDelta, runIntegrityAudit, validateTurnDraft } from "./integrity";
 describe("turn HP validation", () => {
   it("does not silently discard an HP change when current HP is unknown", () => {
     const state = createInitialCollections();
@@ -109,4 +109,40 @@ describe("source context review audit", () => {
     const report = runIntegrityAudit(state);
     expect(report.checks.find((item) => item.id === "source-context-review")?.passed).toBe(true);
   });
+
+describe("D&D 2024 hit point resolution", () => {
+  it("absorbs damage with temporary HP before reducing current HP", () => {
+    expect(applyHitPointDelta(12, 20, 5, -3)).toEqual({ hpCurrent: 12, hpTemp: 2, error: null });
+    expect(applyHitPointDelta(12, 20, 5, -8)).toEqual({ hpCurrent: 9, hpTemp: 0, error: null });
+  });
+
+  it("does not allow temporary HP to make an otherwise lethal damage event invalid", () => {
+    expect(applyHitPointDelta(4, 20, 6, -10)).toEqual({ hpCurrent: 0, hpTemp: 0, error: null });
+  });
+
+  it("caps healing at maximum HP and never restores temporary HP", () => {
+    expect(applyHitPointDelta(18, 20, 4, 9)).toEqual({ hpCurrent: 20, hpTemp: 4, error: null });
+  });
+
+  it("rejects damage beyond available current and temporary HP", () => {
+    expect(applyHitPointDelta(3, 20, 2, -6).error)
+      .toBe("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
+  });
+
+  it("rejects HP changes when current HP is unknown", () => {
+    expect(applyHitPointDelta(null, 20, 5, -2).error)
+      .toBe("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущее значение HP в листе персонажа.");
+  });
+
+  it("turn validation accounts for temporary HP when checking incoming damage", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    state.player_character_state.hpCurrent = 4;
+    state.player_character_state.hpMax = 20;
+    state.player_character_state.hpTemp = 6;
+    const draft = { ...createEmptyTurnDraft(), summary: "Получен удар", worldOutcome: "Урон поглощён временными HP", hpDelta: -10 };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state)).toEqual([]);
+  });
+});
+
 });
