@@ -46,7 +46,12 @@ export interface GameMasterTurn {
   };
   needsClarification: boolean; clarificationQuestion: string; stateNotes: string[];
 }
-export interface GameMasterResult { turn: GameMasterTurn; model: string; usage?: { input_tokens?: number; output_tokens?: number }; }
+export interface GameMasterResult {
+  turn: GameMasterTurn;
+  model: string;
+  pendingTurnId?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
+}
 export class GameMasterError extends Error {
   constructor(message: string, readonly code: string) { super(message); this.name = "GameMasterError"; }
 }
@@ -898,5 +903,6 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
 
     };
   }
-  return { turn, model, ...(usage ? { usage } : {}) };
+  const pendingTurnId = typeof record["pendingTurnId"] === "string" ? record["pendingTurnId"] : undefined;
+  return { turn, model, ...(pendingTurnId ? { pendingTurnId } : {}), ...(usage ? { usage } : {}) };
 }
