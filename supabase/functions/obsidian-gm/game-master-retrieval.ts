@@ -67,6 +67,23 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "prepare_player_damage",
+      description: "Разрешить уже завершённую сервером атаку героя и, только при попадании, подготовить отдельный бросок урона по формуле выбранного оружия из подтверждённого листа. При промахе урон не бросается.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          weapon: { type: "string", minLength: 1, maxLength: 80 },
+          targetName: { type: "string", minLength: 2, maxLength: 100 },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["weapon", "targetName", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "prepare_npc_attack",
       description: "Подготовить атаку существа/NPC по главному герою. Бонус атаки берётся только из найденного статблока SRD 5.2.1, AC героя — из подтверждённого листа. Требуется предварительный search_dnd_rules по существу и атаке. Бросок выполняет сервер.",
       parameters: {
@@ -367,6 +384,93 @@ function prepareNpcAttack(
   };
 }
 
+type AttackResolution = {
+  hit: boolean;
+  critical: boolean;
+  total: number;
+  targetAC: number;
+  naturalD20: number | null;
+};
+
+function resolveCompletedAttack(
+  completedRolls: JsonRecord[],
+  roller: "PLAYER" | "GM",
+  expectedLabel: string,
+): AttackResolution | null {
+  const roll = [...completedRolls].reverse().find((item) =>
+    item.roller === roller && item.targetType === "AC" && item.label === expectedLabel,
+  );
+  if (!roll || !Number.isInteger(roll.total) || !Number.isInteger(roll.dc) ||
+      !Array.isArray(roll.dice) || typeof roll.success !== "boolean") return null;
+  const keptD20 = roll.dice.filter((die) =>
+    die && typeof die === "object" && (die as JsonRecord).sides === 20 &&
+    (die as JsonRecord).kept === true && Number.isInteger((die as JsonRecord).value),
+  ).map((die) => (die as JsonRecord).value as number);
+  if (keptD20.length !== 1 || keptD20[0]! < 1 || keptD20[0]! > 20) return null;
+  const naturalD20 = keptD20[0]!;
+  const critical = naturalD20 === 20;
+  const hit = critical || (naturalD20 !== 1 && (roll.total as number) >= (roll.dc as number));
+  // The signed result's success flag is checked against its signed DC by the
+  // endpoint. Attack rules additionally make a natural 1 miss and natural 20 hit.
+  return { hit, critical, total: roll.total as number, targetAC: roll.dc as number, naturalD20 };
+}
+
+function doubleDamageDice(formula: string): string {
+  return formula.replace(/(\\d*)d(\\d+)/gi, (_match, count: string, sides: string) =>
+    String(Number(count || 1) * 2) + "d" + sides,
+  );
+}
+
+function preparePlayerDamage(
+  args: JsonRecord,
+  playerCharacter: JsonRecord | null,
+  completedRolls: JsonRecord[],
+  alreadyPrepared: boolean,
+): JsonRecord {
+  if (alreadyPrepared) return { ok: false, error: "В одном ходе уже ожидается другой бросок." };
+  if (!playerCharacter || playerCharacter.statsCertainty !== "KNOWN" || !Array.isArray(playerCharacter.weaponAttacks)) {
+    return { ok: false, error: "Для расчёта урона нужен подтверждённый лист героя с оружейными атаками." };
+  }
+  const weapon = typeof args.weapon === "string" ? args.weapon.trim() : "";
+  const targetName = typeof args.targetName === "string" ? args.targetName.trim() : "";
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  if (!weapon || targetName.length < 2 || reason.length < 3 || reason.length > 200) {
+    return { ok: false, error: "Для урона нужны точное оружие, цель и причина." };
+  }
+  const entry = (playerCharacter.weaponAttacks as unknown[]).find((item) =>
+    item && typeof item === "object" && typeof (item as JsonRecord).weapon === "string" &&
+    ((item as JsonRecord).weapon as string).normalize("NFKC").trim().toLocaleLowerCase() === weapon.normalize("NFKC").toLocaleLowerCase(),
+  ) as JsonRecord | undefined;
+  if (!entry || typeof entry.damage !== "string" || !parseDiceFormula(entry.damage)) {
+    return { ok: false, error: "Формула урона выбранного оружия отсутствует или не подтверждена листом героя." };
+  }
+  const label = "Атака " + weapon + " по " + targetName;
+  const resolution = resolveCompletedAttack(completedRolls, "PLAYER", label);
+  if (!resolution) {
+    return { ok: false, error: "Не найден подтверждённый результат атаки этого героя по этой цели. Нельзя рассчитывать урон." };
+  }
+  if (!resolution.hit) {
+    return { ok: true, attackResolution: { ...resolution, outcome: "MISS" }, preparedRoll: null, note: "Атака промахнулась. Бросок урона не требуется." };
+  }
+  const formula = resolution.critical ? doubleDamageDice(entry.damage) : entry.damage.replace(/\\s+/g, "");
+  const parsed = parseDiceFormula(formula);
+  if (!parsed) return { ok: false, error: "Формула урона не поддерживается серверным генератором." };
+  return {
+    ok: true,
+    attackResolution: { ...resolution, outcome: resolution.critical ? "CRITICAL_HIT" : "HIT" },
+    preparedRoll: {
+      roller: "PLAYER",
+      label: "Урон " + weapon + " по " + targetName,
+      formula,
+      dc: null,
+      targetType: "NONE",
+      modifier: parsed.modifier,
+      kind: "PLAYER_DAMAGE",
+      reason,
+    },
+  };
+}
+
 function prepareNpcDamage(
   args: JsonRecord,
   rules: RetrievalSource,
@@ -382,15 +486,12 @@ function prepareNpcDamage(
     return { ok: false, error: "Для урона нужны имя существа, точное имя атаки и причина." };
   }
   const expectedLabel = "Атака " + creatureName + " (" + attackName + ")";
-  const priorAttack = [...completedRolls].reverse().find((roll) =>
-    roll.roller === "GM" && roll.targetType === "AC" && roll.label === expectedLabel,
-  );
-  if (!priorAttack || !Number.isInteger(priorAttack.dc)) {
-    return { ok: false, error: "Нет завершённого серверного броска атаки этой цели. Урон пока не разрешён." };
+  const attackResolution = resolveCompletedAttack(completedRolls, "GM", expectedLabel);
+  if (!attackResolution) {
+    return { ok: false, error: "Нет подтверждённого серверного результата атаки этого существа. Урон пока не разрешён." };
   }
-  const total = parseRollTotal(priorAttack);
-  if (total === null || total < Number(priorAttack.dc)) {
-    return { ok: false, error: "Предыдущая атака не попала или её результат неизвестен. Бросок урона запрещён." };
+  if (!attackResolution.hit) {
+    return { ok: true, attackResolution: { ...attackResolution, outcome: "MISS" }, preparedRoll: null, note: "Атака NPC промахнулась. Бросок урона не требуется." };
   }
   const creatureNeedle = creatureName.normalize("NFKC").toLocaleLowerCase();
   const attackNeedle = attackName.normalize("NFKC").toLocaleLowerCase();
@@ -416,6 +517,7 @@ function prepareNpcDamage(
   if (!verified) return { ok: false, error: "Формула критического урона некорректна." };
   return {
     ok: true,
+    attackResolution: { ...attackResolution, outcome: critical ? "CRITICAL_HIT" : "HIT" },
     preparedRoll: {
       roller: "GM",
       label: "Урон " + creatureName + " (" + attackName + ")",
@@ -452,6 +554,9 @@ export function executeEkdrasilReadTool(
   }
   if (name === "prepare_player_attack") {
     return preparePlayerAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
+  }
+  if (name === "prepare_player_damage") {
+    return preparePlayerDamage(args as JsonRecord, playerCharacter, completedRolls, alreadyPrepared);
   }
   if (name === "prepare_npc_attack") {
     return prepareNpcAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
@@ -528,6 +633,7 @@ export async function callWithEkdrasilReadTools(options: {
   rules: RetrievalSource;
   canon: RetrievalSource;
   playerCharacter?: JsonRecord | null;
+  completedRolls?: JsonRecord[];
   maxToolRounds?: number;
   maxToolCalls?: number;
   timeoutMs?: number;
@@ -608,7 +714,7 @@ export async function callWithEkdrasilReadTools(options: {
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
       const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts)
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, options.completedRolls ?? [])
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
