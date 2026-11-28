@@ -330,56 +330,68 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
-  it("prepares a pending shortbow attack against a generic passerby from the verified SRD Commoner stat block", async () => {
+  it("recovers any pending player check through the engine-selected preparation tool, without label parsing", async () => {
     const character = {
       statsCertainty: "KNOWN",
-      weaponAttacks: [{ weapon: "короткий лук", attackBonus: 4, damage: "1d6+2" }],
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [{ name: "Perception", bonus: 5, basis: "WISDOM + владение" }],
+      conditions: [],
     };
-    const finalTurn = {
-      narration: "Ты поднимаешь лук и целишься в прохожего.",
+    const pendingTurn = {
+      narration: "Ты прислушиваешься к шуму за дверью.",
       rolls: [{
         roller: "PLAYER",
-        label: "Атака коротким луком — случайный прохожий",
-        formula: "1d20+4",
-        dc: 10,
-        targetType: "AC",
+        label: "Проверка Мудрости (Восприятие)",
+        formula: "1d20+5",
+        dc: 13,
+        targetType: "DC",
         result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
       }],
     };
-    const first = { choices: [{ message: { role: "assistant", content: "Готовлю действие." } }] };
-    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify(finalTurn) } }] };
+    const noTool = { choices: [{ message: { role: "assistant", content: "Нужна проверка." } }] };
+    const finalPending = { choices: [{ message: { role: "assistant", content: JSON.stringify(pendingTurn) } }] };
+    const prepare = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "prepare-check", type: "function",
+        function: { name: "prepare_player_check", arguments: JSON.stringify({
+          kind: "SKILL_CHECK", ability: "wisdom", skill: "Perception", dc: 13,
+          advantage: "NONE", reason: "Прислушаться к шуму за дверью",
+        }) },
+      }] } }],
+    };
+    const preparedFinal = { choices: [{ message: { role: "assistant", content: JSON.stringify(pendingTurn) } }] };
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(finalPending), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(prepare), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(noTool), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(preparedFinal), { status: 200 }));
     const result = await callWithEkdrasilReadTools({
       fetcher: fetcher as unknown as typeof fetch,
       url: "https://example.test",
       headers: {},
-      requestBody: { model: "test", messages: [] },
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
       enabled: true,
-      rules: {
-        ...rules,
-        content: "# Commoner\\n\\nCommoner\\nArmor Class 10 (leather armor)\\nHit Points 4 (1d8)\\n",
-      },
+      rules,
       canon,
       playerCharacter: character,
     });
     expect(result.preparedRoll).toMatchObject({
-      roller: "PLAYER",
-      label: "Атака коротким луком — случайный прохожий",
-      formula: "1d20+4",
-      dc: 10,
-      targetType: "AC",
-      modifier: 4,
-      kind: "WEAPON_ATTACK",
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      dc: 13, targetType: "DC", modifier: 5, kind: "SKILL_CHECK",
     });
-    const response = result.payload as { choices: Array<{ message: { content: string } }> };
-    const synchronized = JSON.parse(response.choices[0]!.message.content);
+    const retryRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
+    expect(retryRequest.tool_choice).toBe("required");
+    expect(retryRequest.tools).toEqual(expect.arrayContaining([
+      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_check" }) }),
+      expect.objectContaining({ function: expect.objectContaining({ name: "prepare_player_attack" }) }),
+    ]));
+    const finalPayload = result.payload as { choices: Array<{ message: { content: string } }> };
+    const synchronized = JSON.parse(finalPayload.choices[0]!.message.content);
     expect(synchronized.rolls[0]).toMatchObject({
-      label: "Атака коротким луком — случайный прохожий",
-      formula: "1d20+4",
-      dc: 10,
-      targetType: "AC",
+      roller: "PLAYER", label: "Мудрость (Perception)", formula: "1d20+5",
+      dc: 13, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
     });
   });
 
