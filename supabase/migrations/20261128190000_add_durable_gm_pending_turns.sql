@@ -32,7 +32,7 @@ SECURITY DEFINER
 SET search_path = ''
 AS $function$
 DECLARE
-  v_saved boolean := false;
+  v_rows integer;
 BEGIN
   IF p_owner_id IS NULL OR p_pending_id IS NULL
      OR p_player_action IS NULL OR length(p_player_action) NOT BETWEEN 1 AND 12000
@@ -42,10 +42,14 @@ BEGIN
      OR p_challenge->>'userId' <> p_owner_id::text
      OR p_challenge->>'roller' <> 'PLAYER'
      OR length(coalesce(p_challenge->>'nonce', '')) NOT BETWEEN 1 AND 80
-     OR p_completed_rolls IS NULL OR jsonb_typeof(p_completed_rolls) <> 'array'
-     OR jsonb_array_length(p_completed_rolls) > 5
      OR p_expires_at IS NULL OR p_expires_at <= now()
      OR p_expires_at > now() + interval '24 hours' THEN
+    RETURN false;
+  END IF;
+  IF p_completed_rolls IS NULL OR jsonb_typeof(p_completed_rolls) <> 'array' THEN
+    RETURN false;
+  END IF;
+  IF jsonb_array_length(p_completed_rolls) > 5 THEN
     RETURN false;
   END IF;
 
@@ -67,10 +71,10 @@ BEGIN
     expires_at = EXCLUDED.expires_at,
     updated_at = now()
   WHERE public.gm_pending_turns.expires_at <= now()
-     OR public.gm_pending_turns.player_action = EXCLUDED.player_action
-  RETURNING true INTO v_saved;
+     OR public.gm_pending_turns.player_action = EXCLUDED.player_action;
 
-  RETURN coalesce(v_saved, false);
+  GET DIAGNOSTICS v_rows = ROW_COUNT;
+  RETURN v_rows = 1;
 END;
 $function$;
 
@@ -133,7 +137,9 @@ AS $function$
 DECLARE
   v_deleted integer;
 BEGIN
-  IF p_owner_id IS NULL THEN RETURN false; END IF;
+  IF p_owner_id IS NULL THEN
+    RETURN false;
+  END IF;
   DELETE FROM public.gm_pending_turns
   WHERE owner_id = p_owner_id
     AND (p_pending_id IS NULL OR pending_id = p_pending_id);
