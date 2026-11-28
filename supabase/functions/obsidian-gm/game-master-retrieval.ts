@@ -346,6 +346,24 @@ function conditionKeys(playerCharacter: JsonRecord | null): Set<string> {
   return result;
 }
 
+function sensoryModeFromReason(reason: string): "sight" | "hearing" | null {
+  const value = reason.normalize("NFKC").toLocaleLowerCase("ru-RU").replace(/[ё]/g, "е");
+  if (/увид|разгляд|посмотр|наблюд|зрени|визуаль|look|see|sight|vision|spot/.test(value)) return "sight";
+  if (/услыш|слуш|звук|шаги|голос|шорох|прислуш|hear|listen|sound/.test(value)) return "hearing";
+  return null;
+}
+
+function sensoryConditionFailure(conditions: Set<string>, reason: string): string | null {
+  const mode = sensoryModeFromReason(reason);
+  if (mode === "sight" && conditions.has("blinded")) {
+    return "Персонаж ослеплён и не может выполнить действие, для которого требуется зрение.";
+  }
+  if (mode === "hearing" && conditions.has("deafened")) {
+    return "Персонаж оглох и не может выполнить действие, для которого требуется слух.";
+  }
+  return null;
+}
+
 function combineRollAdvantage(requested: unknown, grantsAdvantage: boolean, grantsDisadvantage: boolean): "NONE" | "ADVANTAGE" | "DISADVANTAGE" {
   const hasAdvantage = requested === "ADVANTAGE" || grantsAdvantage;
   const hasDisadvantage = requested === "DISADVANTAGE" || grantsDisadvantage;
@@ -394,6 +412,8 @@ function preparePlayerCheck(
   }
   let modifier = modifierForScore(score as number);
   const conditions = conditionKeys(playerCharacter);
+  const sensoryFailure = sensoryConditionFailure(conditions, reason);
+  if (sensoryFailure) return { ok: false, error: sensoryFailure };
   const exhaustion = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
   const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(exhaustion);
   if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
@@ -500,6 +520,8 @@ function prepareCheckNotice(
   const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(conditions);
   const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
   const conditionFlags = conditionKeys(playerCharacter);
+  const sensoryFailure = sensoryConditionFailure(conditionFlags, reason);
+  if (sensoryFailure) return { ok: false, error: sensoryFailure };
   const poisonedPenalty = conditionFlags.has("poisoned") ? 5 : 0;
   const passiveScore = 10 + Number(entry.bonus) + advantage - exhaustionPenalty - poisonedPenalty;
   const noticed = passiveScore >= (dc as number);
