@@ -359,7 +359,7 @@ function socialAttitude(value: unknown): "friendly" | "indifferent" | "hostile" 
   if (typeof value !== "string" || !value.trim()) return null;
   const attitude = value.normalize("NFKC").toLocaleLowerCase();
   if (/hostile|враждеб|агрессив|ненавид|враг/.test(attitude)) return "hostile";
-  if (/friendly|дружелюб|доброжел|союзник|друг/.test(attitude)) return "friendly";
+  if (/friendly|дружелюб|дружес|доброжел|союзник|друг/.test(attitude)) return "friendly";
   if (/indifferent|neutral|нейтрал|равнодуш|безразлич|насторож|wary/.test(attitude)) return "indifferent";
   return null;
 }
