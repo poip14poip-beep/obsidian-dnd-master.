@@ -592,4 +592,46 @@ describe("canonical calendar validation in game master", () => {
     await expect(resolvePlayerAction("test-user-jwt", calendarContext, testOptions(invalidFetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "CALENDAR_DELTA_MISMATCH" });
   });
+  it("accepts completed server-owned GM rolls without treating them as pending player rolls", async () => {
+    const serverRoll = {
+      ...validTurn,
+      rolls: [{
+        roller: "GM", label: "Проверка NPC", formula: "1d20+3",
+        dc: 15, targetType: "DC", result: "12 + 3 = 15 · УСПЕХ",
+      }],
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(serverRoll),
+    }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .resolves.toMatchObject({ turn: { rolls: [{ roller: "GM", result: "12 + 3 = 15 · УСПЕХ" }] } });
+  });
+
+  it("allows one pending player roll alongside completed GM rolls and keeps the action paused", async () => {
+    const pending = {
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5",
+      dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+    };
+    const serverRoll = {
+      roller: "GM", label: "Проверка NPC", formula: "1d20+3",
+      dc: 15, targetType: "DC", result: "12 + 3 = 15 · УСПЕХ",
+    };
+    const turn = { ...validTurn, timeDeltaMinutes: 0, rolls: [pending, serverRoll] };
+    const rollChallenge = {
+      userId: "test-user", formula: pending.formula, dc: pending.dc,
+      targetType: pending.targetType, roller: "PLAYER", label: pending.label,
+      issuedAt: Date.now(), nonce: "nonce-test", signature: "signature-test",
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(turn), rollChallenge,
+    }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .resolves.toMatchObject({
+        turn: { rolls: [
+          { roller: "PLAYER", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА", challenge: { nonce: "nonce-test" } },
+          { roller: "GM", result: "12 + 3 = 15 · УСПЕХ" },
+        ] },
+      });
+  });
+
 });
