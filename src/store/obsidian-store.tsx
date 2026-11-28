@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } from "@/domain/defaults";
+import { applyConditionChanges } from "@/domain/conditions";
 import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
 import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
@@ -1569,11 +1570,11 @@ export function ObsidianStoreProvider({
         if (existingIndex >= 0) nextResources[existingIndex] = { ...nextResources[existingIndex]!, ...updated };
         else nextResources.push({ id: makeId("res"), ...updated });
       }
-      let nextConditions = [...pc.conditions];
-      for (const change of characterChanges.conditions) {
-        if (change.action === "ADD" && !nextConditions.includes(change.name)) nextConditions.push(change.name);
-        if (change.action === "REMOVE") nextConditions = nextConditions.filter((condition) => condition !== change.name);
+      const conditionResult = applyConditionChanges(pc.conditions, characterChanges.conditions);
+      if (conditionResult.errors.length) {
+        return { ok: false, error: conditionResult.errors.join(" "), report: lastIntegrityReport };
       }
+      const nextConditions = conditionResult.conditions;
       const baseCurrency = pc.currency ?? { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 };
       const nextCurrency = {
         cp: baseCurrency.cp + characterChanges.currencyDelta.cp,
