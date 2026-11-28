@@ -719,14 +719,14 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
   });
 
   it("allows more than five retrieval rounds so the D&D engine can reach player-roll preparation", async () => {
-    const responses = Array.from({ length: 6 }, (_, index) => ({
+    const responses: unknown[] = Array.from({ length: 6 }, (_, index) => ({
       choices: [{ message: { role: "assistant", tool_calls: [{
         id: `search-${index}`, type: "function",
         function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "ability check d20" }) },
       }] } }],
     }));
-    responses.push({ choices: [{ message: { role: "assistant", content: "Правил достаточно." } }] } as typeof responses[number]);
-    responses.push({ choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] } as typeof responses[number]);
+    responses.push({ choices: [{ message: { role: "assistant", content: "Правил достаточно." } }] });
+    responses.push({ choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] });
     const fetcher = vi.fn();
     for (const response of responses) {
       fetcher.mockResolvedValueOnce(new Response(JSON.stringify(response), { status: 200 }));
