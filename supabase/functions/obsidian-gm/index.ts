@@ -1485,7 +1485,7 @@ Deno.serve(async (req: Request) => {
             userId: authData.user.id,
             pendingId: pendingTurnId,
             action,
-            turn: parsed,
+            turn: parsed as JsonRecord,
             preparedRoll: prepared as unknown as JsonRecord,
             challenge: rollChallenge,
             completedRolls: completed,
