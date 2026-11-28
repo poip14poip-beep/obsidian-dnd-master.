@@ -1064,7 +1064,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       enabled: true,
       rules: {
         ...rules,
-        content: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.",
+        content: "# Creatures\n\nGoblin\nBite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.",
       },
       canon,
       completedRolls,
@@ -1114,7 +1114,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       url: "https://example.test", headers: {},
       requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
       enabled: true,
-      rules: { ...rules, content: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage." },
+      rules: { ...rules, content: "# Creatures\n\nGoblin\nBite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage." },
       canon, completedRolls,
     });
     expect(result.combatEvents).toEqual([{
