@@ -93,28 +93,34 @@ Useful patterns identified: bounded turn orchestration, engine/narration boundar
 3. GitHub Pages deploys from `cloud-api-client`. Do not merge into `main` as part of this work.
 4. Test with a disposable campaign before using the user's main campaign.
 
-## Latest engine work — 2026-11-28, PR #23
+## Latest engine work — 2026-11-28, PRs #23, #29–#33
 
-Branch: `adopt/open-game-master-ekdrasil-cloud-v2`  
-Target: `cloud-api-client`  
-Validated HEAD: `1a97e69df90e6c29f27be33c2cdf91270f55f2ff`
+Target branch: `cloud-api-client`  
+Current deployed Edge Function: `obsidian-gm` v93 (ACTIVE, JWT required).
 
-- The bounded model → tool → model adjudication loop is active in the integration branch. Repeated rule/canon retrieval is capped so the D&D specialist can reach the deterministic check/attack/damage tools instead of spending the full turn budget searching.
-- Player and NPC attack rolls use verified character/SRD data and server-owned dice. Natural 1/20 attack rules are distinct from ordinary checks and saving throws.
-- Completed attack + damage results produce structured combat events only after signed roll proof verification. The server derives damage to the player and the app applies it through the temporary-HP-first HP resolver.
-- Damage to an existing NPC is applied to its tracked combat HP only when its combat profile is already SRD-verified. NPC resistance, vulnerability and immunity are applied; unknown damage type with listed defenses fails closed.
-- Verified NPC combat profiles cannot be overwritten by model narration. Combat events are stored in the turn log/checksum and update the NPC profile history.
-- The Android-facing flow uses the signed server dice challenge and a visible `Бросить кубик` control; manual numeric result entry is removed.
-- Regression coverage includes server-derived combat events, NPC damage persistence, resistance/vulnerability/immunity, verified-profile protection and natural 1/20 semantics.
+### Adopted and deployed
 
-CI run `46179467687` on HEAD `1a97e69df90e6c29f27be33c2cdf91270f55f2ff`: **SUCCESS** — 28 test files, 217 tests, TypeScript and production build.
+- PR #23: bounded upstream-compatible model → tool → model loop, SRD 5.2.1 / Ekdrasil 2.4 retrieval, deterministic player/NPC attack and damage preparation, signed dice challenges, server-side damage events, NPC verified-combat-profile protection.
+- PR #29: universal `request_roll` for all 18 D&D skills, raw ability checks and saving throws. Russian/English skill names map to the same server-owned ability and verified character-sheet bonus; DC difficulty ladder and advantage/disadvantage are handled server-side.
+- PR #30: `social_check` for Persuasion, Deception and Intimidation against a tracked NPC. The DC is derived from the confirmed NPC attitude; ordinary conversation does not trigger a roll.
+- PR #31: `check_notice` for passive detection without a player die roll; active searching remains `request_roll`.
+- PR #32: `npc_reaction` for first meetings. Server rolls 2d6 and returns hostile/indifferent/friendly; the result is persisted to the NPC record. Existing NPCs are not rerolled.
+- PR #33: server-authoritative social outcomes. A decisive result (at least 5 above/below DC) shifts NPC attitude by one step, with one shift per NPC per exchange; the server synchronizes the resulting NPC change rather than leaving it to model narration.
 
-### Still blocks declaring the app playable
+### Verification
 
-- This integration branch is not yet merged into `cloud-api-client` and its Edge Function code is not deployed. The currently deployed `obsidian-gm` is version 86; it does not contain this branch's latest changes.
-- A first-time/untracked NPC cannot receive persistent damage until a verified combat profile is present in the NPC registry. This is deliberately fail-closed; automatic SRD-backed creation of ephemeral combatants remains to be completed.
-- Player-character damage resistance/vulnerability/immunity, full initiative/action economy, conditions, ongoing effects, rests and spell resolution still need authoritative implementation.
-- There is no single server-side transaction/event ledger for all campaign mutations yet; local draft validation and storage remain in the existing app architecture.
-- The authenticated Android end-to-end acceptance cycle is still required: open campaign → action → player dice → damage dice → draft → commit → reload/recovery.
+- CI for current `cloud-api-client` HEAD `ef826c5541eea3db506837c863c40486cc95b3dd`: SUCCESS — tests, TypeScript check and production build.
+- GitHub Pages deployment: SUCCESS.
+- Supabase static app deployment: SUCCESS.
+- Supabase `obsidian-gm`: v93 ACTIVE.
+- `main` was not changed. Existing campaign data, Supabase project and Obsidian sources were retained.
 
-Do not merge or deploy the new game-turn path until the remaining acceptance gates and the Android test are complete. `main`, Lovable and the Obsidian Library remain untouched.
+### Still blocks declaring the app fully playable
+
+- Complete D&D 2024 rules coverage: initiative/action economy, conditions and durations, player damage defenses, spell resolution, rests and remaining exploration/group-check mechanics.
+- Full NPC agency and independent faction/world simulation with bounded memory updates.
+- One durable server-side transaction/event ledger covering all campaign mutations. The current app still uses a validated local draft + explicit player confirmation + local persistence/read-back + cloud snapshot.
+- Authenticated Android end-to-end acceptance remains unperformed: opening scene → non-combat skill check → player die → attack → damage → review draft → explicit commit → read-back → reload/recovery.
+- Manual acceptance must use a disposable test campaign first; do not reset or overwrite the user's existing campaign.
+
+The integrated engine is materially more capable, but it is **not yet a fully accepted autonomous D&D 2024 campaign engine**. Continue one isolated subsystem at a time, with CI and deployment verification after each merge.
