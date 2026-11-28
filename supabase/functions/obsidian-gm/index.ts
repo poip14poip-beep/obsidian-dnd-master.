@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectGameplayRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
 import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { callWithEkdrasilReadTools, executeEkdrasilReadTool, type PreparedRoll } from "./game-master-retrieval.ts";
 import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
@@ -1046,7 +1046,7 @@ Deno.serve(async (req: Request) => {
     "spellcasting", "spells", "magic items", "languages", "hit points", "armor class"
   );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedRules = selectRuleExcerpts(
+  const selectedRules = selectGameplayRuleExcerpts(
     ruleParagraphs,
     ruleTerms,
     isCompatibilityRequest ? 9_000 : 14_000,
