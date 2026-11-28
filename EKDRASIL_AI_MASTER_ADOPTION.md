@@ -120,3 +120,6 @@ Current status: **PARTIAL INTEGRATION — NOT READY FOR PLAYER TESTING AS A COMP
 - Added the upstream-adapted engine-boundary contract to both the analyst and narrator system prompts, so the two-stage pipeline is explicitly governed by the same no-fabricated-roll/no-premature-mutation rules.
 - The dice UI still uses the existing same-action continuation mechanism. A durable server-side pending-roll record, signed/verified roll submission, resume after page reload, and idempotent continuation are not yet implemented.
 - Validation status: source files and tests were committed to the feature branch, but GitHub Actions has not returned a workflow run for the current PR head. Do not treat tests/build as passed until a CI run or equivalent local test is available.
+
+- Added same-action continuation detection: once the player has supplied dice results, the server passes that fact to both stages and rejects any final response that asks for the same player roll again.
+- The player dice button becomes disabled after the roll is made, preventing repeated rerolls for the same pending check. A failed network request can be retried using the already-entered result embedded in the continuation action.
