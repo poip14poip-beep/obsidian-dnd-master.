@@ -109,6 +109,30 @@ async function verifyDiceProof(value: {
   );
 }
 
+async function consumeDiceNonce(userId: string, nonce: string, issuedAt: number): Promise<boolean> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return false;
+  try {
+    const response = await fetch(`${SUPABASE_URL.replace(/\\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonce`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({
+        p_user_id: userId,
+        p_nonce: nonce,
+        p_expires_at: new Date(issuedAt + 120_000).toISOString(),
+      }),
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return false;
+    return await response.json().catch(() => false) === true;
+  } catch {
+    return false;
+  }
+}
+
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -573,6 +597,10 @@ Deno.serve(async (req: Request) => {
         });
       if (!arithmeticValid || !proofValid) {
         return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
+      }
+      const nonceConsumed = await consumeDiceNonce(proof.userId as string, proof.nonce as string, proof.issuedAt as number);
+      if (!nonceConsumed) {
+        return json({ error: { code: "DICE_PROOF_REPLAY_OR_STORAGE_FAILURE", message: "Этот результат уже использован или сервер не смог подтвердить его одноразовость. Выполни бросок заново." } }, 409, cors);
       }
     }
   }
