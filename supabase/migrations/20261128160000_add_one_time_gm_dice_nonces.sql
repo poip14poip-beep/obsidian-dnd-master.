@@ -31,9 +31,9 @@ BEGIN
   IF p_user_id IS NULL OR p_nonces IS NULL OR p_expires_at IS NULL
      OR v_expected < 1 OR v_expected > 5
      OR cardinality(p_expires_at) <> v_expected
-     OR EXISTS (SELECT 1 FROM unnest(p_nonces) AS n WHERE n IS NULL OR length(n) NOT BETWEEN 1 AND 80)
-     OR (SELECT count(DISTINCT n) FROM unnest(p_nonces) AS n) <> v_expected
-     OR EXISTS (SELECT 1 FROM unnest(p_expires_at) AS e WHERE e IS NULL OR e <= now() OR e > now() + interval '3 minutes') THEN
+     OR EXISTS (SELECT 1 FROM unnest(p_nonces) AS vals(nonce) WHERE nonce IS NULL OR length(nonce) NOT BETWEEN 1 AND 80)
+     OR (SELECT count(DISTINCT nonce) FROM unnest(p_nonces) AS vals(nonce)) <> v_expected
+     OR EXISTS (SELECT 1 FROM unnest(p_expires_at) AS vals(expires_at) WHERE expires_at IS NULL OR expires_at <= now() OR expires_at > now() + interval '3 minutes') THEN
     RETURN false;
   END IF;
 
