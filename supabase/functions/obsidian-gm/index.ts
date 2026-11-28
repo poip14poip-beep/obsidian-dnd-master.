@@ -1328,7 +1328,7 @@ Deno.serve(async (req: Request) => {
           const label = typeof pending.label === "string" ? pending.label.trim() : "";
           const prefix = /^(спасбросок|проверка)\s+/i.exec(label);
           const rest = prefix ? label.slice(prefix[0].length).trim() : label;
-          const parenthesized = /^(.+?)\s*\\((.+)\\)$/.exec(rest);
+          const parenthesized = /^(.+?)\s*\((.+)\)$/.exec(rest);
           const abilityLabel = (parenthesized?.[1] ?? rest).trim().toLocaleLowerCase("ru");
           const skill = parenthesized?.[2]?.trim() ?? null;
           const abilityAliases: Record<string, string> = {
