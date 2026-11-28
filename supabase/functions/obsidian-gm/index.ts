@@ -652,12 +652,12 @@ Deno.serve(async (req: Request) => {
   const failures: string[] = [];
   let turnAnalysisReport: JsonRecord | null = null;
   const playerRollContinuationReceived = inputText.includes("Результаты бросков, которые игрок выполнил самостоятельно:");
-  const submittedPlayerRolls = inputText.split(/\\r?\\n/).flatMap((line) => {
-    const match = line.match(/^(.+?)\\s+\\(([^)]+)\\):\\s+(.+)$/);
+  const submittedPlayerRolls = inputText.split(/\r?\n/).flatMap((line) => {
+    const match = line.match(/^(.+?)\s+\(([^)]+)\):\s+(.+)$/);
     return match ? [{ label: match[1]!.trim(), formula: match[2]!.trim(), result: match[3]!.trim() }] : [];
   });
   const rollKey = (label: unknown, formula: unknown) =>
-    `${String(label ?? "").trim().toLocaleLowerCase()}|${String(formula ?? "").replace(/\\s+/g, "").toLocaleLowerCase()}`;
+    `${String(label ?? "").trim().toLocaleLowerCase()}|${String(formula ?? "").replace(/\s+/g, "").toLocaleLowerCase()}`;
 
   // Two-model turn pipeline: DeepSeek first reads the supplied campaign state,
   // Obsidian procedure, D&D 2024 rules and Ekdrasil 2.4 canon through bounded
