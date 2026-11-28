@@ -84,6 +84,36 @@ describe("verified NPC combat HP", () => {
       .toMatchObject({ hpCurrent: 12, appliedDamage: 0, error: null });
   });
 
+  it("does not allow the model to overwrite a previously verified NPC combat profile", () => {
+    const state = createInitialCollections();
+    state.world_state.setup.confirmed = true;
+    const profile = {
+      status: "SRD_VERIFIED" as const, source: "SRD 5.2.1 lines 10-20",
+      armorClass: 13, hitPointsCurrent: 11, hitPointsMax: 11, speed: "30 ft",
+      attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+    };
+    const npc = {
+      id: "npc-guard", name: "Страж", role: "Стражник", locationId: null, factionId: null,
+      goals: "Охраняет ворота", gmProfile: {
+        biography: "", appearance: "", personality: "", motivation: "", longTermGoal: "",
+        secrets: "", relationships: "", skillsAndAbilities: "", combatProfile: profile,
+      },
+      attitudeToPlayer: "Нейтральное", certainty: "KNOWN" as const, sourceId: "MANUAL_GM_ENTRY",
+      locked: false, knowledge: [], version: 1, history: [],
+    };
+    const changedProfile = { ...profile, hitPointsCurrent: 1 };
+    const change = {
+      action: "UPDATE" as const, playerVisible: true, name: "Страж", role: "Стражник",
+      goals: "Охраняет ворота", resources: "UNKNOWN", attitudeToPlayer: "Нейтральное",
+      locationName: null, factionName: null, certainty: "KNOWN" as const, reason: "Обновление карточки",
+      gmProfile: { ...npc.gmProfile, combatProfile: changedProfile },
+      knowledgeAdditions: [], playerKnowledgeAdditions: [],
+    };
+    const draft = { ...createEmptyTurnDraft(), summary: "Обновление", worldOutcome: "Карточка изменена", npcChanges: [change] };
+    expect(validateTurnDraft(draft, state.world_state, state.player_character_state, [npc]))
+      .toContain("Подтверждённый боевой профиль NPC «Страж» нельзя переписывать ответом мастера. HP и параметры боя меняются только через проверенные боевые события.");
+  });
+
   it("fails closed when damage type is unknown but the NPC has defenses", () => {
     expect(applyNpcHitPointDamage(12, 20, 7, null, ["fire"], [], []))
       .toMatchObject({ hpCurrent: 12, error: expect.stringContaining("Тип урона неизвестен") });
