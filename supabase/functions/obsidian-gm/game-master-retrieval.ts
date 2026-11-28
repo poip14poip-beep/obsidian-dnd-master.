@@ -803,13 +803,24 @@ export async function callWithEkdrasilReadTools(options: {
   }
 
   let toolCalls = 0;
+  let dndRuleSearchCalls = 0;
+  let canonSearchCalls = 0;
   let pendingRollRecoveryAttempts = 0;
   let requireToolCall = false;
   for (let round = 0; ; round += 1) {
+    // Repeated retrieval was consuming the entire turn before gameplay tools
+    // could prepare the player's roll. After two searches per source, expose
+    // only the gameplay preparation tools and let the model resolve the action.
+    const availableTools = EKDRASIL_READ_TOOLS.filter((tool) => {
+      const name = tool.function.name;
+      if (name === "search_dnd_rules" && dndRuleSearchCalls >= 2) return false;
+      if (name === "search_ekdrasil_canon" && canonSearchCalls >= 2) return false;
+      return true;
+    });
     const toolBody: JsonRecord = {
       ...options.requestBody,
       messages,
-      tools: EKDRASIL_READ_TOOLS,
+      tools: availableTools,
       tool_choice: requireToolCall ? "required" : "auto",
     };
     // Tool-capable requests omit structured-output constraints for compatibility
@@ -927,6 +938,8 @@ export async function callWithEkdrasilReadTools(options: {
       const id = typeof call.id === "string" ? call.id : "";
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
+      if (name === "search_dnd_rules") dndRuleSearchCalls += 1;
+      if (name === "search_ekdrasil_canon") canonSearchCalls += 1;
       let toolResult: JsonRecord = id
         ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, completedRolls, options.npcProfiles ?? [])
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
@@ -977,6 +990,12 @@ export async function callWithEkdrasilReadTools(options: {
         tool_call_id: id || "invalid-tool-call",
         content: JSON.stringify(toolResult),
       });
+      if (dndRuleSearchCalls === 2 || canonSearchCalls === 2) {
+        messages.push({
+          role: "system",
+          content: "ЛИМИТ ПОИСКА ИСТОЧНИКОВ: базовые выдержки правил и канона уже переданы. Не повторяй поиск тех же сведений. Теперь выбери соответствующий игровой инструмент подготовки проверки/атаки либо, если по D&D 2024 бросок не требуется, верни обычный структурированный ход. Не угадывай числа и не подменяй тип действия.",
+        });
+      }
       toolCalls += 1;
     }
   }
