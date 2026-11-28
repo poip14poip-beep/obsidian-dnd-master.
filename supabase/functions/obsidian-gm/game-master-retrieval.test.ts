@@ -173,6 +173,59 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("calculates travel time, distance and pace effects deterministically", () => {
+    const normal = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 4, pace: "normal", terrain: "normal",
+      reason: "Перейти через равнину к старой дороге",
+    }), rules, canon, null, false, [], [], [], null);
+    expect(normal).toMatchObject({
+      ok: true,
+      travel: {
+        pace: "normal", hours: 4, timeDeltaMinutes: 240,
+        distanceMiles: 12, passivePerceptionModifier: 0, stealthAllowed: false,
+      },
+    });
+
+    const fast = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 8, pace: "fast", reason: "Успеть к переправе до закрытия",
+    }), rules, canon, null, false, [], [], [], null);
+    expect(fast).toMatchObject({
+      ok: true,
+      travel: { hours: 8, timeDeltaMinutes: 480, distanceMiles: 30, passivePerceptionModifier: -5, stealthAllowed: false },
+    });
+
+    const slowDifficult = executeEkdrasilReadTool("travel", JSON.stringify({
+      miles: 6, pace: "slow", terrain: "difficult",
+      reason: "Осторожно пройти через заболоченный лес",
+    }), rules, canon, null, false, [], [], [], null);
+    expect(slowDifficult).toMatchObject({
+      ok: true,
+      travel: { hours: 6, timeDeltaMinutes: 360, distanceMiles: 6, passivePerceptionModifier: 0, stealthAllowed: true },
+    });
+  });
+
+  it("applies confirmed campaign weather and refuses unsupported forced marches", () => {
+    const storm = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 4, pace: "normal", reason: "Пробраться через перевал",
+    }), rules, canon, null, false, [], [], [], { weather: "Шторм", precipitation: "Сильный дождь" });
+    expect(storm).toMatchObject({
+      ok: true,
+      travel: { hours: 4, timeDeltaMinutes: 240, distanceMiles: 6, weatherFactor: 0.5 },
+    });
+
+    const forcedMarch = executeEkdrasilReadTool("travel", JSON.stringify({
+      hours: 9, pace: "normal", reason: "Продолжить путь после восьми часов",
+    }), rules, canon, null, false, [], [], [], null);
+    expect(forcedMarch).toMatchObject({ ok: false });
+    expect(forcedMarch.error).toContain("Принудительный марш");
+
+    const tooFar = executeEkdrasilReadTool("travel", JSON.stringify({
+      miles: 25, pace: "normal", reason: "Дойти до далёкой крепости за один день",
+    }), rules, canon, null, false, [], [], [], null);
+    expect(tooFar).toMatchObject({ ok: false });
+    expect(tooFar.error).toContain("превышает один 8-часовой отрезок");
+  });
+
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
     const character = {
       statsCertainty: "KNOWN",

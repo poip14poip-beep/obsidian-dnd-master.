@@ -262,6 +262,20 @@ function playerCharacterFromInput(inputText: string): JsonRecord | null {
  * Combat resolution still requires a matching source excerpt from SRD 5.2.1;
  * these records can only cross-check, never invent, an attack or damage value.
  */
+function travelWeatherFromInput(inputText: string): { weather?: string; precipitation?: string } | null {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || !isRecord(parsed.world) || !isRecord(parsed.world.environment)) return null;
+    const environment = parsed.world.environment;
+    return {
+      ...(typeof environment.weather === "string" ? { weather: environment.weather } : {}),
+      ...(typeof environment.precipitation === "string" ? { precipitation: environment.precipitation } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function npcProfilesFromInput(inputText: string): JsonRecord[] {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -1105,6 +1119,9 @@ Deno.serve(async (req: Request) => {
   if (/живот|лошад|кон|пёс|собак|звер|прируч|успокоить живот/.test(actionText)) mappedTerms.push("animal handling", "influence", "ability check");
   if (/леч|первая помощь|стабилиз|диагноз|ранен/.test(actionText)) mappedTerms.push("medicine", "healing", "stabilize", "utilize action");
   if (/след|отпечат|выжива|ориентир|погода|охот|добыть пищ/.test(actionText)) mappedTerms.push("survival", "tracking", "foraging", "travel pace");
+  if (/путешеств|маршрут|переправ|перевал|дорог|поход|идти в другой город|отправиться в/.test(actionText)) {
+    mappedTerms.push("travel pace", "forced march", "difficult terrain", "overland travel");
+  }
   if (/религ|бож|обряд|культ|святын/.test(actionText)) mappedTerms.push("religion", "holy symbol", "divine magic");
   if (/истор|древн|летопис|герб|родослов/.test(actionText)) mappedTerms.push("history", "historical lore");
   if (/природ|растен|гриб|ядовит|минерал|животн/.test(actionText)) mappedTerms.push("nature", "environment");
@@ -1304,6 +1321,7 @@ Deno.serve(async (req: Request) => {
         canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
         playerCharacter: playerCharacterFromInput(inputText),
         npcProfiles: npcProfilesFromInput(inputText),
+        travelWeather: travelWeatherFromInput(inputText),
         completedRolls: (() => {
           try {
             const parsed = JSON.parse(inputText);
