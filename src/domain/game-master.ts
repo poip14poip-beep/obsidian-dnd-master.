@@ -16,6 +16,7 @@ export interface CompletedGameRoll {
   total: number;
   success: boolean | null;
   result: string;
+  challenge: SignedDiceChallenge;
   proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge };
 }
 export interface GameMasterContext {
