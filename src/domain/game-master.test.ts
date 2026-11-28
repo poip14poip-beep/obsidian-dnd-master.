@@ -514,4 +514,19 @@ describe("canonical calendar validation in game master", () => {
     await expect(resolvePlayerAction("test-user-jwt", calendarContext, testOptions(invalidFetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "CALENDAR_DELTA_MISMATCH" });
   });
+  it("accepts a GM roll only when its result is explicitly server-generated", async () => {
+    const serverRoll = {
+      ...validTurn,
+      rolls: [{
+        roller: "GM",
+        label: "Проверка NPC",
+        formula: "1d20+3",
+        result: "СЕРВЕРНЫЙ БРОСОК: 17 (14 + 3)",
+      }],
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(serverRoll) }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .resolves.toMatchObject({ turn: { rolls: [{ roller: "GM", result: "СЕРВЕРНЫЙ БРОСОК: 17 (14 + 3)" }] } });
+  });
+
 });
