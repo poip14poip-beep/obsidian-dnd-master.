@@ -1,6 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
-import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
+import { evaluateRollSuccess, parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { callWithEkdrasilReadTools, executeEkdrasilReadTool, type PreparedRoll } from "./game-master-retrieval.ts";
 import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
 
@@ -676,7 +676,7 @@ Deno.serve(async (req: Request) => {
       if (!proofConsumed) {
         return json({ error: { code: "DICE_PROOF_STORAGE_FAILED", message: "Сервер не смог сохранить одноразовое подтверждение броска. Восстанови ход и повтори бросок." } }, 503, cors);
       }
-      const success = challenge.targetType === "NONE" ? null : rolled.total >= (challenge.dc ?? Number.POSITIVE_INFINITY);
+      const success = evaluateRollSuccess(challenge.targetType, challenge.dc, rolled.dice, rolled.total);
       const keptD20 = rolled.dice.find((die) => die.sides === 20 && die.kept)?.value;
       const outcome = challenge.targetType === "AC"
         ? keptD20 === 20 ? "КРИТИЧЕСКОЕ ПОПАДАНИЕ" : keptD20 === 1 ? "АВТОМАТИЧЕСКИЙ ПРОМАХ" : success ? "ПОПАДАНИЕ" : "ПРОМАХ"
@@ -903,13 +903,15 @@ Deno.serve(async (req: Request) => {
         item.modifier === parsedFormula.modifier &&
         item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
       const challenge = isRecord(item.challenge) ? item.challenge as unknown as SignedDiceChallenge : null;
+      const expectedSuccess = challenge
+        ? evaluateRollSuccess(challenge.targetType, challenge.dc, dice as Array<{ value: number; sides: number; kept: boolean }>, item.total as number)
+        : null;
       const challengeMatchesRoll = challenge !== null && isRecord(proof.challenge) &&
         stableSerialize(challenge) === stableSerialize(proof.challenge) &&
         challenge.userId === authData.user.id && challenge.formula === formula &&
         challenge.dc === item.dc && challenge.targetType === item.targetType &&
         challenge.roller === item.roller && challenge.label === item.label &&
-        (challenge.targetType === "NONE" ? item.success === null :
-          item.success === (item.total as number >= (challenge.dc as number)));
+        item.success === expectedSuccess;
       const storedMatch = challenge !== null && storedRolls.some((stored) =>
         isRecord(stored.proof) && isRecord(stored.challenge) &&
         stableSerialize(stored.proof) === stableSerialize(proof) &&
