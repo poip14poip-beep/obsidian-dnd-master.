@@ -101,7 +101,8 @@ export interface NpcCombatProfile {
   status: "NOT_REQUIRED" | "SRD_VERIFIED" | "UNKNOWN";
   source: string;
   armorClass: number | null;
-  hitPoints: number | null;
+  hitPointsCurrent: number | null;
+  hitPointsMax: number | null;
   speed: string;
   attacks: Array<{ name: string; attackBonus: number | null; damage: string; damageType: string }>;
   resistances: string[];
