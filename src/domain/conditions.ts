@@ -50,6 +50,7 @@ export interface ParsedCondition {
   key: string;
   label: string;
   exhaustionLevel?: number;
+  exhaustionLevelExplicit?: boolean;
   standard: boolean;
 }
 
@@ -62,7 +63,7 @@ export function parseConditionName(raw: string): ParsedCondition | null {
   const exhaustion = /^(?:exhaustion|истощение)(?:\\s+(?:level\\s*)?)?\\s*([1-6])?$/.exec(normalized);
   if (exhaustion) {
     const level = exhaustion[1] ? Number(exhaustion[1]) : 1;
-    return { key: "exhaustion", label: "Истощение", exhaustionLevel: level, standard: true };
+    return { key: "exhaustion", label: "Истощение", exhaustionLevel: level, exhaustionLevelExplicit: Boolean(exhaustion[1]), standard: true };
   }
 
   const standard = aliasToCondition.get(normalized);
@@ -111,7 +112,7 @@ export function applyConditionChanges(
         errors.push("Нельзя снять истощение: оно не записано у персонажа.");
       } else {
         const existing = parseConditionName(conditions[existingIndex]!);
-        if (parsed.exhaustionLevel !== 1 && existing?.exhaustionLevel !== parsed.exhaustionLevel) {
+        if (parsed.exhaustionLevelExplicit && existing?.exhaustionLevel !== parsed.exhaustionLevel) {
           errors.push("Уровень истощения изменился; снятие отклонено, чтобы не удалить другое состояние.");
         } else {
           conditions.splice(existingIndex, 1);
