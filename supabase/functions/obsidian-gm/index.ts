@@ -123,8 +123,8 @@ async function issueDiceChallenge(userId: string, prepared: {
   };
   return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
 }
-async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean> {
-  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+async function verifyDiceChallenge(value: SignedDiceChallenge, allowExpired = false): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || (!allowExpired && Date.now() - value.issuedAt > 120_000) ||
       value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
       !value.formula || !value.label || value.label.length > 180 ||
       !["DC", "AC", "NONE"].includes(value.targetType) ||
@@ -137,8 +137,8 @@ async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean>
 async function verifyDiceProof(value: {
   userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
   issuedAt: number; nonce: string; challenge: SignedDiceChallenge; signature: string;
-}): Promise<boolean> {
-  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+}, allowExpired = false): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || (!allowExpired && Date.now() - value.issuedAt > 120_000) ||
       value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80) return false;
   const { signature, ...payload } = value;
   return verifyPayload(diceProofPayload(payload), signature);
@@ -863,7 +863,19 @@ Deno.serve(async (req: Request) => {
       );
       const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
         typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
-        typeof proof.signature === "string" && challengeMatchesRoll && storedMatch;
+        typeof proof.signature === "string" && challengeMatchesRoll && storedMatch &&
+        await verifyDiceChallenge(challenge!, true) &&
+        await verifyDiceProof({
+          userId: proof.userId,
+          issuedAt: proof.issuedAt,
+          nonce: proof.nonce,
+          signature: proof.signature,
+          formula,
+          dice,
+          modifier: item.modifier as number,
+          total: item.total as number,
+          challenge: challenge!,
+        }, true);
       if (!arithmeticValid || !proofValid) {
         return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не совпадает с серверной записью ожидающего хода. Восстанови ход и повтори продолжение." } }, 401, cors);
       }
