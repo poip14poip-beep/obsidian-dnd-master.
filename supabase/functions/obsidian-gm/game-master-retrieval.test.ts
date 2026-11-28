@@ -330,6 +330,59 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("prepares a pending shortbow attack against a generic passerby from the verified SRD Commoner stat block", async () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      weaponAttacks: [{ weapon: "короткий лук", attackBonus: 4, damage: "1d6+2" }],
+    };
+    const finalTurn = {
+      narration: "Ты поднимаешь лук и целишься в прохожего.",
+      rolls: [{
+        roller: "PLAYER",
+        label: "Атака коротким луком — случайный прохожий",
+        formula: "1d20+4",
+        dc: 10,
+        targetType: "AC",
+        result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+      }],
+    };
+    const first = { choices: [{ message: { role: "assistant", content: "Готовлю действие." } }] };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify(finalTurn) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [] },
+      enabled: true,
+      rules: {
+        ...rules,
+        content: "# Commoner\\n\\nCommoner\\nArmor Class 10 (leather armor)\\nHit Points 4 (1d8)\\n",
+      },
+      canon,
+      playerCharacter: character,
+    });
+    expect(result.preparedRoll).toMatchObject({
+      roller: "PLAYER",
+      label: "Атака коротким луком — случайный прохожий",
+      formula: "1d20+4",
+      dc: 10,
+      targetType: "AC",
+      modifier: 4,
+      kind: "WEAPON_ATTACK",
+    });
+    const response = result.payload as { choices: Array<{ message: { content: string } }> };
+    const synchronized = JSON.parse(response.choices[0]!.message.content);
+    expect(synchronized.rolls[0]).toMatchObject({
+      label: "Атака коротким луком — случайный прохожий",
+      formula: "1d20+4",
+      dc: 10,
+      targetType: "AC",
+    });
+  });
+
   it("refuses to prepare an attack against an unverified AC", () => {
     const character = {
       statsCertainty: "KNOWN",
