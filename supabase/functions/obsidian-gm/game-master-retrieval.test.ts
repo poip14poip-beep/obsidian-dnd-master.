@@ -110,14 +110,14 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       npcContext: { name: "Странник" },
       preparedRoll: {
         roller: "GM", label: "Первая реакция NPC — Странник",
-        formula: "2d6", dc: null, targetType: "NONE", modifier: 0, kind: "NPC_REACTION",
+        formula: "2d6", dc: null, targetType: "NONE", modifier: 0, kind: "NPC_REACTION", npcName: "Странник",
       },
     });
     const hostile = executePreparedServerRoll(prepared.preparedRoll as never, (() => {
       const values = [2, 3];
       return (_sides: number) => values.shift() ?? 1;
     })());
-    expect(hostile).toMatchObject({ total: 5, npcAttitude: "hostile", success: null });
+    expect(hostile).toMatchObject({ total: 5, npcAttitude: "hostile", npcName: "Странник", success: null });
 
     const friendlyPrepared = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
       name: "Путница", modifier: 1, reason: "Незнакомая путница встречает героя в безопасном трактире",
@@ -127,7 +127,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       const values = [4, 4];
       return (_sides: number) => values.shift() ?? 1;
     })());
-    expect(friendly).toMatchObject({ total: 9, npcAttitude: "friendly" });
+    expect(friendly).toMatchObject({ total: 9, npcAttitude: "friendly", npcName: "Путница" });
   });
 
   it("does not reroll a tracked NPC or repeat a reaction already completed this turn", () => {
