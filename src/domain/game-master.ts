@@ -906,3 +906,108 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const pendingTurnId = typeof record["pendingTurnId"] === "string" ? record["pendingTurnId"] : undefined;
   return { turn, model, ...(pendingTurnId ? { pendingTurnId } : {}), ...(usage ? { usage } : {}) };
 }
+
+export interface RestoredPendingGameTurn {
+  pendingTurnId: string;
+  action: string;
+  turn: GameMasterTurn;
+  completedRolls: CompletedGameRoll[];
+}
+
+/** Restore a server-owned pending roll/action after a page reload. */
+export async function restorePendingGameTurn(
+  sessionToken: string,
+  context: GameMasterContext,
+  options: { fetcher?: typeof fetch; supabaseUrl?: string; publishableKey?: string } = {},
+): Promise<RestoredPendingGameTurn | null> {
+  if (!sessionToken.trim()) throw new GameMasterError("Войди в аккаунт, чтобы восстановить ожидающий ход.", "AUTH_REQUIRED");
+  const env = readSupabaseEnv();
+  const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
+  const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
+  if (!supabaseUrl || !publishableKey) {
+    throw new GameMasterError(env.ok ? "Не настроено подключение к серверу." : env.error, "SUPABASE_ENV_MISSING");
+  }
+  let response: Response;
+  try {
+    response = await (options.fetcher ?? fetch)(`${supabaseUrl.replace(/\\/+$/, "")}/functions/v1/obsidian-gm`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessionToken.trim()}`,
+        apikey: publishableKey,
+      },
+      body: JSON.stringify({ operation: "GET_PENDING_GM_TURN" }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new GameMasterError("Не удалось проверить сохранённый ожидающий ход.", "PENDING_TURN_NETWORK_ERROR");
+  }
+  const payload = await response.json().catch(() => null) as unknown;
+  if (!response.ok) {
+    const error = payload && typeof payload === "object" && "error" in payload
+      ? (payload as { error?: { message?: unknown } }).error : undefined;
+    throw new GameMasterError(
+      error && typeof error.message === "string" ? error.message : "Не удалось восстановить ожидающий ход.",
+      "PENDING_TURN_RESTORE_FAILED",
+    );
+  }
+  if (!payload || typeof payload !== "object" || !("pending" in payload)) {
+    throw new GameMasterError("Сервер вернул некорректный ответ восстановления хода.", "INVALID_PENDING_TURN_RESPONSE");
+  }
+  const pending = (payload as { pending?: unknown }).pending;
+  if (pending === null || pending === undefined) return null;
+  if (!pending || typeof pending !== "object") {
+    throw new GameMasterError("Сохранённый ожидающий ход повреждён.", "INVALID_PENDING_TURN");
+  }
+  const record = pending as Record<string, unknown>;
+  if (typeof record["pendingTurnId"] !== "string" || typeof record["action"] !== "string" ||
+      !record["turn"] || typeof record["turn"] !== "object" || !Array.isArray(record["completedRolls"])) {
+    throw new GameMasterError("Сохранённый ожидающий ход неполон.", "INVALID_PENDING_TURN");
+  }
+  const turn = validateTurn(
+    record["turn"], context.locations, context.npcs, context.factions,
+    context.world.quests ?? [], context.world.environment,
+  );
+  const completedRolls = (record["completedRolls"] as unknown[]).map((item) => {
+    if (!item || typeof item !== "object") throw new GameMasterError("Сохранённый результат броска повреждён.", "INVALID_PENDING_ROLL");
+    const roll = item as Record<string, unknown>;
+    if (typeof roll["id"] !== "string" || typeof roll["label"] !== "string" ||
+        typeof roll["formula"] !== "string" || !Array.isArray(roll["dice"]) ||
+        !Number.isInteger(roll["modifier"]) || !Number.isInteger(roll["total"]) ||
+        !roll["challenge"] || typeof roll["challenge"] !== "object" ||
+        !roll["proof"] || typeof roll["proof"] !== "object") {
+      throw new GameMasterError("Сохранённый результат броска неполон.", "INVALID_PENDING_ROLL");
+    }
+    return roll as unknown as CompletedGameRoll;
+  });
+  const waitingRolls = turn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+  const rawChallenge = record["challenge"];
+  if (waitingRolls.length > 1) {
+    throw new GameMasterError("В сохранённом ходе несколько ожидающих бросков. Требуется восстановление целостности.", "MULTIPLE_PENDING_ROLLS");
+  }
+  if (waitingRolls.length === 1) {
+    const waiting = waitingRolls[0]!;
+    const alreadyRolled = completedRolls.some((roll) => roll.label === waiting.label && roll.formula === waiting.formula);
+    if (rawChallenge && typeof rawChallenge === "object") {
+      const challenge = rawChallenge as Record<string, unknown>;
+      if (challenge["formula"] !== waiting.formula || challenge["label"] !== waiting.label ||
+          challenge["dc"] !== waiting.dc || challenge["targetType"] !== waiting.targetType ||
+          challenge["roller"] !== "PLAYER" || typeof challenge["signature"] !== "string" ||
+          typeof challenge["nonce"] !== "string" || !Number.isInteger(challenge["issuedAt"])) {
+        throw new GameMasterError("Подписанное задание не совпадает с сохранённой проверкой.", "INVALID_PENDING_CHALLENGE");
+      }
+      waiting.challenge = challenge as unknown as SignedDiceChallenge;
+    } else if (!alreadyRolled) {
+      throw new GameMasterError("Ожидающий бросок не имеет ни сохранённого результата, ни действующего задания.", "PENDING_CHALLENGE_MISSING");
+    }
+  } else if (rawChallenge !== null && rawChallenge !== undefined) {
+    throw new GameMasterError("Сервер восстановил задание броска без ожидающей проверки.", "UNEXPECTED_PENDING_CHALLENGE");
+  }
+  return {
+    pendingTurnId: record["pendingTurnId"],
+    action: record["action"],
+    turn,
+    completedRolls,
+  };
+}
+
