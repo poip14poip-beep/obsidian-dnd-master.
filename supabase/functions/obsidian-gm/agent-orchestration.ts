@@ -174,7 +174,7 @@ export async function runGameTurnAgents(args: {
         "Выявляй подтверждённые факты, причинные последствия, ограничения мира, знания персонажа/NPC и противоречия.",
         "Не придумывай отсутствующие сведения. Не смешивай объективную истину, знания игрока и знания NPC.",
         "Каждый вывод привязывай к sectionId/строкам канона или к полю состояния кампании. Если источника нет — uncertainty.",
-        "Не предлагай механические решения D&D. Верни только краткий JSON findings и uncertainties.",
+        "Не предлагай механические решения D&D. В обязательном поле actionResolution верни null. Верни только краткий JSON findings, uncertainties и actionResolution.",
       ].join("\n"),
       sourceContext: args.canonContext,
       campaignInput: args.campaignInput,
