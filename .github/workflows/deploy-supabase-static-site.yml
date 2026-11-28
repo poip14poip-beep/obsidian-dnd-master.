@@ -3,6 +3,7 @@ name: Deploy Obsidian static app for Supabase host
 on:
   push:
     branches:
+      - main
       - cloud-api-client
   workflow_dispatch:
 
@@ -20,7 +21,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
         with:
-          ref: cloud-api-client
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Setup Bun
