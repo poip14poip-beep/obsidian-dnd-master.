@@ -37,7 +37,7 @@ export interface ConditionChangesResult {
 }
 
 const normalizeText = (value: string) =>
-  value.normalize("NFKC").trim().toLocaleLowerCase("ru-RU").replace(/[ё]/g, "е").replace(/\\s+/g, " ");
+  value.normalize("NFKC").trim().toLocaleLowerCase("ru-RU").replace(/[ё]/g, "е").replace(/\s+/g, " ");
 
 const aliasToCondition = new Map<string, typeof STANDARD_CONDITIONS[number]>();
 for (const condition of STANDARD_CONDITIONS) {
@@ -60,7 +60,7 @@ export function parseConditionName(raw: string): ParsedCondition | null {
   const normalized = normalizeText(raw);
   if (!normalized || normalized.length > 100) return null;
 
-  const exhaustion = /^(?:exhaustion|истощение)(?:\\s+(?:level\\s*)?)?\\s*([1-6])?$/.exec(normalized);
+  const exhaustion = /^(?:exhaustion|истощение)(?:\s+(?:level\s*)?)?\s*([1-6])?$/.exec(normalized);
   if (exhaustion) {
     const level = exhaustion[1] ? Number(exhaustion[1]) : 1;
     return { key: "exhaustion", label: "Истощение", exhaustionLevel: level, exhaustionLevelExplicit: Boolean(exhaustion[1]), standard: true };
@@ -70,7 +70,7 @@ export function parseConditionName(raw: string): ParsedCondition | null {
   if (standard) return { key: standard.key, label: standard.label, standard: true };
 
   // Unknown names are legitimate Ekdrasil curses, mutations and other campaign states.
-  return { key: normalized, label: raw.normalize("NFKC").trim().replace(/\\s+/g, " "), standard: false };
+  return { key: normalized, label: raw.normalize("NFKC").trim().replace(/\s+/g, " "), standard: false };
 }
 
 function sameCondition(left: string, right: ParsedCondition): boolean {
