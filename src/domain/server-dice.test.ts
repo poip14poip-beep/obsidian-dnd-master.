@@ -26,6 +26,7 @@ describe("server-authoritative dice", () => {
         dice: [{ value: 14, sides: 20, kept: true }],
         modifier: 5,
         total: 19,
+        proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==" },
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
 
