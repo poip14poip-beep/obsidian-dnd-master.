@@ -1406,7 +1406,7 @@ export function ObsidianStoreProvider({
         if (change.action === "CREATE") {
           nextNpcs.unshift({
             id: makeId("npc"), name: change.name, role: change.role, locationId, factionId,
-            goals: change.goals, gmProfile: change.gmProfile, resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            goals: change.goals, ...(change.gmProfile ? { gmProfile: change.gmProfile } : {}), resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             playerVisible: change.playerVisible || playerKnowledge.length > 0, playerKnowledge,
             sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [],
           });
@@ -1415,7 +1415,7 @@ export function ObsidianStoreProvider({
           nextNpcs[existingIndex] = {
             ...existing, role: change.role, locationId: locationId ?? existing.locationId,
             factionId: factionId ?? existing.factionId, goals: change.goals,
-            gmProfile: change.gmProfile ?? existing.gmProfile, resources: change.resources,
+            ...(change.gmProfile ?? existing.gmProfile ? { gmProfile: change.gmProfile ?? existing.gmProfile } : {}), resources: change.resources,
             attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             playerVisible: Boolean(existing.playerVisible || change.playerVisible || playerKnowledge.length > 0),
             playerKnowledge: [...(existing.playerKnowledge ?? []), ...playerKnowledge],
