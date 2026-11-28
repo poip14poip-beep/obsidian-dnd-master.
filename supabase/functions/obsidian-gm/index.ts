@@ -559,7 +559,7 @@ Deno.serve(async (req: Request) => {
           (die.value as number) >= 1 && (die.value as number) <= (die.sides as number));
       const arithmeticValid = diceValid && parsedFormula !== null &&
         item.modifier === parsedFormula.modifier &&
-        item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + item.modifier;
+        item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
       const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
         typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
         typeof proof.signature === "string" && await verifyDiceProof({
