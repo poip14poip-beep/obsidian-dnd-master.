@@ -652,6 +652,12 @@ Deno.serve(async (req: Request) => {
   const failures: string[] = [];
   let turnAnalysisReport: JsonRecord | null = null;
   const playerRollContinuationReceived = inputText.includes("Результаты бросков, которые игрок выполнил самостоятельно:");
+  const submittedPlayerRolls = inputText.split(/\\r?\\n/).flatMap((line) => {
+    const match = line.match(/^(.+?)\\s+\\(([^)]+)\\):\\s+(.+)$/);
+    return match ? [{ label: match[1]!.trim(), formula: match[2]!.trim(), result: match[3]!.trim() }] : [];
+  });
+  const rollKey = (label: unknown, formula: unknown) =>
+    `${String(label ?? "").trim().toLocaleLowerCase()}|${String(formula ?? "").replace(/\\s+/g, "").toLocaleLowerCase()}`;
 
   // Two-model turn pipeline: DeepSeek first reads the supplied campaign state,
   // Obsidian procedure, D&D 2024 rules and Ekdrasil 2.4 canon through bounded
@@ -702,7 +708,7 @@ Deno.serve(async (req: Request) => {
           "Если действие явно является атакой персонажа игрока по существу/персонажу, requiresPlayerRoll=true и добавь проверку атаки в playerChecks.",
           "Если требуется бросок игрока, stateMutationAllowed=false: до результата нельзя менять HP, время, инвентарь, ресурсы, валюту, состояния, NPC, квесты, местоположение или факты мира.",
           playerRollContinuationReceived
-            ? "Во входных данных уже есть результаты бросков, выполненных игроком. Это продолжение того же действия: не запрашивай и не выполняй бросок повторно; оцени исход по указанному результату."
+            ? "Во входных данных уже есть результаты бросков, выполненных игроком. Это продолжение того же действия: используй каждый результат точно и не запрашивай повторно уже выполненную проверку. Если в продолжении требуется ДРУГАЯ, ещё не выполненная проверка, запроси новый бросок для неё."
             : "Если результатов броска ещё нет, остановись на запросе броска игрока.",
           "Верни только короткий JSON по схеме. Отчёт предназначен второй нейросети и должен содержать только решения, доказательства и неизвестные данные.",
           EKDRASIL_ENGINE_BOUNDARY_RULES,
@@ -766,6 +772,7 @@ Deno.serve(async (req: Request) => {
           JSON.stringify({
             ...turnAnalysisReport,
             playerRollContinuationReceived,
+            submittedPlayerRolls,
           }) +
           (playerRollContinuationReceived
             ? "\nПРОДОЛЖЕНИЕ ПОСЛЕ БРОСКА: игрок уже предоставил результат проверки персонажа. Это продолжение того же действия. Не запрашивай повторный бросок, не генерируй новый бросок и разреши исход по переданному результату."
@@ -894,34 +901,47 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: invalid JSON`);
         continue;
       }
-      if (isGameTurnRequest && playerRollContinuationReceived) {
+      if (isGameTurnRequest) {
         const candidate = isRecord(parsed) ? parsed : {};
-        const repeatedRollRequest = Array.isArray(candidate.rolls) &&
-          (candidate.rolls as JsonRecord[]).some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        const candidateRolls = Array.isArray(candidate.rolls) ? candidate.rolls as JsonRecord[] : [];
+        const repeatedRollRequest = candidateRolls.some((roll) =>
+          roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА" &&
+          submittedPlayerRolls.some((submitted) => rollKey(roll.label, roll.formula) === rollKey(submitted.label, submitted.formula))
+        );
         if (repeatedRollRequest) {
           failures.push(`${attempt.id}: continuation attempted to request a player roll that was already submitted`);
           continue;
         }
-      }
-      if (isGameTurnRequest && turnAnalysisReport?.requiresPlayerRoll === true && !playerRollContinuationReceived) {
-        const candidate = isRecord(parsed) ? parsed : {};
-        const characterChanges = isRecord(candidate.characterChanges) ? candidate.characterChanges : {};
-        const worldChanges = isRecord(candidate.worldChanges) ? candidate.worldChanges : {};
-        const currency = isRecord(characterChanges.currencyDelta) ? characterChanges.currencyDelta : {};
-        const noCharacterChanges =
-          Array.isArray(characterChanges.inventory) && characterChanges.inventory.length === 0 &&
-          Array.isArray(characterChanges.resources) && characterChanges.resources.length === 0 &&
-          Array.isArray(characterChanges.conditions) && characterChanges.conditions.length === 0 &&
-          ["cp", "sp", "ep", "gp", "pp"].every((coin) => currency[coin] === 0);
-        const worldCollections = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newLocations", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
-        const noWorldChanges = worldCollections.every((key) => Array.isArray(worldChanges[key]) && (worldChanges[key] as unknown[]).length === 0);
-        const hasPlayerRoll = Array.isArray(candidate.rolls) && candidate.rolls.length > 0 &&
-          (candidate.rolls as JsonRecord[]).every((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
-        const safePendingRoll = hasPlayerRoll && candidate.timeDeltaMinutes === 0 && candidate.hpDelta === 0 &&
-          candidate.newLocationId === null && candidate.newLocationKey === null && noCharacterChanges && noWorldChanges;
-        if (!safePendingRoll) {
-          failures.push(`${attempt.id}: analyst required a player roll but final turn omitted it or mutated pending state`);
+        const analystChecks = Array.isArray(turnAnalysisReport?.playerChecks)
+          ? turnAnalysisReport.playerChecks as JsonRecord[]
+          : [];
+        const unresolvedAnalystChecks = analystChecks.filter((check) =>
+          !submittedPlayerRolls.some((submitted) => rollKey(check.checkType, check.formula) === rollKey(submitted.label, submitted.formula))
+        );
+        const analystRequiresNewRoll = turnAnalysisReport?.requiresPlayerRoll === true &&
+          (!playerRollContinuationReceived || unresolvedAnalystChecks.length > 0);
+        const hasPendingPlayerRoll = candidateRolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        if (analystRequiresNewRoll && !hasPendingPlayerRoll) {
+          failures.push(`${attempt.id}: analyst required a new player roll but final turn omitted it`);
           continue;
+        }
+        if (hasPendingPlayerRoll) {
+          const characterChanges = isRecord(candidate.characterChanges) ? candidate.characterChanges : {};
+          const worldChanges = isRecord(candidate.worldChanges) ? candidate.worldChanges : {};
+          const currency = isRecord(characterChanges.currencyDelta) ? characterChanges.currencyDelta : {};
+          const noCharacterChanges =
+            Array.isArray(characterChanges.inventory) && characterChanges.inventory.length === 0 &&
+            Array.isArray(characterChanges.resources) && characterChanges.resources.length === 0 &&
+            Array.isArray(characterChanges.conditions) && characterChanges.conditions.length === 0 &&
+            ["cp", "sp", "ep", "gp", "pp"].every((coin) => currency[coin] === 0);
+          const worldCollections = ["facts", "npcUpdates", "npcKnowledgeAdditions", "newLocations", "newNpcs", "factionUpdates", "newFactions", "delayedEvents"];
+          const noWorldChanges = worldCollections.every((key) => Array.isArray(worldChanges[key]) && (worldChanges[key] as unknown[]).length === 0);
+          const safePendingRoll = candidate.timeDeltaMinutes === 0 && candidate.hpDelta === 0 &&
+            candidate.newLocationId === null && candidate.newLocationKey === null && noCharacterChanges && noWorldChanges;
+          if (!safePendingRoll) {
+            failures.push(`${attempt.id}: pending player roll response attempted to mutate campaign or character state`);
+            continue;
+          }
         }
       }
       if (!validateSchema(parsed, schema)) {
