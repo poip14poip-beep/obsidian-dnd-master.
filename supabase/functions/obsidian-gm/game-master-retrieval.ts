@@ -826,12 +826,97 @@ export async function callWithEkdrasilReadTools(options: {
     const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
 
     if (!calls.length) {
-      // Open Dungeon Master's orchestration separates retrieval from final
-      // narration. Restore the app's strict turn schema and remove all tools.
+      // Some providers return a pending roll in their structured answer without
+      // invoking the deterministic preparation tool. Never trust that roll:
+      // bind it to a server-prepared check/attack before issuing a challenge.
       const finalBody: JsonRecord = { ...options.requestBody, messages };
       delete finalBody.tools;
       delete finalBody.tool_choice;
-      const finalResult = await send(finalBody);
+      let finalResult = await send(finalBody);
+      if (!finalResult.response.ok || preparedRoll !== null) {
+        return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
+      }
+
+      const finalRoot = finalResult.payload && typeof finalResult.payload === "object"
+        ? finalResult.payload as JsonRecord : {};
+      const finalChoices = Array.isArray(finalRoot.choices) ? finalRoot.choices : [];
+      const finalChoice = finalChoices[0] && typeof finalChoices[0] === "object"
+        ? finalChoices[0] as JsonRecord : {};
+      const finalMessage = finalChoice.message && typeof finalChoice.message === "object"
+        ? finalChoice.message as JsonRecord : {};
+      const finalContent = typeof finalMessage.content === "string" ? finalMessage.content : "";
+      let pendingRoll: JsonRecord | null = null;
+      try {
+        const parsedFinal = JSON.parse(finalContent);
+        if (parsedFinal && typeof parsedFinal === "object" && !Array.isArray(parsedFinal)) {
+          const rolls = Array.isArray((parsedFinal as JsonRecord).rolls)
+            ? (parsedFinal as JsonRecord).rolls as unknown[] : [];
+          pendingRoll = rolls.find((roll) => roll && typeof roll === "object" &&
+            (roll as JsonRecord).roller === "PLAYER" &&
+            (roll as JsonRecord).result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") as JsonRecord | undefined ?? null;
+        }
+      } catch { /* malformed output is handled by the normal schema validator */ }
+
+      if (pendingRoll) {
+        const label = typeof pendingRoll.label === "string" ? pendingRoll.label : "";
+        const preparationTool = /^атака\\b/i.test(label) ? "prepare_player_attack"
+          : /^(?:проверка|спасбросок)\\b/i.test(label) || label.includes("(") ? "prepare_player_check"
+          : null;
+        if (preparationTool && finalMessage.role === "assistant") {
+          messages.push(finalMessage);
+          messages.push({
+            role: "system",
+            content: preparationTool === "prepare_player_attack"
+              ? "Ты вернул ожидающий бросок атаки без серверной подготовки. Теперь обязательно вызови prepare_player_attack. Оружие должно точно совпадать с weaponAttacks листа, а AC — подтверждаться уже найденной выдержкой SRD. Если AC не подтверждён, не выдумывай его."
+              : "Ты вернул ожидающую проверку без серверной подготовки. Теперь обязательно вызови prepare_player_check. Выбери точные kind, ability, skill и DC; сервер сам вычислит бонус и формулу по листу персонажа.",
+          });
+          const forcedBody: JsonRecord = {
+            ...options.requestBody,
+            messages,
+            tools: EKDRASIL_READ_TOOLS,
+            tool_choice: { type: "function", function: { name: preparationTool } },
+          };
+          delete forcedBody.response_format;
+          delete forcedBody.structured_outputs;
+          const forcedResult = await send(forcedBody);
+          const forcedRoot = forcedResult.payload && typeof forcedResult.payload === "object"
+            ? forcedResult.payload as JsonRecord : {};
+          const forcedChoices = Array.isArray(forcedRoot.choices) ? forcedRoot.choices : [];
+          const forcedChoice = forcedChoices[0] && typeof forcedChoices[0] === "object"
+            ? forcedChoices[0] as JsonRecord : {};
+          const forcedMessage = forcedChoice.message && typeof forcedChoice.message === "object"
+            ? forcedChoice.message as JsonRecord : {};
+          const forcedCalls = Array.isArray(forcedMessage.tool_calls) ? forcedMessage.tool_calls : [];
+          if (forcedResult.response.ok && forcedCalls.length === 1) {
+            messages.push(forcedMessage);
+            const rawCall = forcedCalls[0] && typeof forcedCalls[0] === "object"
+              ? forcedCalls[0] as JsonRecord : {};
+            const fn = rawCall.function && typeof rawCall.function === "object"
+              ? rawCall.function as JsonRecord : {};
+            const id = typeof rawCall.id === "string" ? rawCall.id : "";
+            const name = typeof fn.name === "string" ? fn.name : "";
+            const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
+            const toolResult = id && name === preparationTool
+              ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon,
+                  options.playerCharacter ?? null, false, retrievedRuleExcerpts,
+                  completedRolls, options.npcProfiles ?? [])
+              : { ok: false, error: "Не удалось подтвердить обязательный инструмент подготовки броска." };
+            if (toolResult.preparedRoll && typeof toolResult.preparedRoll === "object" &&
+                (toolResult.preparedRoll as PreparedRoll).roller === "PLAYER") {
+              preparedRoll = toolResult.preparedRoll as PreparedRoll;
+            }
+            messages.push({
+              role: "tool",
+              tool_call_id: id || "invalid-tool-call",
+              content: JSON.stringify(toolResult),
+            });
+            toolCalls += 1;
+            if (preparedRoll) {
+              finalResult = await send(finalBody);
+            }
+          }
+        }
+      }
       return { ...finalResult, toolCalls, exhausted: false, preparedRoll, serverRolls, conversation: messages };
     }
     if (round >= maxRounds || toolCalls + calls.length > maxCalls) {
