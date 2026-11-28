@@ -1098,7 +1098,7 @@ function prepareNpcDamage(
     attackResolution: { ...attackResolution, outcome: critical ? "CRITICAL_HIT" : "HIT" },
     preparedRoll: {
       roller: "GM",
-      label: "Урон " + creatureName + " (" + attackName + ")",
+      label: damageLabel,
       formula,
       dc: null,
       targetType: "NONE",
@@ -1106,6 +1106,9 @@ function prepareNpcDamage(
       kind: "NPC_DAMAGE",
       reason,
     },
+    damageLabel,
+    damageType: /\\)\\s*([a-z]+)\\s+damage/i.exec(sourceExcerpt.text)?.[1] ?? null,
+    damageTarget: "PLAYER",
     damageSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
     critical,
   };
@@ -1550,6 +1553,47 @@ export async function callWithEkdrasilReadTools(options: {
           }
         }
       }
+      if ("preparedRoll" in toolResult) {
+        const rawPrepared = toolResult.preparedRoll;
+        if (rawPrepared && typeof rawPrepared === "object") {
+          const prepared = rawPrepared as PreparedRoll;
+          if (prepared.roller === "PLAYER") {
+            if (serverRolls.length >= 4) {
+              toolResult = { ok: false, error: "Достигнут предел серверных бросков для одного действия.", preparedRoll: null };
+            } else {
+              preparedRoll = prepared;
+              requireToolCall = false;
+            }
+          } else if (prepared.roller === "GM") {
+            try {
+              const serverRollLimit = preparedRoll ? 3 : 4;
+              if (serverRolls.length >= serverRollLimit) {
+                throw new Error("Достигнут предел серверных бросков для одного действия.");
+              }
+              const completed = executePreparedServerRoll(prepared, options.rollRandom);
+              serverRolls.push(completed);
+              completedRolls.push(completed);
+              toolResult = {
+                ...toolResult,
+                preparedRoll: null,
+                serverRoll: completed,
+                ...(prepared.kind === "NPC_DAMAGE" ? {
+                  damageResolution: {
+                    total: completed.total, formula: completed.formula,
+                    modifier: completed.modifier, dice: completed.dice,
+                  },
+                } : {}),
+              };
+            } catch (error) {
+              toolResult = {
+                ok: false,
+                error: error instanceof Error ? error.message : "Серверный бросок NPC не выполнен.",
+                preparedRoll: null,
+              };
+            }
+          }
+        }
+      }
       if (toolResult.ok === true && toolResult.hit === true &&
           toolResult.damageResolution && typeof toolResult.damageResolution === "object") {
         const damage = toolResult.damageResolution as JsonRecord;
@@ -1580,37 +1624,6 @@ export async function callWithEkdrasilReadTools(options: {
             item.source === event.source && item.formula === event.formula && item.damage === event.damage
           );
           if (!duplicate) combatEvents.push(event);
-        }
-      }
-      if ("preparedRoll" in toolResult) {
-        const rawPrepared = toolResult.preparedRoll;
-        if (rawPrepared && typeof rawPrepared === "object") {
-          const prepared = rawPrepared as PreparedRoll;
-          if (prepared.roller === "PLAYER") {
-            if (serverRolls.length >= 4) {
-              toolResult = { ok: false, error: "Достигнут предел серверных бросков для одного действия.", preparedRoll: null };
-            } else {
-              preparedRoll = prepared;
-              requireToolCall = false;
-            }
-          } else if (prepared.roller === "GM") {
-            try {
-              const serverRollLimit = preparedRoll ? 3 : 4;
-              if (serverRolls.length >= serverRollLimit) {
-                throw new Error("Достигнут предел серверных бросков для одного действия.");
-              }
-              const completed = executePreparedServerRoll(prepared, options.rollRandom);
-              serverRolls.push(completed);
-              completedRolls.push(completed);
-              toolResult = { ...toolResult, preparedRoll: null, serverRoll: completed };
-            } catch (error) {
-              toolResult = {
-                ok: false,
-                error: error instanceof Error ? error.message : "Серверный бросок NPC не выполнен.",
-                preparedRoll: null,
-              };
-            }
-          }
         }
       }
       messages.push({
