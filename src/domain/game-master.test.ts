@@ -330,13 +330,13 @@ describe("game master resolver", () => {
       success: true,
       result: "кости=[d20:13]; модификатор=+4; итог=17",
       challenge: {
-        userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC", roller: "PLAYER",
+        userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC" as const, roller: "PLAYER" as const,
         label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
       },
       proof: {
         userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==",
         challenge: {
-          userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC", roller: "PLAYER",
+          userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC" as const, roller: "PLAYER" as const,
           label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
         },
       },
