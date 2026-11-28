@@ -92,3 +92,16 @@ Useful patterns identified: bounded turn orchestration, engine/narration boundar
 2. Open a PR to `cloud-api-client`; merge only after checks pass.
 3. GitHub Pages deploys from `cloud-api-client`. Do not merge into `main` as part of this work.
 4. Test with a disposable campaign before using the user's main campaign.
+
+
+## Lorekeeper engine integration — 2026-11-28
+
+The upstream project is a full local Node.js/SQLite application, not a drop-in Supabase Edge Function. Its own design separates AI-driven tool selection from server-owned dice, attacks, damage, conditions and state. The Ekdrasil app remains React + Supabase; the upstream 2014/5e rules data is not authoritative for this D&D 2024 campaign.
+
+A first adapter slice is being developed on `feat/lorekeeper-engine-adapter`, with PR #27 targeting `cloud-api-client` only:
+- a dedicated D&D rules specialist must return a structured action decision before narration;
+- the server derives player skill/save formulas from the character sheet and owns GM random results;
+- pending player rolls block all state mutation;
+- the Android UI offers a server-backed `Бросить кубик` control instead of manual numeric entry.
+
+This is not yet the complete upstream engine port. Verified monster stat blocks, player weapon attack adjudication, damage, conditions, initiative/action economy and full end-to-end Android acceptance remain release blockers. Do not deploy or claim the master is playable until those gates pass.
