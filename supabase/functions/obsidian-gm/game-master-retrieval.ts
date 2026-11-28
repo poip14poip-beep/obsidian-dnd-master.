@@ -49,6 +49,25 @@ export const EKDRASIL_READ_TOOLS = [
   {
     type: "function",
     function: {
+      name: "npc_reaction",
+      description: "Первая реакция нового, ещё не зарегистрированного NPC, если его отношение к герою не задано каноном или событием. Сервер бросает 2d6 с обоснованным модификатором и возвращает attitude. Уже зарегистрированному NPC повторную реакцию не бросай: используй его текущее отношение. После результата создай NPC в npcChanges и точно перенеси serverRoll.npcAttitude в attitudeToPlayer.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          name: { type: "string", minLength: 1, maxLength: 80 },
+          modifier: { type: "integer", minimum: -10, maximum: 10, description: "Только обоснованный обстоятельствами модификатор реакции; по умолчанию 0." },
+          trait: { type: "string", maxLength: 300 },
+          location: { type: "string", maxLength: 120 },
+          reason: { type: "string", minLength: 3, maxLength: 200 },
+        },
+        required: ["name", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "social_check",
       description: "Проверка попытки повлиять на уже известного NPC словами: убедить, обмануть или запугать. Вызывай ДО описания ответа NPC. Сервер найдёт отношение NPC к герою и назначит DC по правилам социального взаимодействия: friendly 10, indifferent 15, hostile 20. Обычный разговор, приветствие, вопрос или слушание не требуют броска.",
       parameters: {
@@ -203,7 +222,7 @@ export interface PreparedRoll {
   dc: number | null;
   targetType: "DC" | "AC" | "NONE";
   modifier: number;
-  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "PLAYER_DAMAGE" | "NPC_ATTACK" | "NPC_DAMAGE";
+  kind: "ABILITY_CHECK" | "SKILL_CHECK" | "SAVING_THROW" | "WEAPON_ATTACK" | "PLAYER_DAMAGE" | "NPC_ATTACK" | "NPC_DAMAGE" | "NPC_REACTION";
   reason: string;
 }
 
@@ -437,6 +456,63 @@ function socialAttitude(value: unknown): "friendly" | "indifferent" | "hostile" 
   if (/friendly|дружелюб|дружес|доброжел|союзник|друг/.test(attitude)) return "friendly";
   if (/indifferent|neutral|нейтрал|равнодуш|безразлич|насторож|wary/.test(attitude)) return "indifferent";
   return null;
+}
+
+function prepareNpcReaction(
+  args: JsonRecord,
+  npcProfiles: JsonRecord[],
+  completedRolls: JsonRecord[],
+): JsonRecord {
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+  const modifier = args.modifier === undefined ? 0 : args.modifier;
+  const trait = typeof args.trait === "string" ? args.trait.trim() : "";
+  const location = typeof args.location === "string" ? args.location.trim() : "";
+  if (name.length < 1 || name.length > 80 || reason.length < 3 || reason.length > 200 ||
+      !Number.isInteger(modifier) || (modifier as number) < -10 || (modifier as number) > 10) {
+    return { ok: false, error: "Для npc_reaction нужны имя, причина и целочисленный модификатор от -10 до 10." };
+  }
+  const existing = npcProfiles.find((entry) => typeof entry.name === "string" &&
+    entry.name.normalize("NFKC").trim().toLocaleLowerCase() === name.normalize("NFKC").trim().toLocaleLowerCase());
+  if (existing) {
+    const attitude = socialAttitude(existing.attitudeToPlayer);
+    if (!attitude) {
+      return { ok: false, error: "NPC уже зарегистрирован, но его отношение не подтверждено. Не бросай повторную реакцию и не выдумывай отношение." };
+    }
+    return {
+      ok: true,
+      npcContext: { name: existing.name, attitude, rolled: false },
+      note: "NPC уже зарегистрирован. Не бросай реакцию первой встречи повторно; отыгрывай подтверждённое отношение.",
+    };
+  }
+  const label = "Первая реакция NPC — " + name;
+  const previous = [...completedRolls].reverse().find((roll) =>
+    roll.kind === "NPC_REACTION" && roll.label === label &&
+    ["hostile", "indifferent", "friendly"].includes(String(roll.npcAttitude)),
+  );
+  if (previous) {
+    return {
+      ok: true,
+      npcContext: { name, attitude: previous.npcAttitude, rolled: true, trait, location },
+      note: "Реакция этого NPC уже была брошена на сервере в текущем действии. Используй сохранённый результат, не бросай повторно.",
+    };
+  }
+  const signedModifier = modifier as number;
+  const formula = signedModifier === 0 ? "2d6" : "2d6" + (signedModifier > 0 ? "+" : "") + String(signedModifier);
+  return {
+    ok: true,
+    npcContext: { name, trait, location, reason },
+    preparedRoll: {
+      roller: "GM",
+      label,
+      formula,
+      dc: null,
+      targetType: "NONE",
+      modifier: signedModifier,
+      kind: "NPC_REACTION",
+      reason,
+    },
+  };
 }
 
 function prepareSocialCheck(
@@ -842,6 +918,9 @@ export function executeEkdrasilReadTool(
   if (!args || typeof args !== "object" || Array.isArray(args)) {
     return { ok: false, error: "Ожидался объект аргументов." };
   }
+  if (name === "npc_reaction") {
+    return prepareNpcReaction(args as JsonRecord, npcProfiles, completedRolls);
+  }
   if (name === "check_notice") {
     return prepareCheckNotice(args as JsonRecord, playerCharacter);
   }
@@ -951,6 +1030,7 @@ export interface ServerCompletedRoll extends JsonRecord {
   success: boolean | null;
   result: string;
   kind: PreparedRoll["kind"];
+  npcAttitude?: "hostile" | "indifferent" | "friendly";
 }
 
 /** Resolve a GM-owned roll immediately on the server; never expose a pending GM roll to the player UI. */
@@ -985,6 +1065,9 @@ export function executePreparedServerRoll(
     ? naturalD20 === 20 ? " · КРИТИЧЕСКОЕ ПОПАДАНИЕ"
       : success ? " · ПОПАДАНИЕ" : " · ПРОМАХ"
     : success === null ? "" : success ? " · УСПЕХ" : " · ПРОВАЛ";
+  const npcAttitude = prepared.kind === "NPC_REACTION"
+    ? rolled.total <= 5 ? "hostile" : rolled.total >= 9 ? "friendly" : "indifferent"
+    : undefined;
   return {
     roller: "GM",
     label: prepared.label,
@@ -997,6 +1080,7 @@ export function executePreparedServerRoll(
     success,
     result: arithmetic + outcome,
     kind: prepared.kind,
+    ...(npcAttitude ? { npcAttitude } : {}),
   };
 }
 
