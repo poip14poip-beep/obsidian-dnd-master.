@@ -23,11 +23,9 @@ const ALLOWED_ORIGINS = new Set([
 type JsonRecord = Record<string, unknown>;
 type ModelAttempt = { id: GameMasterModelId; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
-  // Cost-efficient default for ordinary narration and low-risk turns.
+  // Cost-efficient primary model for every game-master operation.
   { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
-  // Stronger narrative/reasoning route for character dossiers and consequential turns.
-  { id: "anthropic/claude-sonnet-5.5", format: "schema" },
-  // Independent provider fallback if both primary routes are unavailable.
+  // Independent provider fallback if the primary route is unavailable or invalid.
   { id: "google/gemini-4-argon", format: "schema" },
 ];
 
