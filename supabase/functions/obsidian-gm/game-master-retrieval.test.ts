@@ -561,4 +561,64 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
   });
 
+  it("caps repeated rule searches and still reaches deterministic player-check preparation", async () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      skillBonuses: [{ name: "Восприятие", bonus: 5, basis: "Мудрость + владение" }],
+      savingThrowBonuses: { strength: 1, dexterity: 2, constitution: 1, intelligence: 0, wisdom: 5, charisma: -1 },
+      conditions: [],
+    };
+    const search = (id: string) => ({
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id, type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "ability check d20" }) },
+      }] } }],
+    });
+    const prepare = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "prepare-check", type: "function",
+        function: { name: "prepare_player_check", arguments: JSON.stringify({
+          kind: "SKILL_CHECK", ability: "wisdom", skill: "Восприятие", dc: 15,
+          advantage: "NONE", reason: "Осмотреть улицу на подозрительных людей",
+        }) },
+      }] } }],
+    };
+    const continueLoop = { choices: [{ message: { role: "assistant", content: "Проверка подготовлена." } }] };
+    const finalTurn = {
+      narration: "Ты внимательно осматриваешь улицу.",
+      rolls: [{ roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5",
+        dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+    };
+    const final = { choices: [{ message: { role: "assistant", content: JSON.stringify(finalTurn) } }] };
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(search("search-1")), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(search("search-2")), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(prepare), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(continueLoop), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
+    const result = await callWithEkdrasilReadTools({
+      fetcher: fetcher as unknown as typeof fetch,
+      url: "https://example.test",
+      headers: {},
+      requestBody: { model: "test", messages: [], response_format: { type: "json_schema" } },
+      enabled: true,
+      rules,
+      canon,
+      playerCharacter: character,
+      maxToolRounds: 8,
+      maxToolCalls: 16,
+    });
+    const thirdRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
+    const availableNames = thirdRequest.tools.map((tool: { function: { name: string } }) => tool.function.name);
+    expect(availableNames).not.toContain("search_dnd_rules");
+    expect(availableNames).toContain("prepare_player_check");
+    expect(result.preparedRoll).toMatchObject({
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5", dc: 15,
+    });
+    expect(result.exhausted).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(5);
+  });
+
+
 });
