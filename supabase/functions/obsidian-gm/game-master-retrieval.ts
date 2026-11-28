@@ -772,7 +772,7 @@ function preparePlayerAttack(
   const exhaustionPenalty = exhaustionMatch ? 2 * Number(exhaustionMatch[1]) : 0;
   const modifier = Number(weaponEntry.attackBonus) - exhaustionPenalty;
   const effectiveAdvantage = combineRollAdvantage(
-    advantage, false, ["blinded", "poisoned", "prone", "restrained"].some((condition) => conditions.has(condition)),
+    advantage, conditions.has("invisible"), ["blinded", "poisoned", "prone", "restrained"].some((condition) => conditions.has(condition)),
   );
   const formula = rollFormula(modifier, effectiveAdvantage);
   return {
@@ -846,7 +846,7 @@ function prepareNpcAttack(
   const targetConditions = conditionKeys(playerCharacter);
   const effectiveAdvantage = combineRollAdvantage(
     advantage,
-    ["blinded", "paralyzed", "petrified", "restrained", "stunned", "unconscious"].some((condition) => targetConditions.has(condition)),
+    ["blinded", "incapacitated", "paralyzed", "petrified", "restrained", "stunned", "unconscious"].some((condition) => targetConditions.has(condition)),
     targetConditions.has("invisible"),
   );
   const formula = rollFormula(attackBonus, effectiveAdvantage);
