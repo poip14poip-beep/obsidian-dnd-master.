@@ -15,6 +15,7 @@ export interface CompletedGameRoll {
   modifier: number;
   total: number;
   success: boolean | null;
+  result: string;
 }
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
