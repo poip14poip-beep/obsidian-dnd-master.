@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll } from "./game-master-retrieval";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll, resolveSocialCheckOutcome } from "./game-master-retrieval";
 
 const rules = {
   sourceId: "SRD_5_2_1",
@@ -158,6 +158,21 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.error).toContain("не подтверждено");
   });
 
+  it("resolves social outcomes and attitude shifts at the five-point margin", () => {
+    expect(resolveSocialCheckOutcome("hostile", 25, 20)).toEqual({
+      success: true, attitude: "indifferent", shifted: true, direction: "up",
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 10, 15)).toEqual({
+      success: false, attitude: "hostile", shifted: true, direction: "down",
+    });
+    expect(resolveSocialCheckOutcome("indifferent", 14, 15)).toEqual({
+      success: false, attitude: "indifferent", shifted: false, direction: null,
+    });
+    expect(resolveSocialCheckOutcome("friendly", 15, 10)).toEqual({
+      success: true, attitude: "friendly", shifted: false, direction: null,
+    });
+  });
+
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
     const character = {
       statsCertainty: "KNOWN",
@@ -181,7 +196,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       ok: true,
       socialContext: { npc: "Марта", approach: "persuade", attitude: "friendly", dc: 10 },
       preparedRoll: {
-        roller: "PLAYER", label: "Харизма (Убеждение) — Марта",
+        roller: "PLAYER", label: "Социальная проверка — Марта: Харизма (Убеждение)",
         formula: "1d20+4", dc: 10, targetType: "DC", kind: "SKILL_CHECK",
       },
     });
@@ -191,7 +206,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(hostile).toMatchObject({
       ok: true,
       socialContext: { attitude: "hostile", dc: 20 },
-      preparedRoll: { label: "Харизма (Запугивание) — Капитан стражи", dc: 20 },
+      preparedRoll: { label: "Социальная проверка — Капитан стражи: Харизма (Запугивание)", dc: 20 },
     });
     const neutral = executeEkdrasilReadTool("social_check", JSON.stringify({
       npc: "Торговец", approach: "deceive", reason: "Скрыть настоящую цель визита",
