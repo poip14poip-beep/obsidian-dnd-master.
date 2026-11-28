@@ -368,6 +368,18 @@ export interface RollRecord {
   result: string;
 }
 
+/** Server-derived damage outcome. Never authored by the language model. */
+export interface CombatDamageEvent {
+  targetType: "PLAYER" | "NPC";
+  targetName: string;
+  damage: number;
+  damageType: string | null;
+  critical: boolean;
+  source: "PLAYER" | "NPC";
+  formula: string;
+  rollLabel: string;
+}
+
 export interface NpcTurnChange {
   action: "CREATE" | "UPDATE";
   playerVisible: boolean;
@@ -445,6 +457,7 @@ export interface TurnDraft {
   questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
+  combatEvents?: CombatDamageEvent[];
   timeDeltaMinutes: number;
   newInGameDate: string;
   newLocationId: string;
@@ -478,6 +491,7 @@ export interface GameTurnEntry {
   questChanges?: QuestTurnChange[];
   characterChanges?: CharacterChangeSet;
   npcChanges?: NpcTurnChange[];
+  combatEvents?: CombatDamageEvent[];
   locationIdAfter: string | null;
   hpDelta: number;
   rolls: RollRecord[];
