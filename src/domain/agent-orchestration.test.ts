@@ -10,8 +10,11 @@ describe("parallel specialist game-master agents", () => {
       const findings = request.model.startsWith("deepseek/")
         ? ["[CANON SOURCE sectionId=12; lines 20–24] Место подтверждено."]
         : ["[SRD SOURCE lines 44–48] Для поиска подходит проверка Восприятия."];
+      const npcAgencyProposals = request.model.startsWith("deepseek/")
+        ? ["Смотритель проверяет склад по собственной цели, если прошло достаточно времени."]
+        : [];
       return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ findings, uncertainties: [] }) } }],
+        choices: [{ message: { content: JSON.stringify({ findings, uncertainties: [], npcAgencyProposals }) } }],
       }), { status: 200, headers: { "Content-Type": "application/json" } });
     };
 
@@ -29,6 +32,8 @@ describe("parallel specialist game-master agents", () => {
     expect(formatted).toContain("CANON_AND_CAMPAIGN");
     expect(formatted).toContain("DND_RULES_AND_CHARACTER");
     expect(formatted).toContain("не заменяют полный канон");
+    expect(results[0]?.npcAgencyProposals).toHaveLength(1);
+    expect(formatted).toContain("Гипотезы самостоятельных действий NPC (НЕ ФАКТЫ)");
   });
 
   it("marks a failed specialist unavailable without inventing findings", async () => {

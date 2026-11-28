@@ -9,6 +9,7 @@ export interface SpecialistAgentResult {
   status: "COMPLETED" | "UNAVAILABLE";
   findings: string[];
   uncertainties: string[];
+  npcAgencyProposals: string[];
 }
 
 interface AgentRequest {
@@ -27,8 +28,9 @@ const AGENT_SCHEMA = {
   properties: {
     findings: { type: "array", maxItems: 5, items: { type: "string", maxLength: 360 } },
     uncertainties: { type: "array", maxItems: 5, items: { type: "string", maxLength: 240 } },
+    npcAgencyProposals: { type: "array", maxItems: 3, items: { type: "string", maxLength: 300 } },
   },
-  required: ["findings", "uncertainties"],
+  required: ["findings", "uncertainties", "npcAgencyProposals"],
 };
 
 function extractContent(payload: unknown): string {
@@ -54,6 +56,7 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
     status: "UNAVAILABLE",
     findings: [],
     uncertainties: ["Специализированный анализатор временно недоступен; итоговый мастер обязан проверить источники самостоятельно."],
+    npcAgencyProposals: [],
   });
   try {
     const response = await (request.fetcher ?? fetch)("https://routerai.ru/api/v1/chat/completions", {
@@ -83,12 +86,16 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
     if (!raw) return unavailable();
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== "object" || !("findings" in parsed) ||
-        !("uncertainties" in parsed) || !Array.isArray((parsed as { findings: unknown }).findings) ||
-        !Array.isArray((parsed as { uncertainties: unknown }).uncertainties)) return unavailable();
+        !("uncertainties" in parsed) || !("npcAgencyProposals" in parsed) ||
+        !Array.isArray((parsed as { findings: unknown }).findings) ||
+        !Array.isArray((parsed as { uncertainties: unknown }).uncertainties) ||
+        !Array.isArray((parsed as { npcAgencyProposals: unknown }).npcAgencyProposals)) return unavailable();
     const findings = (parsed as { findings: unknown[] }).findings;
     const uncertainties = (parsed as { uncertainties: unknown[] }).uncertainties;
-    if (findings.length > 5 || uncertainties.length > 5 ||
-        [...findings, ...uncertainties].some((item) => typeof item !== "string" || item.length > 360)) {
+    const npcAgencyProposals = (parsed as { npcAgencyProposals: unknown[] }).npcAgencyProposals;
+    if (findings.length > 5 || uncertainties.length > 5 || npcAgencyProposals.length > 3 ||
+        [...findings, ...uncertainties].some((item) => typeof item !== "string" || item.length > 360) ||
+        npcAgencyProposals.some((item) => typeof item !== "string" || item.length > 300)) {
       return unavailable();
     }
     return {
@@ -97,6 +104,7 @@ async function runSpecialistAgent(request: AgentRequest): Promise<SpecialistAgen
       status: "COMPLETED",
       findings: findings as string[],
       uncertainties: uncertainties as string[],
+      npcAgencyProposals: npcAgencyProposals as string[],
     };
   } catch {
     return unavailable();
@@ -123,7 +131,8 @@ export async function runGameTurnAgents(args: {
         "Выявляй подтверждённые факты, причинные последствия, ограничения мира, знания персонажа/NPC и противоречия.",
         "Не придумывай отсутствующие сведения. Не смешивай объективную истину, знания игрока и знания NPC.",
         "Каждый вывод привязывай к sectionId/строкам канона или к полю состояния кампании. Если источника нет — uncertainty.",
-        "Не предлагай механические решения D&D. Верни только краткий JSON findings и uncertainties.",
+        "Оцени самостоятельные действия NPC вне непосредственной сцены: исходи только из их целей, ресурсов, местоположения, отношений, знаний и реально прошедшего времени. Предложи не более трёх правдоподобных действий в npcAgencyProposals. Это гипотезы для главного мастера, не свершившиеся события; не обновляй факты и не делай NPC всеведущими. Если времени/оснований недостаточно — верни пустой массив.",
+        "Не предлагай механические решения D&D. Верни краткий JSON findings, uncertainties и npcAgencyProposals.",
       ].join("\n"),
       sourceContext: args.canonContext,
       campaignInput: args.campaignInput,
@@ -138,7 +147,7 @@ export async function runGameTurnAgents(args: {
         "Определи применимые правила, действие/реакцию/движение, нужную проверку, характеристику, навык, модификатор, преимущество/помеху, формулу броска и необходимые условия.",
         "Проверяй числа только по листу персонажа и переданным фрагментам SRD. Не выдумывай DC, AC, бонусы, ресурсы или свойства.",
         "Если для решения не хватает точного правила или значения, явно укажи uncertainty. Не описывай исход до броска.",
-        "Каждый вывод привязывай к строкам SRD или полю листа персонажа. Верни только краткий JSON findings и uncertainties.",
+        "Каждый вывод привязывай к строкам SRD или полю листа персонажа. npcAgencyProposals всегда оставляй пустым. Верни краткий JSON findings, uncertainties и npcAgencyProposals.",
       ].join("\n"),
       sourceContext: args.rulesContext,
       campaignInput: args.campaignInput,
@@ -156,6 +165,7 @@ export function formatSpecialistAgentContext(results: SpecialistAgentResult[]): 
       `АГЕНТ: ${result.role}; модель=${result.model}; статус=${result.status}`,
       result.findings.length ? `Выводы:\n- ${result.findings.join("\n- ")}` : "Выводы: нет подтверждённых выводов.",
       result.uncertainties.length ? `Неопределённости:\n- ${result.uncertainties.join("\n- ")}` : "Неопределённости: не отмечены.",
+      result.npcAgencyProposals.length ? `Гипотезы самостоятельных действий NPC (НЕ ФАКТЫ):\n- ${result.npcAgencyProposals.join("\n- ")}` : "Самостоятельные действия NPC: оснований для предложений нет.",
     ].join("\n")),
   ].join("\n\n");
 }

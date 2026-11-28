@@ -12,6 +12,12 @@ const context: GameMasterContext = {
   character: { schemaVersion: 1, stateVersion: 1, sourceDossierId: "dossier", name: "Тестовый персонаж", nameCertainty: "KNOWN", speciesAndClass: "Человек / Воин", level: 20, hpCurrent: 100, hpMax: 100, hpTemp: 0, armorClass: 18, statsCertainty: "KNOWN", currentLocationLabel: "UNKNOWN", conditions: [], resources: [], inventory: [], notes: "", updatedAt: "2026-01-01T00:00:00Z" },
   canonFacts: [], npcs: [], factions: [], locations: [], timelineEvents: [], journal: [],
 };
+const validNpcProfile = {
+  biography: "UNKNOWN", appearance: "UNKNOWN", personality: "UNKNOWN", motivation: "UNKNOWN",
+  longTermGoal: "UNKNOWN", secrets: "UNKNOWN", relationships: "UNKNOWN", skillsAndAbilities: "UNKNOWN",
+  combatProfile: { status: "NOT_REQUIRED", source: "", armorClass: null, hitPointsCurrent: null, hitPointsMax: null, speed: "UNKNOWN",
+    attacks: [], resistances: [], vulnerabilities: [], immunities: [] },
+};
 const validTurn = { narration: "Перед тобой дверь.", campaignMemory: "Нет недавних событий.", sensoryDescription: "Зрение: дверь.", spatialAccounting: "Расстояние UNKNOWN.", mechanics: "Проверка не требуется.", consequences: "Ничего не изменилось.", resourceAccounting: "Без изменений.", nextAction: "Что делаешь?", summary: "Осмотр двери", worldOutcome: "Дверь осмотрена.", timeDeltaMinutes: 1, hpDelta: 0, newInGameDate: "UNKNOWN", newLocationId: null, consequenceText: "", environment: { temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN", lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN", precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "" }, environmentReason: "Без изменений.", questChanges: [], rolls: [], characterChanges: { inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 } }, npcChanges: [], needsClarification: false, clarificationQuestion: "", stateNotes: [] };
 const testOptions = (fetcher: typeof fetch) => ({ fetcher, supabaseUrl: "https://test.supabase.co", publishableKey: "sb_publishable_test" });
 
@@ -283,6 +289,78 @@ describe("game master resolver", () => {
     expect(npc.history).toHaveLength(12);
   });
 
+  it("attaches only the server-signed challenge to a prepared pending roll", async () => {
+    const challenge = {
+      userId: "test-user",
+      formula: "1d20+4",
+      dc: 15,
+      targetType: "DC" as const,
+      roller: "PLAYER" as const,
+      label: "Проверка Восприятия",
+      issuedAt: 1_798_000_000_000,
+      nonce: "challenge-pending-test",
+      signature: "Y2hhbGxlbmdl",
+    };
+    const pendingTurn = {
+      ...validTurn,
+      timeDeltaMinutes: 0,
+      rolls: [{
+        roller: "PLAYER" as const,
+        label: challenge.label,
+        formula: challenge.formula,
+        dc: challenge.dc,
+        targetType: challenge.targetType,
+        result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+      }],
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(pendingTurn),
+      rollChallenge: challenge,
+    }), { status: 200 }));
+    const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
+    expect(result.turn.rolls).toHaveLength(1);
+    expect(result.turn.rolls[0]?.challenge).toEqual(challenge);
+  });
+
+  it("passes completed dice as structured records separate from free-form action text", async () => {
+    const completedRoll = {
+      id: "gm-roll-test",
+      label: "Проверка Восприятия",
+      formula: "1d20+4",
+      dc: 15,
+      targetType: "DC" as const,
+      roller: "PLAYER" as const,
+      dice: [{ value: 13, sides: 20, kept: true }],
+      modifier: 4,
+      total: 17,
+      success: true,
+      result: "кости=[d20:13]; модификатор=+4; итог=17",
+      challenge: {
+        userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC" as const, roller: "PLAYER" as const,
+        label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
+      },
+      proof: {
+        userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==",
+        challenge: {
+          userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC" as const, roller: "PLAYER" as const,
+          label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
+        },
+      },
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
+    await resolvePlayerAction("test-user-jwt", {
+      ...context,
+      action: "Осмотреть дверь",
+      completedRolls: [completedRoll],
+    }, testOptions(fetcher as unknown as typeof fetch));
+    const request = JSON.parse(fetcher.mock.calls[0]![1]!.body as string);
+    const sent = JSON.parse(request.input);
+    expect(sent.action).toBe("Осмотреть дверь");
+    expect(sent.completedRolls).toEqual([completedRoll]);
+    expect(sent.completedRolls[0].total).toBe(17);
+    expect(sent.completedRolls[0].success).toBe(true);
+  });
+
   it("sends source-grounded context and parses a structured turn", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn), usage: { input_tokens: 100, output_tokens: 40 } }), { status: 200 }));
     const result = await resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch));
@@ -380,7 +458,7 @@ describe("game master resolver", () => {
       goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", certainty: "KNOWN" as const, sourceId: "test",
       locked: false, knowledge: [], version: 1, history: [] };
     const duplicate = { ...validTurn, npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN",
-      attitudeToPlayer: "UNKNOWN", playerVisible: false, locationName: null, factionName: null, certainty: "KNOWN", reason: "test", knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
+      attitudeToPlayer: "UNKNOWN", playerVisible: false, locationName: null, factionName: null, certainty: "KNOWN", reason: "test", gmProfile: validNpcProfile, knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(duplicate) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", { ...context, npcs: [existingNpc] }, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "DUPLICATE_NPC" });
@@ -392,21 +470,21 @@ describe("game master resolver", () => {
       .rejects.toMatchObject({ code: "UNKNOWN_LOCATION_ID" });
   });
   it("rejects model-invented dice results", async () => {
-    const invented = { ...validTurn, rolls: [{ label: "Скрытность", formula: "1d20+5", result: "17" }] };
+    const invented = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Скрытность", formula: "1d20+5", dc: 15, targetType: "DC", result: "17" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invented) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "GM_INVENTED_DICE_RESULT" });
   });
   it("rejects unsupported player dice formulas before opening the roll dialog", async () => {
-    const invalidFormula = { ...validTurn, rolls: [{ label: "Восприятие", formula: "1d7+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }] };
+    const invalidFormula = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Восприятие", formula: "1d7+5", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidFormula) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_DICE_FORMULA" });
   });
   it("rejects NPC or location changes while a player roll is pending", async () => {
-    const invalidPending = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Атлетика", formula: "1d20+5", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+    const invalidPending = { ...validTurn, rolls: [{ roller: "PLAYER", label: "Атлетика", formula: "1d20+5", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
       npcChanges: [{ action: "CREATE", name: "Страж", role: "Страж", goals: "UNKNOWN", resources: "UNKNOWN", attitudeToPlayer: "UNKNOWN", playerVisible: false,
-        locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
+        locationName: null, factionName: null, certainty: "KNOWN", reason: "Пока бросок не разрешён", gmProfile: validNpcProfile, knowledgeAdditions: [], playerKnowledgeAdditions: [] }] };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(invalidPending) }), { status: 200 }));
     await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "INVALID_CLARIFICATION_DELTA" });
@@ -514,4 +592,46 @@ describe("canonical calendar validation in game master", () => {
     await expect(resolvePlayerAction("test-user-jwt", calendarContext, testOptions(invalidFetcher as unknown as typeof fetch)))
       .rejects.toMatchObject({ code: "CALENDAR_DELTA_MISMATCH" });
   });
+  it("accepts completed server-owned GM rolls without treating them as pending player rolls", async () => {
+    const serverRoll = {
+      ...validTurn,
+      rolls: [{
+        roller: "GM", label: "Проверка NPC", formula: "1d20+3",
+        dc: 15, targetType: "DC", result: "12 + 3 = 15 · УСПЕХ",
+      }],
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(serverRoll),
+    }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .resolves.toMatchObject({ turn: { rolls: [{ roller: "GM", result: "12 + 3 = 15 · УСПЕХ" }] } });
+  });
+
+  it("allows one pending player roll alongside completed GM rolls and keeps the action paused", async () => {
+    const pending = {
+      roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20+5",
+      dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА",
+    };
+    const serverRoll = {
+      roller: "GM", label: "Проверка NPC", formula: "1d20+3",
+      dc: 15, targetType: "DC", result: "12 + 3 = 15 · УСПЕХ",
+    };
+    const turn = { ...validTurn, timeDeltaMinutes: 0, rolls: [pending, serverRoll] };
+    const rollChallenge = {
+      userId: "test-user", formula: pending.formula, dc: pending.dc,
+      targetType: pending.targetType, roller: "PLAYER", label: pending.label,
+      issuedAt: Date.now(), nonce: "nonce-test", signature: "signature-test",
+    };
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      output_text: JSON.stringify(turn), rollChallenge,
+    }), { status: 200 }));
+    await expect(resolvePlayerAction("test-user-jwt", context, testOptions(fetcher as unknown as typeof fetch)))
+      .resolves.toMatchObject({
+        turn: { rolls: [
+          { roller: "PLAYER", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА", challenge: { nonce: "nonce-test" } },
+          { roller: "GM", result: "12 + 3 = 15 · УСПЕХ" },
+        ] },
+      });
+  });
+
 });

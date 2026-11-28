@@ -12,6 +12,8 @@ import { createEmptyTurnDraft, createInitialCollections, DEFAULT_SOURCE_IDS } fr
 import { advanceTechnicalDateByElapsedMinutes } from "@/domain/technical-calendar";
 import { EKDRASIL_CALENDAR_NAME, advanceEkdrasilDateByElapsedMinutes } from "@/domain/ekdrasil-calendar";
 import {
+  applyHitPointDelta,
+  applyNpcHitPointDamage,
   buildBackupEnvelope,
   computeChecksum,
   runIntegrityAudit,
@@ -1361,7 +1363,7 @@ export function ObsidianStoreProvider({
           report: lastIntegrityReport,
         };
       }
-      const errors = validateTurnDraft(activeDraft, ws, pc);
+      const errors = validateTurnDraft(activeDraft, ws, pc, collections.npcs);
       if (errors.length > 0) {
         return { ok: false, error: errors.join(" "), report: lastIntegrityReport };
       }
@@ -1395,17 +1397,17 @@ export function ObsidianStoreProvider({
           ? collections.factions.find((faction) => faction.name.toLocaleLowerCase() === change.factionName!.toLocaleLowerCase())?.id ?? null
           : null;
         const knowledge = change.knowledgeAdditions.map((entry) => ({
-          id: makeId("know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
+          id: makeId("know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
           acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
         }));
         const playerKnowledge = change.playerKnowledgeAdditions.map((entry) => ({
-          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "MANUAL_GM_ENTRY",
+          id: makeId("player-know"), factSummary: entry.factSummary, sourceId: "AI_GM_TURN",
           acquisitionPath: entry.acquisitionPath, inGameDate: nextDate, certainty: entry.certainty, recordedAt: now,
         }));
         if (change.action === "CREATE") {
           nextNpcs.unshift({
             id: makeId("npc"), name: change.name, role: change.role, locationId, factionId,
-            goals: change.goals, resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
+            goals: change.goals, ...(change.gmProfile ? { gmProfile: change.gmProfile } : {}), resources: change.resources, attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             playerVisible: change.playerVisible || playerKnowledge.length > 0, playerKnowledge,
             sourceId: "MANUAL_GM_ENTRY", locked: false, knowledge, version: 1, history: [],
           });
@@ -1413,7 +1415,8 @@ export function ObsidianStoreProvider({
           const existing = nextNpcs[existingIndex]!;
           nextNpcs[existingIndex] = {
             ...existing, role: change.role, locationId: locationId ?? existing.locationId,
-            factionId: factionId ?? existing.factionId, goals: change.goals, resources: change.resources,
+            factionId: factionId ?? existing.factionId, goals: change.goals,
+            ...(change.gmProfile ?? existing.gmProfile ? { gmProfile: change.gmProfile ?? existing.gmProfile } : {}), resources: change.resources,
             attitudeToPlayer: change.attitudeToPlayer, certainty: change.certainty,
             playerVisible: Boolean(existing.playerVisible || change.playerVisible || playerKnowledge.length > 0),
             playerKnowledge: [...(existing.playerKnowledge ?? []), ...playerKnowledge],
@@ -1425,6 +1428,45 @@ export function ObsidianStoreProvider({
             }],
           };
         }
+      }
+
+      // Apply only server-derived damage events to tracked NPC combat HP.
+      for (const event of activeDraft.combatEvents ?? []) {
+        if (event.targetType !== "NPC") continue;
+        const npcIndex = nextNpcs.findIndex((npc) =>
+          npc.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
+        );
+        if (npcIndex < 0) {
+          return { ok: false, error: `Цель «${event.targetName}» не найдена в реестре NPC. Урон не сохранён.`, report: lastIntegrityReport };
+        }
+        const npc = nextNpcs[npcIndex]!;
+        const profile = npc.gmProfile;
+        const combat = profile?.combatProfile;
+        if (!profile || !combat || combat.status !== "SRD_VERIFIED") {
+          return { ok: false, error: `У NPC «${event.targetName}» нет подтверждённого боевого профиля. Урон не сохранён.`, report: lastIntegrityReport };
+        }
+        const damage = applyNpcHitPointDamage(
+          combat.hitPointsCurrent, combat.hitPointsMax, event.damage, event.damageType,
+          combat.resistances, combat.vulnerabilities, combat.immunities,
+        );
+        if (damage.error || damage.hpCurrent === null) {
+          return { ok: false, error: damage.error ?? "Не удалось применить урон NPC.", report: lastIntegrityReport };
+        }
+        nextNpcs[npcIndex] = {
+          ...npc,
+          gmProfile: {
+            ...profile,
+            combatProfile: { ...combat, hitPointsCurrent: damage.hpCurrent },
+          },
+          version: npc.version + 1,
+          history: [...npc.history, {
+            version: npc.version,
+            changedAt: now,
+            inGameDate: nextDate,
+            summary: `Боевые HP: ${combat.hitPointsCurrent} → ${damage.hpCurrent} (урон ${damage.appliedDamage})`,
+            reason: `Подтверждённый бросок: ${event.rollLabel} / ${event.formula}`,
+          }],
+        };
       }
 
       const nextFacts =
@@ -1492,7 +1534,9 @@ export function ObsidianStoreProvider({
         consequences: nextConsequences,
       };
 
-      const nextHp = pc.hpCurrent !== null ? pc.hpCurrent + activeDraft.hpDelta : null;
+      const hpChange = applyHitPointDelta(pc.hpCurrent, pc.hpMax, pc.hpTemp, activeDraft.hpDelta);
+      if (hpChange.error) return { ok: false, error: hpChange.error, report: lastIntegrityReport };
+      const nextHp = hpChange.hpCurrent;
       const characterChanges: CharacterChangeSet = activeDraft.characterChanges ?? {
         inventory: [], resources: [], conditions: [], currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
       };
@@ -1543,6 +1587,7 @@ export function ObsidianStoreProvider({
         stateVersion: nextCharacterVersion,
         updatedAt: now,
         hpCurrent: nextHp,
+        hpTemp: hpChange.hpTemp,
         inventory: nextInventory,
         resources: nextResources,
         conditions: nextConditions,
@@ -1567,6 +1612,7 @@ export function ObsidianStoreProvider({
         questChanges: activeDraft.questChanges ?? [],
         characterChanges,
         npcChanges: activeDraft.npcChanges ?? [],
+        combatEvents: activeDraft.combatEvents ?? [],
         locationIdAfter: nextLocationId,
         hpDelta: activeDraft.hpDelta,
         rolls: activeDraft.rolls,

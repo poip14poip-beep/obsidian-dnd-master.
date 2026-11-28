@@ -1,7 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2.119.2";
-import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
-import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
-import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
+import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectGameplayRuleExcerpts, validateGameTurnSemantics, validatePendingRollNarration, type GameMasterModelId } from "./model-routing.ts";
+import { evaluateRollSuccess, parseDiceFormula, rollDiceFormula } from "./dice.ts";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, type PreparedRoll } from "./game-master-retrieval.ts";
+import { ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK, checkNarration, buildCorrectionPrompt, type GuardMessage } from "./engine-boundary.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -21,11 +22,9 @@ const ALLOWED_ORIGINS = new Set([
 type JsonRecord = Record<string, unknown>;
 type ModelAttempt = { id: GameMasterModelId; format: "schema" | "json" };
 const MODEL_ATTEMPTS: ModelAttempt[] = [
-  // Cost-efficient default for ordinary narration and low-risk turns.
+  // Cost-efficient primary model for every game-master operation.
   { id: "deepseek/deepseek-v4.1-flash", format: "schema" },
-  // Stronger narrative/reasoning route for character dossiers and consequential turns.
-  { id: "anthropic/claude-sonnet-5.5", format: "schema" },
-  // Independent provider fallback if both primary routes are unavailable.
+  // Independent provider fallback if the primary route is unavailable or invalid.
   { id: "google/gemini-4-argon", format: "schema" },
 ];
 
@@ -46,6 +45,251 @@ function json(body: unknown, status: number, cors: HeadersInit): Response {
 }
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) return "[" + value.map(stableSerialize).join(",") + "]";
+  if (isRecord(value)) return "{" + Object.keys(value).sort().map((key) => JSON.stringify(key) + ":" + stableSerialize(value[key])).join(",") + "}";
+  return JSON.stringify(value) ?? "undefined";
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+function base64ToBytes(value: string): Uint8Array | null {
+  try {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  } catch { return null; }
+}
+type SignedDiceChallenge = {
+  userId: string; formula: string; dc: number | null;
+  targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM";
+  label: string; issuedAt: number; nonce: string; signature: string;
+};
+function diceChallengePayload(value: Omit<SignedDiceChallenge, "signature">): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dc: value.dc,
+    targetType: value.targetType, roller: value.roller, label: value.label,
+    issuedAt: value.issuedAt, nonce: value.nonce,
+  };
+}
+function diceProofPayload(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge;
+}): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dice: value.dice,
+    modifier: value.modifier, total: value.total, issuedAt: value.issuedAt,
+    nonce: value.nonce, challenge: value.challenge,
+  };
+}
+async function signPayload(payload: JsonRecord): Promise<string> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server signing key is not configured.");
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC", key, new TextEncoder().encode(stableSerialize(payload)),
+  );
+  return bytesToBase64(new Uint8Array(signature));
+}
+async function verifyPayload(payload: JsonRecord, encodedSignature: string): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) return false;
+  const signature = base64ToBytes(encodedSignature);
+  if (!signature) return false;
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
+    { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
+  );
+  return crypto.subtle.verify(
+    "HMAC", key, signature, new TextEncoder().encode(stableSerialize(payload)),
+  );
+}
+async function issueDiceChallenge(userId: string, prepared: {
+  formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE";
+  roller: "PLAYER" | "GM"; label: string;
+}): Promise<SignedDiceChallenge> {
+  const unsigned = {
+    userId, formula: prepared.formula, dc: prepared.dc,
+    targetType: prepared.targetType, roller: prepared.roller,
+    label: prepared.label, issuedAt: Date.now(), nonce: crypto.randomUUID(),
+  };
+  return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
+}
+async function verifyDiceChallenge(value: SignedDiceChallenge, allowExpired = false): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || (!allowExpired && Date.now() - value.issuedAt > 120_000) ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
+      !value.formula || !value.label || value.label.length > 180 ||
+      !["DC", "AC", "NONE"].includes(value.targetType) ||
+      !["PLAYER", "GM"].includes(value.roller) ||
+      (value.targetType === "NONE" ? value.dc !== null : !Number.isInteger(value.dc) || value.dc === null || value.dc < 1 || value.dc > 40)) {
+    return false;
+  }
+  return verifyPayload(diceChallengePayload(value), value.signature);
+}
+async function verifyDiceProof(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge; signature: string;
+}, allowExpired = false): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || (!allowExpired && Date.now() - value.issuedAt > 120_000) ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80) return false;
+  const { signature, ...payload } = value;
+  return verifyPayload(diceProofPayload(payload), signature);
+}
+
+/** Atomically consume short-lived dice challenges/proofs to prevent replay. */
+async function consumeDiceNonces(
+  userId: string,
+  entries: Array<{ nonce: string; issuedAt: number }>,
+): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY || !userId || entries.length < 1 || entries.length > 5) return false;
+  if (entries.some((entry) => !entry.nonce || entry.nonce.length > 80 || !Number.isInteger(entry.issuedAt))) return false;
+  const serviceClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await serviceClient.rpc("obsidian_consume_gm_dice_nonces", {
+    p_user_id: userId,
+    p_nonces: entries.map((entry) => entry.nonce),
+    p_expires_at: entries.map((entry) => new Date(entry.issuedAt + 120_000).toISOString()),
+  });
+  if (error) {
+    console.error("[obsidian-gm] dice nonce storage failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+type PendingGmTurn = {
+  owner_id: string;
+  pending_id: string;
+  player_action: string;
+  turn_payload: JsonRecord;
+  prepared_roll: JsonRecord;
+  challenge: JsonRecord | null;
+  completed_rolls: JsonRecord[];
+  expires_at: string;
+};
+
+function createServiceClient() {
+  if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server service-role key is not configured.");
+  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
+
+async function getPendingGmTurn(userId: string): Promise<PendingGmTurn | null> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_get_gm_pending_turn", { p_owner_id: userId });
+  if (error) {
+    console.error("[obsidian-gm] pending-turn read failed", { message: error.message });
+    throw new Error("Не удалось восстановить ожидающий игровой бросок.");
+  }
+  return isRecord(data) ? data as unknown as PendingGmTurn : null;
+}
+
+async function savePendingGmTurn(input: {
+  userId: string;
+  pendingId: string;
+  action: string;
+  turn: JsonRecord;
+  preparedRoll: JsonRecord;
+  challenge: SignedDiceChallenge;
+  completedRolls: JsonRecord[];
+}): Promise<boolean> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_save_gm_pending_turn", {
+    p_owner_id: input.userId,
+    p_pending_id: input.pendingId,
+    p_player_action: input.action,
+    p_turn_payload: input.turn,
+    p_prepared_roll: input.preparedRoll,
+    p_challenge: input.challenge,
+    p_completed_rolls: input.completedRolls,
+    p_expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+  });
+  if (error) {
+    console.error("[obsidian-gm] pending-turn save failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+async function recordPendingGmRoll(
+  userId: string,
+  pendingId: string,
+  challengeNonce: string,
+  completedRoll: JsonRecord,
+): Promise<boolean> {
+  const client = createServiceClient();
+  const { data, error } = await client.rpc("obsidian_record_gm_pending_roll", {
+    p_owner_id: userId,
+    p_pending_id: pendingId,
+    p_nonce: challengeNonce,
+    p_completed_roll: completedRoll,
+  });
+  if (error) {
+    console.error("[obsidian-gm] pending-roll result save failed", { message: error.message });
+    return false;
+  }
+  return data === true;
+}
+
+async function clearPendingGmTurn(userId: string, pendingId?: string): Promise<void> {
+  const client = createServiceClient();
+  const { error } = await client.rpc("obsidian_clear_gm_pending_turn", {
+    p_owner_id: userId,
+    p_pending_id: pendingId ?? null,
+  });
+  if (error) console.error("[obsidian-gm] pending-turn clear failed", { message: error.message });
+}
+
+function playerCharacterFromInput(inputText: string): JsonRecord | null {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    return isRecord(parsed) && isRecord(parsed.playerCharacterState)
+      ? parsed.playerCharacterState
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Read only the compact NPC dossiers already supplied in knownNpcs.
+ * Combat resolution still requires a matching source excerpt from SRD 5.2.1;
+ * these records can only cross-check, never invent, an attack or damage value.
+ */
+function npcProfilesFromInput(inputText: string): JsonRecord[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || !Array.isArray(parsed.knownNpcs)) return [];
+    return parsed.knownNpcs.filter((entry): entry is JsonRecord =>
+      isRecord(entry) && typeof entry.name === "string" && isRecord(entry.gmProfile),
+    ).slice(0, 40);
+  } catch {
+    return [];
+  }
+}
+
+function partyNamesFromInput(inputText: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed)) return [];
+    const names: string[] = [];
+    const character = isRecord(parsed.playerCharacterState) ? parsed.playerCharacterState : {};
+    if (typeof character.name === "string" && character.name.trim()) names.push(character.name.trim());
+    const campaign = isRecord(parsed.campaign) ? parsed.campaign : {};
+    const party = Array.isArray(campaign.partyMembers) ? campaign.partyMembers : [];
+    for (const member of party) {
+      if (isRecord(member) && typeof member.name === "string" && member.name.trim()) names.push(member.name.trim());
+    }
+    return [...new Set(names)];
+  } catch {
+    return [];
+  }
 }
 const EKDRASIL_CANON_SHA256 = "6a3aaef38a0275c72970af5a78cd3600762761b5dac6337c34dbd8a38b0a2fc4";
 function isEkdrasilCanonV24(value: unknown): value is JsonRecord {
@@ -71,6 +315,26 @@ function compactAuditValue(value: unknown, depth = 0, key = ""): unknown {
     return Object.fromEntries(entries);
   }
   return String(value);
+}
+
+/** Keep the structured character sheet intact while bounding the free-form
+ * dossier repeated on every game turn. Preserve the beginning and ending. */
+function compactGameTurnInput(inputText: string): string {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || typeof parsed.playerDossier !== "string") return inputText;
+    const dossier = parsed.playerDossier;
+    const maxChars = 14_000;
+    if (dossier.length <= maxChars) return inputText;
+    const headChars = 10_000;
+    const tailChars = maxChars - headChars;
+    parsed.playerDossier = dossier.slice(0, headChars) +
+      "\\n\\n[СРЕДНЯЯ ЧАСТЬ ДЛИННОГО ДОСЬЕ СОКРАЩЕНА; ПОЛНЫЙ ИСТОЧНИК СОХРАНЁН В БАЗЕ]\\n\\n" +
+      dossier.slice(-tailChars);
+    return JSON.stringify(parsed);
+  } catch {
+    return inputText;
+  }
 }
 function validateSchema(value: unknown, schema: JsonRecord): boolean {
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
@@ -323,15 +587,137 @@ Deno.serve(async (req: Request) => {
   try { body = JSON.parse(rawBody); }
   catch { return json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } }, 400, cors); }
 
+  if (isRecord(body) && body.operation === "GET_PENDING_GM_TURN") {
+    try {
+      const pending = await getPendingGmTurn(authData.user.id);
+      if (!pending) return json({ pending: null }, 200, cors);
+      const completedRolls = Array.isArray(pending.completed_rolls) ? pending.completed_rolls : [];
+      let challenge = isRecord(pending.challenge)
+        ? pending.challenge as unknown as SignedDiceChallenge
+        : null;
+      const challengeExpired = challenge !== null && !await verifyDiceChallenge(challenge);
+      const needsNewChallenge = challenge === null
+        ? completedRolls.length === 0
+        : challengeExpired;
+      if (needsNewChallenge) {
+        const prepared = pending.prepared_roll;
+        challenge = await issueDiceChallenge(authData.user.id, {
+          formula: String(prepared.formula ?? ""),
+          dc: typeof prepared.dc === "number" ? prepared.dc : null,
+          targetType: prepared.targetType as "DC" | "AC" | "NONE",
+          roller: "PLAYER",
+          label: String(prepared.label ?? ""),
+        });
+        const saved = await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          preparedRoll: pending.prepared_roll,
+          challenge,
+          completedRolls,
+        });
+        if (!saved) return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось обновить задание ожидающего броска." } }, 503, cors);
+      }
+      return json({
+        pending: {
+          pendingTurnId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          completedRolls,
+          challenge,
+        },
+      }, 200, cors);
+    } catch (error) {
+      return json({ error: { code: "PENDING_TURN_READ_FAILED", message: error instanceof Error ? error.message : "Не удалось восстановить ожидающий ход." } }, 503, cors);
+    }
+  }
+
   // Dice are rolled by the authenticated server, never guessed by a language model
   // or generated in the player's browser.
   if (isRecord(body) && body.operation === "ROLL_DICE") {
     if (typeof body.formula !== "string" || !parseDiceFormula(body.formula)) {
       return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
     }
+    if (!isRecord(body.challenge)) {
+      return json({ error: { code: "DICE_CHALLENGE_REQUIRED", message: "Для броска требуется подписанное сервером задание мастера." } }, 400, cors);
+    }
+    const rawChallenge = body.challenge;
+    const challenge = rawChallenge as unknown as SignedDiceChallenge;
+    if (challenge.userId !== authData.user.id || challenge.formula !== body.formula ||
+        challenge.roller !== "PLAYER" || typeof challenge.signature !== "string" ||
+        !await verifyDiceChallenge(challenge)) {
+      return json({ error: { code: "INVALID_DICE_CHALLENGE", message: "Задание броска недействительно или устарело. Запроси новое у мастера." } }, 401, cors);
+    }
     try {
-      return json({ formula: body.formula, ...rollDiceFormula(body.formula) }, 200, cors);
-    } catch {
+      const pending = await getPendingGmTurn(authData.user.id);
+      if (!pending || !isRecord(pending.challenge) ||
+          stableSerialize(pending.challenge) !== stableSerialize(challenge) ||
+          pending.prepared_roll.formula !== challenge.formula ||
+          pending.prepared_roll.label !== challenge.label) {
+        return json({ error: { code: "PENDING_DICE_CHALLENGE_MISMATCH", message: "Задание не соответствует сохранённому ожидающему ходу. Восстанови ход и запроси новый бросок." } }, 409, cors);
+      }
+      const rolled = rollDiceFormula(body.formula);
+      const challengeConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: challenge.nonce, issuedAt: challenge.issuedAt }]);
+      if (!challengeConsumed) {
+        return json({ error: { code: "DICE_CHALLENGE_REPLAY_OR_STORAGE_FAILURE", message: "Это задание уже использовано или хранилище одноразовых заданий недоступно. Восстанови ожидающий ход." } }, 409, cors);
+      }
+      const proof = {
+        userId: authData.user.id,
+        issuedAt: Date.now(),
+        nonce: crypto.randomUUID(),
+        challenge,
+      };
+      const signature = await signPayload(diceProofPayload({
+        ...proof, formula: body.formula, dice: rolled.dice,
+        modifier: rolled.modifier, total: rolled.total,
+      }));
+      const proofConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: proof.nonce, issuedAt: proof.issuedAt }]);
+      if (!proofConsumed) {
+        return json({ error: { code: "DICE_PROOF_STORAGE_FAILED", message: "Сервер не смог сохранить одноразовое подтверждение броска. Восстанови ход и повтори бросок." } }, 503, cors);
+      }
+      const success = evaluateRollSuccess(challenge.targetType, challenge.dc, rolled.dice, rolled.total);
+      const keptD20 = rolled.dice.find((die) => die.sides === 20 && die.kept)?.value;
+      const outcome = challenge.targetType === "AC"
+        ? keptD20 === 20 ? "КРИТИЧЕСКОЕ ПОПАДАНИЕ" : keptD20 === 1 ? "АВТОМАТИЧЕСКИЙ ПРОМАХ" : success ? "ПОПАДАНИЕ" : "ПРОМАХ"
+        : success === null ? "" : success ? "УСПЕХ" : "ПРОВАЛ";
+      const diceText = rolled.dice.map((die) => die.kept ? String(die.value) : `(${die.value})`).join(" + ");
+      const modifierText = rolled.modifier === 0 ? "" : rolled.modifier > 0 ? ` + ${rolled.modifier}` : ` - ${Math.abs(rolled.modifier)}`;
+      const completedRoll: JsonRecord = {
+        id: crypto.randomUUID(),
+        label: challenge.label,
+        formula: body.formula,
+        dc: challenge.dc,
+        targetType: challenge.targetType,
+        roller: "PLAYER",
+        dice: rolled.dice,
+        modifier: rolled.modifier,
+        total: rolled.total,
+        success,
+        result: `${diceText}${modifierText} = ${rolled.total}${outcome ? ` · ${outcome}` : ""}`,
+        challenge,
+        proof: { ...proof, signature },
+      };
+      const recorded = await recordPendingGmRoll(authData.user.id, pending.pending_id, challenge.nonce, completedRoll);
+      if (!recorded) {
+        const renewed = await issueDiceChallenge(authData.user.id, {
+          formula: challenge.formula, dc: challenge.dc, targetType: challenge.targetType,
+          roller: "PLAYER", label: challenge.label,
+        });
+        await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pending.pending_id,
+          action: pending.player_action,
+          turn: pending.turn_payload,
+          preparedRoll: pending.prepared_roll,
+          challenge: renewed,
+          completedRolls: Array.isArray(pending.completed_rolls) ? pending.completed_rolls : [],
+        });
+        return json({ error: { code: "PENDING_DICE_RESULT_SAVE_FAILED", message: "Результат не был сохранён в ожидающем ходе. Запроси новый бросок." } }, 503, cors);
+      }
+      return json({ formula: body.formula, ...rolled, proof: { ...proof, signature } }, 200, cors);
+    } catch (error) {
+      console.error("[obsidian-gm] server dice execution failed", { message: error instanceof Error ? error.message : String(error) });
       return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
     }
   }
@@ -386,6 +772,7 @@ Deno.serve(async (req: Request) => {
       Number(rules.version) >= 2;
     checks.EKDRASIL_WORLD_BIBLE = isEkdrasilCanonV24(data.EKDRASIL_WORLD_BIBLE);
     checks.ROUTERAI_API_KEY = Boolean(ROUTERAI_API_KEY);
+    checks.SUPABASE_SERVICE_ROLE_KEY = Boolean(SUPABASE_SERVICE_ROLE_KEY);
     const canon = isRecord(data.EKDRASIL_WORLD_BIBLE) ? data.EKDRASIL_WORLD_BIBLE : {};
     const ready = Object.values(checks).every(Boolean);
     return json({
@@ -431,6 +818,124 @@ Deno.serve(async (req: Request) => {
       const maxInputLength = isCompatibilityRequest ? 34_000 : 12_000;
       if (inputText.length > maxInputLength) inputText = inputText.slice(0, maxInputLength);
     } catch { /* keep the original input so malformed dossiers are reported accurately */ }
+  }
+  if (requestBody.operation === "GAME_TURN") {
+    let parsedTurnInput: unknown;
+    try { parsedTurnInput = JSON.parse(inputText); }
+    catch { return json({ error: { code: "INVALID_GAME_TURN_INPUT", message: "Контекст игрового хода повреждён." } }, 400, cors); }
+    if (isRecord(parsedTurnInput) && "completedRolls" in parsedTurnInput &&
+        !Array.isArray(parsedTurnInput.completedRolls)) {
+      return json({ error: { code: "INVALID_COMPLETED_ROLLS", message: "Список завершённых бросков имеет неверный формат." } }, 400, cors);
+    }
+    const completedRolls = isRecord(parsedTurnInput) && Array.isArray(parsedTurnInput.completedRolls)
+      ? parsedTurnInput.completedRolls : [];
+    if (completedRolls.length > 5) {
+      return json({ error: { code: "TOO_MANY_COMPLETED_ROLLS", message: "За один ход можно передать не более пяти результатов бросков." } }, 400, cors);
+    }
+    let pendingTurn: PendingGmTurn | null = null;
+    try {
+      pendingTurn = await getPendingGmTurn(authData.user.id);
+    } catch (error) {
+      return json({ error: { code: "PENDING_TURN_STORAGE_UNAVAILABLE", message: error instanceof Error ? error.message : "Хранилище ожидающего хода недоступно." } }, 503, cors);
+    }
+    const submittedAction = isRecord(parsedTurnInput) && typeof parsedTurnInput.action === "string"
+      ? parsedTurnInput.action.trim()
+      : "";
+    if (pendingTurn && pendingTurn.player_action !== submittedAction) {
+      return json({ error: { code: "PENDING_TURN_MUST_RESUME", message: "Сначала продолжи ожидающее действие или заверши его. Начать другое действие до разрешения броска нельзя." } }, 409, cors);
+    }
+    const storedRolls = pendingTurn && Array.isArray(pendingTurn.completed_rolls)
+      ? pendingTurn.completed_rolls.filter(isRecord)
+      : [];
+    if (pendingTurn && storedRolls.length > 0 && completedRolls.length === 0) {
+      return json({ error: { code: "STORED_ROLLS_MUST_RESUME", message: "В ожидающем ходе уже сохранён результат броска. Восстанови его и продолжи то же действие." } }, 409, cors);
+    }
+    // A retry of the same action before the player has rolled must return the
+    // already-saved turn/challenge, not re-run the model or repeat server NPC rolls.
+    if (pendingTurn && storedRolls.length === 0 && completedRolls.length === 0) {
+      let challenge = isRecord(pendingTurn.challenge)
+        ? pendingTurn.challenge as unknown as SignedDiceChallenge
+        : null;
+      if (!challenge || !await verifyDiceChallenge(challenge)) {
+        const prepared = pendingTurn.prepared_roll;
+        challenge = await issueDiceChallenge(authData.user.id, {
+          formula: String(prepared.formula ?? ""),
+          dc: typeof prepared.dc === "number" ? prepared.dc : null,
+          targetType: prepared.targetType as "DC" | "AC" | "NONE",
+          roller: "PLAYER",
+          label: String(prepared.label ?? ""),
+        });
+        const saved = await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pendingTurn.pending_id,
+          action: pendingTurn.player_action,
+          turn: pendingTurn.turn_payload,
+          preparedRoll: pendingTurn.prepared_roll,
+          challenge,
+          completedRolls: [],
+        });
+        if (!saved) return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось обновить задание ожидающего броска." } }, 503, cors);
+      }
+      return json({
+        output_text: JSON.stringify(pendingTurn.turn_payload),
+        model: "pending-turn-resume",
+        pendingTurnId: pendingTurn.pending_id,
+        rollChallenge: challenge,
+      }, 200, cors);
+    }
+    if (completedRolls.length > 0 && !pendingTurn) {
+      return json({ error: { code: "PENDING_TURN_NOT_FOUND", message: "Сохранённый ожидающий ход не найден. Восстанови ход и повтори действие." } }, 409, cors);
+    }
+    for (const item of completedRolls) {
+      if (!isRecord(item) || typeof item.formula !== "string" || !Array.isArray(item.dice) ||
+          !Number.isInteger(item.modifier) || !Number.isInteger(item.total) || !isRecord(item.proof)) {
+        return json({ error: { code: "INVALID_COMPLETED_ROLL", message: "Структура завершённого броска повреждена." } }, 400, cors);
+      }
+      const proof = item.proof;
+      const formula = item.formula;
+      const parsedFormula = parseDiceFormula(formula);
+      const dice = item.dice;
+      const diceValid = parsedFormula !== null && dice.length === parsedFormula.totalDice &&
+        dice.every((die) => isRecord(die) && Number.isInteger(die.value) &&
+          Number.isInteger(die.sides) && typeof die.kept === "boolean" &&
+          (die.value as number) >= 1 && (die.value as number) <= (die.sides as number));
+      const arithmeticValid = diceValid && parsedFormula !== null &&
+        item.modifier === parsedFormula.modifier &&
+        item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
+      const challenge = isRecord(item.challenge) ? item.challenge as unknown as SignedDiceChallenge : null;
+      const expectedSuccess = challenge
+        ? evaluateRollSuccess(challenge.targetType, challenge.dc, dice as Array<{ value: number; sides: number; kept: boolean }>, item.total as number)
+        : null;
+      const challengeMatchesRoll = challenge !== null && isRecord(proof.challenge) &&
+        stableSerialize(challenge) === stableSerialize(proof.challenge) &&
+        challenge.userId === authData.user.id && challenge.formula === formula &&
+        challenge.dc === item.dc && challenge.targetType === item.targetType &&
+        challenge.roller === item.roller && challenge.label === item.label &&
+        item.success === expectedSuccess;
+      const storedMatch = challenge !== null && storedRolls.some((stored) =>
+        isRecord(stored.proof) && isRecord(stored.challenge) &&
+        stableSerialize(stored.proof) === stableSerialize(proof) &&
+        stableSerialize(stored.challenge) === stableSerialize(challenge)
+      );
+      const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
+        typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
+        typeof proof.signature === "string" && challengeMatchesRoll && storedMatch &&
+        await verifyDiceChallenge(challenge!, true) &&
+        await verifyDiceProof({
+          userId: proof.userId,
+          issuedAt: proof.issuedAt,
+          nonce: proof.nonce,
+          signature: proof.signature,
+          formula,
+          dice,
+          modifier: item.modifier as number,
+          total: item.total as number,
+          challenge: challenge!,
+        }, true);
+      if (!arithmeticValid || !proofValid) {
+        return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не совпадает с серверной записью ожидающего хода. Восстанови ход и повтори продолжение." } }, 401, cors);
+      }
+    }
   }
   const instructionText = requestBody.instructions as string;
   const selectedSchema: JsonRecord = isCompatibilityRequest ? compatibilitySchema : isIdentityRequest ? identitySchema : isAppearanceRequest ? appearanceSchema : isStoryRequest ? storySchema : isOriginsRequest ? originsSchema : isBiographyRequest ? biographySchema : (((requestBody.text as JsonRecord).format as JsonRecord).schema as JsonRecord);
@@ -543,7 +1048,7 @@ Deno.serve(async (req: Request) => {
     "spellcasting", "spells", "magic items", "languages", "hit points", "armor class"
   );
   const ruleTerms = [...new Set([...actionText.split(/[^a-z0-9а-яё]+/i), ...mappedTerms].filter((term) => term.length > 3))];
-  const selectedRules = selectRuleExcerpts(
+  const selectedRules = selectGameplayRuleExcerpts(
     ruleParagraphs,
     ruleTerms,
     isCompatibilityRequest ? 9_000 : 14_000,
@@ -606,23 +1111,19 @@ Deno.serve(async (req: Request) => {
 
   const isCharacterGeneration = isBiographyRequest || isIdentityRequest || isCompatibilityRequest || /созда(й|ть|ние).{0,40}персонаж|генерац.{0,30}персонаж|биографи.{0,30}персонаж|character generation/i.test(actionText);
   const isGameTurnRequest = requestBody.operation === "GAME_TURN";
-  const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|бой|урон|ранен|смерт|спасброс|заклин|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
+  const highImpactTurn = isBiographyRequest || isIdentityRequest || /атак|стрел|выстрел|бой|урон|ранен|смерт|спасброс|заклин|оруж|лук|меч|щит|ресурс|инвентар|деньг|фракц|npc|переговор|обман|скрыт|задани|квест|проклят|мутац/i.test(actionText);
   // Character creation must finish comfortably inside the Edge Function wall-clock limit.
   // Two bounded attempts are more reliable than three long sequential waits.
   // Character generation is one bounded upstream call. Sequential model fallbacks
   // keep the HTTP request alive too long and the mobile client drops it.
-  const requestedModelOrder: GameMasterModelId[] = isGameTurnRequest
-    // DeepSeek and Gemini have already reviewed canon/state and rules/character;
-    // Claude performs the first synthesis pass, with the other providers as fallbacks.
-    ? ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"]
-    : selectGameMasterModelOrder({
-      isCompatibilityRequest,
-      isStoryRequest,
-      isIdentityRequest,
-      isBiographyRequest,
-      highImpactTurn,
-      isGameTurnRequest,
-    });
+  const requestedModelOrder: GameMasterModelId[] = selectGameMasterModelOrder({
+    isCompatibilityRequest,
+    isStoryRequest,
+    isIdentityRequest,
+    isBiographyRequest,
+    highImpactTurn,
+    isGameTurnRequest,
+  });
   const orderedModelAttempts = requestedModelOrder.map((id) => MODEL_ATTEMPTS.find((attempt) => attempt.id === id))
     .filter((attempt): attempt is ModelAttempt => Boolean(attempt));
   const characterGuideContext = isCharacterGeneration
@@ -656,6 +1157,7 @@ Deno.serve(async (req: Request) => {
     canonContext
   ] : [
     masterPrompt,
+    ...(isGameTurnRequest ? [ENGINE_BOUNDARY_RULES, ENGINE_BOUNDARY_CHECK] : []),
     characterGuideContext,
     "=== СЛУЖЕБНЫЕ ИНСТРУКЦИИ ПРИЛОЖЕНИЯ ===",
     instructionText,
@@ -683,9 +1185,10 @@ Deno.serve(async (req: Request) => {
       "Не создавай новые города, страны, организации, исторические события или NPC. Сведения о происхождении должны соответствовать переданным подтверждённым данным.",
     ] : []),
   ].join(String.fromCharCode(10) + String.fromCharCode(10));
+  const modelInputText = isGameTurnRequest ? compactGameTurnInput(inputText) : inputText;
   const messages = [
     { role: "system", content: Array.isArray(serverInstructions) ? serverInstructions.join(String.fromCharCode(10) + String.fromCharCode(10)) : serverInstructions },
-    { role: "user", content: inputText },
+    { role: "user", content: modelInputText },
   ];
 
   const isOpeningGameTurn = (() => {
@@ -695,36 +1198,6 @@ Deno.serve(async (req: Request) => {
       return isRecord(parsed) && parsed.mode === "OPENING";
     } catch { return false; }
   })();
-  if (isGameTurnRequest && !isOpeningGameTurn) {
-    let compactCampaignInput = inputText;
-    try { compactCampaignInput = JSON.stringify(compactAuditValue(JSON.parse(inputText))); }
-    catch { compactCampaignInput = inputText.slice(0, 36_000); }
-    const agentStartedAt = Date.now();
-    const specialistResults = await runGameTurnAgents({
-      apiKey: ROUTERAI_API_KEY,
-      campaignInput: compactCampaignInput,
-      canonContext,
-      rulesContext,
-    });
-    const agentContext = formatSpecialistAgentContext(specialistResults);
-    messages.splice(1, 0, {
-      role: "system",
-      content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
-        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
-    });
-    console.log("[obsidian-gm] specialist agents completed", {
-      elapsedMs: Date.now() - agentStartedAt,
-      agents: specialistResults.map((result) => ({
-        role: result.role,
-        model: result.model,
-        status: result.status,
-        findings: result.findings.length,
-        uncertainties: result.uncertainties.length,
-      })),
-      agentContextChars: agentContext.length,
-    });
-  }
-
   const failures: string[] = [];
   for (const [attemptIndex, attempt] of orderedModelAttempts.entries()) {
     try {
@@ -732,37 +1205,62 @@ Deno.serve(async (req: Request) => {
         ? { type: "json_schema", json_schema: { name: schemaName, strict: true, schema } }
         : { type: "json_object" };
       const attemptStartedAt = Date.now();
-      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
-      const upstream = await fetch("https://routerai.ru/api/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
-          "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
-          "X-Title": "Obsidian D&D Master",
-        },
-        body: JSON.stringify({
-          model: attempt.id,
-          messages,
-          response_format: responseFormat,
-          structured_outputs: true,
-          temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
-          // Compatibility audits need a complete six-field report; 1,400 tokens truncated valid JSON on real dossiers.
-          // Game turns have a large structured schema; cap generation to avoid
-          // spending the entire mobile request window on oversized responses.
-          max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
-          // Reasoning tokens share max_tokens with the JSON payload. Opening and action turns need the budget for validated state.
-          ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
-        }),
-        // Game turns use bounded output and low DeepSeek reasoning effort to finish inside the mobile request window.
-        signal: AbortSignal.timeout(isCompatibilityRequest ? 30_000 : isIdentityRequest ? 40_000 : isAppearanceRequest ? 35_000 : isStoryRequest ? 22_000 : isOriginsRequest ? 40_000 : isBiographyRequest ? 55_000 : isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000),
+      console.log("[obsidian-gm] model attempt started", { operation: String(requestBody.operation ?? "GAME_TURN"), attemptIndex, attemptTimeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : null, model: attempt.id, systemChars: Array.isArray(serverInstructions) ? serverInstructions.join(" ").length : serverInstructions.length, userChars: modelInputText.length, dossierCompacted: modelInputText.length < inputText.length, rulesChars: rulesContext.length, canonChars: canonContext.length, ...inputMetrics });
+      const requestHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${ROUTERAI_API_KEY}`,
+        "HTTP-Referer": "https://poip14poip-beep.github.io/obsidian-dnd-master./",
+        "X-Title": "Obsidian D&D Master",
+      };
+      const modelRequestBody: JsonRecord = {
+        model: attempt.id,
+        messages,
+        response_format: responseFormat,
+        structured_outputs: true,
+        temperature: (isBiographyRequest || isIdentityRequest) ? 0.82 : 0.25,
+        max_tokens: isCompatibilityRequest ? 2600 : isIdentityRequest ? 3000 : isAppearanceRequest ? 2200 : isStoryRequest ? 1800 : isOriginsRequest ? 3500 : isBiographyRequest ? 6000 : isGameTurnRequest ? GAME_TURN_MAX_OUTPUT_TOKENS : 8192,
+        ...(isGameTurnRequest && attempt.id.startsWith("deepseek/") ? { reasoning: { effort: DEEPSEEK_GAME_TURN_REASONING_EFFORT } } : {}),
+      };
+      const modelCall = await callWithEkdrasilReadTools({
+        fetcher: fetch,
+        url: "https://routerai.ru/api/v1/chat/completions",
+        headers: requestHeaders,
+        requestBody: modelRequestBody,
+        enabled: isGameTurnRequest,
+        rules: { content: rulesDoc, sourceId: "SRD_5_2_1", sha256: rulesSourceSha },
+        canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
+        playerCharacter: playerCharacterFromInput(inputText),
+        npcProfiles: npcProfilesFromInput(inputText),
+        completedRolls: (() => {
+          try {
+            const parsed = JSON.parse(inputText);
+            return isRecord(parsed) && Array.isArray(parsed.completedRolls)
+              ? parsed.completedRolls.filter(isRecord)
+              : [];
+          } catch { return []; }
+        })(),
+        maxToolRounds: 8,
+        maxToolCalls: 16,
+        timeoutMs: isGameTurnRequest ? gameTurnAttemptTimeoutMs(attemptIndex) : 18_000,
       });
-      console.log("[obsidian-gm] model response received", { model: attempt.id, status: upstream.status });
+      const upstream = modelCall.response;
+      console.log("[obsidian-gm] model response received", {
+        model: attempt.id,
+        status: upstream.status,
+        retrievalToolCalls: modelCall.toolCalls,
+        retrievalLoopExhausted: modelCall.exhausted,
+      });
+      if (modelCall.exhausted) {
+        failures.push(`${attempt.id}: retrieval tool-call limit exceeded`);
+        continue;
+      }
       const raw = await upstream.text();
       console.log("[obsidian-gm] model response body received", { model: attempt.id, elapsedMs: Date.now() - attemptStartedAt, responseChars: raw.length });
-      let payload: unknown;
-      try { payload = JSON.parse(raw); }
-      catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      let payload: unknown = modelCall.payload;
+      if (payload === null) {
+        try { payload = JSON.parse(raw); }
+        catch { failures.push(`${attempt.id}: unreadable response`); continue; }
+      }
 
       if (!upstream.ok) {
         const apiError = isRecord(payload) && isRecord(payload.error) ? payload.error : {};
@@ -820,7 +1318,100 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
       }
-      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+      if (isGameTurnRequest && isRecord(parsed)) {
+        const rolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const pendingPlayerRolls = rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        // A pending roll is valid only when the bounded D&D engine tool loop
+        // prepared it from the action, verified character sheet and SRD evidence.
+        // Never infer the mechanic, ability, advantage or DC from model-authored
+        // labels/formula hints here. The retrieval loop performs one forced
+        // tool-selection recovery; if it still cannot prepare the roll, reject it.
+        const prepared = modelCall.preparedRoll;
+        const matchesPrepared = prepared !== null && prepared.roller === "PLAYER" &&
+          pendingPlayerRolls.length === 1 && rolls.length === 1 &&
+          rolls[0]?.roller === "PLAYER" &&
+          rolls[0]?.label === prepared.label &&
+          rolls[0]?.formula === prepared.formula &&
+          rolls[0]?.dc === prepared.dc &&
+          rolls[0]?.targetType === prepared.targetType;
+        const invalidPendingRoll = prepared !== null ? !matchesPrepared : pendingPlayerRolls.length > 0;
+        if (invalidPendingRoll) {
+          const reason = prepared
+            ? "pending player roll does not match the server-prepared game mechanic"
+            : "pending player roll was returned without a deterministic preparation tool";
+          console.warn("[obsidian-gm] prepared-roll validation rejected", { model: attempt.id, reason });
+
+          // A missing/invalid deterministic roll is a terminal safety decision,
+          // not a reason to spend another full model call on a second provider.
+          // Return a no-op clarification turn so the player can correct the
+          // declared equipment/action without advancing time or changing state.
+          if (!prepared && pendingPlayerRolls.length > 0 && isRecord(parsed)) {
+            let requestValue: unknown = null;
+            try { requestValue = JSON.parse(inputText); } catch { requestValue = null; }
+            const actionText = isRecord(requestValue) && typeof requestValue.action === "string"
+              ? requestValue.action : "";
+            const attackAttempt = /атака|атакую|выстрел|стреля|коротк.*лук|оружи|удар/i.test(
+              actionText + " " + String(pendingPlayerRolls[0]?.label ?? ""),
+            );
+            let campaign: JsonRecord = {};
+            try {
+              const value = JSON.parse(inputText);
+              if (isRecord(value) && isRecord(value.campaign)) campaign = value.campaign;
+            } catch { /* use explicit unknown environment below */ }
+            const currentEnvironment = isRecord(campaign.environment) ? campaign.environment : {
+              temperatureC: null, temperatureCertainty: "UNKNOWN", weather: "UNKNOWN",
+              lighting: "UNKNOWN", visibility: "UNKNOWN", wind: "UNKNOWN",
+              precipitation: "UNKNOWN", ambientSounds: "UNKNOWN", ambientSmells: "UNKNOWN", notes: "",
+            };
+            const clarification = attackAttempt
+              ? "Сервер не подтвердил выбранное оружие по листу персонажа и/или КД цели по SRD 5.2.1. Уточни оружие, которое действительно есть в подтверждённом листе. Бросок не выполнялся."
+              : "Сервер не смог безопасно подготовить проверку по подтверждённому листу персонажа и SRD 5.2.1. Уточни способ действия. Бросок не выполнялся.";
+            parsed = {
+              ...parsed,
+              narration: attackAttempt
+                ? "Мастер останавливает попытку: выбранное оружие или защита цели пока не подтверждены источниками. Ничего не произошло."
+                : "Мастер пока не может подтвердить механику этого действия. Ничего не произошло.",
+              mechanics: "Бросок не создан: отсутствует подтверждённая серверная подготовка проверки.",
+              consequences: "Последствий нет. Игровое состояние не изменено.",
+              resourceAccounting: "HP, время, предметы, деньги и ресурсы не изменены.",
+              nextAction: "Уточни способ действия и подтверждённое снаряжение.",
+              summary: "Требуется уточнение действия",
+              worldOutcome: "Действие не разрешено; состояние кампании не изменено.",
+              timeDeltaMinutes: 0,
+              hpDelta: 0,
+              newInGameDate: typeof campaign.currentInGameDate === "string" ? campaign.currentInGameDate : "",
+              newLocationId: null,
+              consequenceText: "",
+              campaignMemory: "",
+              rolls: [],
+              npcChanges: [],
+              questChanges: [],
+              environment: currentEnvironment,
+              environmentReason: "Окружение не изменяется: действие не было разрешено.",
+              characterChanges: {
+                inventory: [], resources: [], conditions: [],
+                currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
+              },
+              needsClarification: true,
+              clarificationQuestion: clarification,
+              stateNotes: [],
+            };
+            content = JSON.stringify(parsed);
+            console.warn("[obsidian-gm] returned safe no-op clarification instead of retrying another model", {
+              model: attempt.id, attackAttempt,
+            });
+          } else {
+            failures.push(attempt.id + ": " + reason);
+            messages.push({
+              role: "system",
+              content: "ОТКЛОНЕНО: ожидающий бросок игрока должен быть подготовлен серверным инструментом и точно совпадать с его roller, label, formula, targetType и DC/AC. Результат строго «ОЖИДАЕТСЯ БРОСОК ИГРОКА». Броски GM выполняются сервером автоматически; не добавляй числовые результаты бросков GM в JSON — они будут приложены сервером.",
+            });
+            continue;
+          }
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) &&
+          parsed.rolls.some((roll) => isRecord(roll) && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
         // A pending roll is a pause in the action pipeline, not a commit.
         // Safely discard premature model mutations; they are recalculated after the actual roll.
         let currentEnvironment: JsonRecord = {
@@ -840,6 +1431,9 @@ Deno.serve(async (req: Request) => {
           hpDelta: 0,
           newLocationId: null,
           consequenceText: "",
+          worldOutcome: "",
+          campaignMemory: "",
+          newInGameDate: "",
           npcChanges: [],
           questChanges: [],
           environment: currentEnvironment,
@@ -870,11 +1464,141 @@ Deno.serve(async (req: Request) => {
           continue;
         }
       }
+      if (isGameTurnRequest) {
+        const narrationFailure = validatePendingRollNarration(parsed);
+        if (narrationFailure) {
+          console.warn("[obsidian-gm] pending-roll narration rejected", { model: attempt.id, reason: narrationFailure });
+          failures.push(attempt.id + ": " + narrationFailure);
+          messages.push({
+            role: "system",
+            content: "ПРЕДЫДУЩИЙ ОТВЕТ ОТКЛОНЁН: бросок ещё не выполнен. Опиши только попытку и обстановку, не утверждай успех, провал, попадание, промах или последствие действия. Запроси ожидающий бросок и дождись его фактического результата.",
+          });
+          continue;
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && typeof parsed.narration === "string") {
+        const contradictions = checkNarration({
+          conversation: modelCall.conversation as GuardMessage[],
+          narration: parsed.narration,
+          partyNames: partyNamesFromInput(inputText),
+        });
+        if (contradictions.length) {
+          console.warn("[obsidian-gm] engine-boundary narration contradiction", { model: attempt.id, count: contradictions.length, kinds: [...new Set(contradictions.map((item) => item.kind))] });
+          try {
+            const repairBody: JsonRecord = { ...modelRequestBody, messages: [
+              ...modelCall.conversation,
+              { role: "assistant", content },
+              { role: "system", content: buildCorrectionPrompt(contradictions) },
+            ] };
+            const repairResponse = await fetch("https://routerai.ru/api/v1/chat/completions", {
+              method: "POST", headers: requestHeaders, body: JSON.stringify(repairBody), signal: AbortSignal.timeout(12_000),
+            });
+            const repairPayload: unknown = await repairResponse.json().catch(() => null);
+            const repairRoot = isRecord(repairPayload) ? repairPayload : {};
+            const repairChoices = Array.isArray(repairRoot.choices) ? repairRoot.choices : [];
+            const repairChoice = isRecord(repairChoices[0]) ? repairChoices[0] : {};
+            const repairMessage = isRecord(repairChoice.message) ? repairChoice.message : {};
+            const repairedContent = outputText(repairMessage);
+            let repairedParsed: unknown = null;
+            try { repairedParsed = repairedContent ? JSON.parse(repairedContent) : null; } catch { repairedParsed = null; }
+            const repairSemanticFailure = validateSchema(repairedParsed, schema)
+              ? (validateGameTurnSemantics(repairedParsed) ?? validatePendingRollNarration(repairedParsed))
+              : "corrective response does not match the required JSON schema";
+            const originalNonNarration = isRecord(parsed) ? { ...parsed } : {};
+            const repairedNonNarration = isRecord(repairedParsed) ? { ...repairedParsed } : {};
+            delete originalNonNarration.narration;
+            delete repairedNonNarration.narration;
+            const changedNonNarration = stableSerialize(originalNonNarration) !== stableSerialize(repairedNonNarration);
+            const repairedContradictions = isRecord(repairedParsed) && typeof repairedParsed.narration === "string"
+              ? checkNarration({ conversation: modelCall.conversation as GuardMessage[], narration: repairedParsed.narration, partyNames: partyNamesFromInput(inputText) })
+              : contradictions;
+            if (!repairResponse.ok || repairChoice.finish_reason === "length" || repairSemanticFailure || changedNonNarration || repairedContradictions.length) {
+              failures.push(attempt.id + ": engine-boundary correction failed");
+              console.warn("[obsidian-gm] engine-boundary correction rejected", { model: attempt.id, httpStatus: repairResponse.status, schemaOrSemanticFailure: repairSemanticFailure, changedNonNarration, remainingContradictions: repairedContradictions.length });
+              continue;
+            }
+            parsed = repairedParsed;
+            content = repairedContent;
+            console.log("[obsidian-gm] engine-boundary correction accepted", { model: attempt.id });
+          } catch (error) {
+            failures.push(attempt.id + ": engine-boundary correction unavailable");
+            console.warn("[obsidian-gm] engine-boundary correction unavailable", { model: attempt.id, message: error instanceof Error ? error.message : String(error) });
+            continue;
+          }
+        }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && modelCall.serverRolls.length > 0) {
+        // Append server-generated GM results after all model/schema/semantic checks.
+        // The model never gets to choose the total or forge a completed NPC roll.
+        const modelRolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const pendingPlayerRolls = modelRolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        const serverRollEntries = modelCall.serverRolls.map((roll) => ({
+          roller: "GM",
+          label: roll.label,
+          formula: roll.formula,
+          dc: roll.dc,
+          targetType: roll.targetType,
+          result: roll.result,
+        }));
+        parsed.rolls = [...pendingPlayerRolls, ...serverRollEntries];
+        content = JSON.stringify(parsed);
+      }
+      if (isGameTurnRequest && isRecord(parsed) && modelCall.combatEvents.length > 0) {
+        // Only the deterministic tool loop can produce these events: the
+        // completed attack and damage rolls were verified against signed
+        // one-time challenges before the model was called.
+        parsed.combatEvents = modelCall.combatEvents;
+        const damageToPlayer = modelCall.combatEvents
+          .filter((event) => event.targetType === "PLAYER")
+          .reduce((sum, event) => sum + event.damage, 0);
+        if (damageToPlayer > 0) parsed.hpDelta = -damageToPlayer;
+        content = JSON.stringify(parsed);
+      }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
+      let rollChallenge: SignedDiceChallenge | null = null;
+      let pendingTurnId: string | null = null;
+      if (isGameTurnRequest) {
+        let parsedRequest: unknown = null;
+        try { parsedRequest = JSON.parse(inputText); } catch { parsedRequest = null; }
+        const action = isRecord(parsedRequest) && typeof parsedRequest.action === "string"
+          ? parsedRequest.action.trim()
+          : "";
+        const previousPending = await getPendingGmTurn(authData.user.id);
+        if (modelCall.preparedRoll?.roller === "PLAYER") {
+          const prepared = modelCall.preparedRoll;
+          const rolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+          const pendingPlayerRolls = rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+          if (pendingPlayerRolls.length !== 1 || pendingPlayerRolls[0]?.roller !== "PLAYER") {
+            failures.push(`${attempt.id}: player roll challenge could not be bound to the final turn`);
+            continue;
+          }
+          rollChallenge = await issueDiceChallenge(authData.user.id, prepared);
+          pendingTurnId = previousPending?.pending_id ?? crypto.randomUUID();
+          const completed = isRecord(parsedRequest) && Array.isArray(parsedRequest.completedRolls)
+            ? parsedRequest.completedRolls.filter(isRecord)
+            : [];
+          const saved = await savePendingGmTurn({
+            userId: authData.user.id,
+            pendingId: pendingTurnId,
+            action,
+            turn: parsed as JsonRecord,
+            preparedRoll: prepared as unknown as JsonRecord,
+            challenge: rollChallenge,
+            completedRolls: completed,
+          });
+          if (!saved) {
+            console.error("[obsidian-gm] pending player turn was not durably saved");
+            return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось сохранить ожидающий бросок. Ничего не зафиксировано; повтори действие." } }, 503, cors);
+          }
+        } else {
+          if (previousPending) await clearPendingGmTurn(authData.user.id, previousPending.pending_id);
+        }
+      }
       return json({
         output_text: content,
         model: attempt.id,
         usage: tokens(root.usage),
+        ...(rollChallenge ? { rollChallenge, pendingTurnId } : {}),
       }, 200, cors);
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");

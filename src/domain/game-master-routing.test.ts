@@ -8,6 +8,7 @@ import {
   selectRuleExcerpts,
   selectCanonExcerpts,
   validateGameTurnSemantics,
+  validatePendingRollNarration,
   type ModelRoutingFlags,
 } from "../../supabase/functions/obsidian-gm/model-routing";
 
@@ -28,9 +29,9 @@ describe("Obsidian GM model routing", () => {
     ]);
   });
 
-  it("keeps a separate high-impact route with an independent fallback", () => {
+  it("keeps high-impact game turns on the lower-cost primary route", () => {
     expect(selectGameMasterModelOrder({ ...normalTurn, highImpactTurn: true })).toEqual([
-      "anthropic/claude-sonnet-5.5",
+      "deepseek/deepseek-v4.1-flash",
       "google/gemini-4-argon",
     ]);
   });
@@ -39,7 +40,7 @@ describe("Obsidian GM model routing", () => {
     expect(selectGameMasterModelOrder({ ...normalTurn, isGameTurnRequest: false, isStoryRequest: true }))
       .toEqual(["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"]);
     expect(selectGameMasterModelOrder({ ...normalTurn, isGameTurnRequest: false, isCompatibilityRequest: true }))
-      .toEqual(["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"]);
+      .toEqual(["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"]);
   });
 
   it("does not add extra providers to identity and biography generation", () => {
@@ -50,7 +51,7 @@ describe("Obsidian GM model routing", () => {
   });
 
   it("gives game JSON enough output tokens without spending them on hidden reasoning", () => {
-    expect(GAME_TURN_MAX_OUTPUT_TOKENS).toBe(8192);
+    expect(GAME_TURN_MAX_OUTPUT_TOKENS).toBe(4096);
     expect(DEEPSEEK_GAME_TURN_REASONING_EFFORT).toBe("none");
   });
 
@@ -64,7 +65,7 @@ describe("Obsidian GM model routing", () => {
 
 describe("game-turn semantic validation", () => {
   const pending = {
-    narration: "Персонаж замечает движение.",
+    narration: "Персонаж прислушивается к окружающим звукам.",
     timeDeltaMinutes: 0,
     hpDelta: 0,
     newLocationId: null,
@@ -76,7 +77,7 @@ describe("game-turn semantic validation", () => {
       inventory: [], resources: [], conditions: [],
       currencyDelta: { cp: 0, sp: 0, ep: 0, gp: 0, pp: 0 },
     },
-    rolls: [{ label: "Мудрость (Восприятие)", formula: "1d20 + 3", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+    rolls: [{ roller: "PLAYER", label: "Мудрость (Восприятие)", formula: "1d20 + 3", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
   };
 
   it("accepts a pending roll without resolving its outcome", () => {
@@ -107,6 +108,12 @@ describe("game-turn semantic validation", () => {
     })).toContain("must not mutate");
   });
 
+  it("rejects campaign memory and world outcomes while a roll is pending", () => {
+    expect(validateGameTurnSemantics({ ...pending, worldOutcome: "Дверь открылась." })).toContain("must not mutate");
+    expect(validateGameTurnSemantics({ ...pending, campaignMemory: "Персонаж узнал тайну." })).toContain("must not mutate");
+    expect(validateGameTurnSemantics({ ...pending, stateNotes: ["NPC увидел игрока"] })).toContain("must not mutate");
+  });
+
   it("allows an ordinary turn with no pending roll", () => {
     expect(validateGameTurnSemantics({
       ...pending,
@@ -114,6 +121,41 @@ describe("game-turn semantic validation", () => {
       timeDeltaMinutes: 5,
     })).toBeNull();
   });
+
+describe("engine-boundary narration guard", () => {
+  const pendingRoll = {
+    rolls: [{ roller: "PLAYER", label: "Сила", formula: "1d20+2", dc: 15, targetType: "DC", result: "ОЖИДАЕТСЯ БРОСОК ИГРОКА" }],
+  };
+
+  it("rejects narration that resolves success before the player rolls", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Ты успешно открываешь запертую дверь.",
+    })).toContain("before its pending roll");
+  });
+
+  it("rejects narration that resolves failure before the player rolls", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Тебе не удалось взломать замок.",
+    })).toContain("before its pending roll");
+  });
+
+  it("allows framing the attempt without stating its outcome", () => {
+    expect(validatePendingRollNarration({
+      ...pendingRoll,
+      narration: "Ты опускаешься на колено и осторожно подносишь отмычку к замку.",
+    })).toBeNull();
+  });
+
+  it("does not constrain narration when no roll is pending", () => {
+    expect(validatePendingRollNarration({
+      narration: "Ты успешно открываешь дверь.",
+      rolls: [],
+    })).toBeNull();
+  });
+});
+
 });
 
 

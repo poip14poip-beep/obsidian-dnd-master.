@@ -323,3 +323,129 @@ describe("explicit resource reconciliation", () => {
     expect(result.current.character.resources[0]?.current).toBeNull();
   });
 });
+
+
+describe("hit point changes on committed turns", () => {
+  it("consumes temporary HP first and persists the remaining damage to current HP", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.player_character_state.hpCurrent = 12;
+    initial.player_character_state.hpMax = 20;
+    initial.player_character_state.hpTemp = 5;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result } = await renderCampaignStore(storage);
+
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Получен удар",
+        worldOutcome: "Удар частично поглощён временными HP",
+        hpDelta: -8,
+      });
+    });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok).toBe(true);
+
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok).toBe(true);
+    expect(result.current.character.hpCurrent).toBe(9);
+    expect(result.current.character.hpTemp).toBe(0);
+    expect(result.current.sessionLog.lastTurnNumber).toBe(1);
+  });
+
+
+  it("applies verified player damage to a tracked NPC combat profile and persists it", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    initial.npcs = [{
+      id: "npc-target", name: "Страж", role: "Городской стражник", locationId: null, factionId: null,
+      goals: "Охраняет ворота",
+      gmProfile: {
+        biography: "", appearance: "", personality: "", motivation: "", longTermGoal: "",
+        secrets: "", relationships: "", skillsAndAbilities: "",
+        combatProfile: {
+          status: "SRD_VERIFIED", source: "SRD 5.2.1 lines 10-20",
+          armorClass: 13, hitPointsCurrent: 11, hitPointsMax: 11, speed: "30 ft",
+          attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+        },
+      },
+      attitudeToPlayer: "Враждебное", certainty: "KNOWN", sourceId: "MANUAL_GM_ENTRY",
+      locked: false, knowledge: [], version: 1, history: [],
+    }];
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result, unmount } = await renderCampaignStore(storage);
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Удар по стражнику",
+        worldOutcome: "Подтверждённый удар наносит 5 единиц колющего урона",
+        combatEvents: [{
+          targetType: "NPC", targetName: "Страж", damage: 5, damageType: "piercing",
+          critical: false, source: "PLAYER", formula: "1d8+2", rollLabel: "Урон мечом по Страж",
+        }],
+      });
+    });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok, checked!.errors.join(" | ")).toBe(true);
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok, committed!.ok ? "" : committed!.error).toBe(true);
+    expect(result.current.npcs[0]?.gmProfile?.combatProfile.hitPointsCurrent).toBe(6);
+    unmount();
+    const reloaded = await renderCampaignStore(storage);
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.combatProfile.hitPointsCurrent).toBe(6);
+  });
+
+  it("creates and persists an NPC private dossier automatically with the committed turn", async () => {
+    const storage = createMemoryStorage();
+    const initial = createReadySetupCollections();
+    initial.world_state.setup.confirmed = true;
+    expect(persistAndVerifyCollections(storage, initial).ok).toBe(true);
+    const { result, unmount } = await renderCampaignStore(storage);
+    const gmProfile = {
+      biography: "Родился в портовом квартале и служит при городских воротах.",
+      appearance: "Высокий мужчина с обветренным лицом и седой прядью.",
+      personality: "Сдержанный, наблюдательный, осторожный.",
+      motivation: "Сохранить порядок и защитить семью.",
+      longTermGoal: "Получить должность начальника городской стражи.",
+      secrets: "Тайно помогает младшему брату скрываться от кредиторов.",
+      relationships: "Доверяет двум караульным; конфликтует с начальником смены.",
+      skillsAndAbilities: "Наблюдательность, строевая подготовка, владение копьём.",
+      combatProfile: {
+        status: "UNKNOWN" as const, source: "", armorClass: null, hitPointsCurrent: null, hitPointsMax: null, speed: "UNKNOWN",
+        attacks: [], resistances: [], vulnerabilities: [], immunities: [],
+      },
+    };
+    act(() => {
+      result.current.updateTurnDraft({
+        summary: "Встреча со стражником",
+        worldOutcome: "Персонаж впервые познакомился со стражником.",
+        npcChanges: [{
+          action: "CREATE", playerVisible: true, name: "Гарен", role: "Городской стражник",
+          goals: "Охранять ворота", resources: "Копьё и ключи от караульного помещения",
+          attitudeToPlayer: "Настороженное", locationName: null, factionName: null,
+          certainty: "KNOWN", reason: "Личная встреча у ворот", gmProfile,
+          knowledgeAdditions: [], playerKnowledgeAdditions: [{
+            factSummary: "Гарен служит городским стражником.", acquisitionPath: "Личная встреча у ворот", certainty: "KNOWN",
+          }],
+        }],
+      });
+    });
+    let checked: ReturnType<typeof result.current.checkTurnDraft>;
+    act(() => { checked = result.current.checkTurnDraft(); });
+    expect(checked!.ok).toBe(true);
+    let committed: ReturnType<typeof result.current.commitTurnDraft>;
+    act(() => { committed = result.current.commitTurnDraft(true); });
+    expect(committed!.ok).toBe(true);
+    expect(result.current.npcs[0]?.name).toBe("Гарен");
+    expect(result.current.npcs[0]?.gmProfile?.secrets).toContain("младшему брату");
+    expect(result.current.npcs[0]?.playerKnowledge?.[0]?.factSummary).toContain("городским стражником");
+    unmount();
+    const reloaded = await renderCampaignStore(storage);
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.combatProfile.status).toBe("UNKNOWN");
+    expect(reloaded.result.current.npcs[0]?.gmProfile?.secrets).toContain("младшему брату");
+  });
+});

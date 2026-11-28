@@ -1,13 +1,34 @@
-import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest } from "./types";
+import type { CanonFact, FactionRecord, GameTurnEntry, LocationRecord, NpcRecord, PlayerCharacterState, SourceDocument, TechnicalMessageEntry, WorldState, DelayedEvent, NpcTurnChange, QuestTurnChange, WorldEnvironment, CampaignQuest, CombatDamageEvent } from "./types";
 import { readSupabaseEnv } from "@/lib/supabase-auth";
 import { advanceTechnicalDateByElapsedMinutes } from "./technical-calendar";
 import { advanceEkdrasilDateByElapsedMinutes, parseEkdrasilDateTime } from "./ekdrasil-calendar";
 import { parseDiceFormula, type DiceRollResult } from "./dice";
 
+export interface CompletedGameRoll {
+  id: string;
+  label: string;
+  formula: string;
+  dc: number | null;
+  targetType: "DC" | "AC" | "NONE";
+  roller: "PLAYER" | "GM";
+  dice: Array<{ value: number; sides: number; kept: boolean }>;
+  modifier: number;
+  total: number;
+  success: boolean | null;
+  result: string;
+  challenge: SignedDiceChallenge;
+  proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge };
+}
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
   canonFacts: CanonFact[]; npcs: NpcRecord[]; factions: FactionRecord[]; locations: LocationRecord[];
   journal: Array<GameTurnEntry | TechnicalMessageEntry>; timelineEvents: DelayedEvent[];
+  completedRolls?: CompletedGameRoll[];
+}
+export interface SignedDiceChallenge {
+  userId: string; formula: string; dc: number | null;
+  targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM";
+  label: string; issuedAt: number; nonce: string; signature: string;
 }
 export interface GameMasterTurn {
   narration: string; campaignMemory: string; sensoryDescription: string; spatialAccounting: string;
@@ -15,8 +36,9 @@ export interface GameMasterTurn {
   summary: string; worldOutcome: string; timeDeltaMinutes: number; hpDelta: number;
   newInGameDate: string; newLocationId: string | null; consequenceText: string;
   environment: WorldEnvironment; environmentReason: string; questChanges: QuestTurnChange[];
-  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; result: string }>;
+  rolls: Array<{ roller: "PLAYER" | "GM"; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; result: string; challenge?: SignedDiceChallenge }>;
   npcChanges: NpcTurnChange[];
+  combatEvents?: CombatDamageEvent[];
   characterChanges: {
     inventory: Array<{ action: "ADD" | "REMOVE" | "SET"; name: string; quantity: number; notes: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
     resources: Array<{ name: string; current: number | null; max: number | null; recovery: string; certainty: "KNOWN" | "APPROXIMATE" | "UNKNOWN" }>;
@@ -40,8 +62,9 @@ export interface ServerDiceRollOptions {
 export async function rollDiceAtServer(
   sessionToken: string,
   formula: string,
+  challenge: SignedDiceChallenge,
   options: ServerDiceRollOptions = {},
-): Promise<DiceRollResult> {
+): Promise<DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }> {
   const env = readSupabaseEnv();
   const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
   const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
@@ -50,6 +73,9 @@ export async function rollDiceAtServer(
   }
   if (!sessionToken.trim()) throw new GameMasterError("Для броска требуется активная сессия.", "AUTH_REQUIRED");
   if (!parseDiceFormula(formula)) throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска.", "INVALID_DICE_FORMULA");
+  if (!challenge || challenge.formula !== formula || !challenge.signature || !challenge.nonce) {
+    throw new GameMasterError("Для броска отсутствует подписанное задание мастера. Запроси новый ход.", "DICE_CHALLENGE_MISSING");
+  }
 
   let response: Response;
   try {
@@ -60,7 +86,7 @@ export async function rollDiceAtServer(
         Authorization: `Bearer ${sessionToken.trim()}`,
         apikey: publishableKey,
       },
-      body: JSON.stringify({ operation: "ROLL_DICE", formula }),
+      body: JSON.stringify({ operation: "ROLL_DICE", formula, challenge }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch {
@@ -77,10 +103,16 @@ export async function rollDiceAtServer(
   if (!payload || typeof payload !== "object" || !("dice" in payload) ||
       !Array.isArray((payload as { dice: unknown }).dice) ||
       !("modifier" in payload) || !Number.isInteger((payload as { modifier: unknown }).modifier) ||
-      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total)) {
+      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total) ||
+      !("proof" in payload) || !payload.proof || typeof payload.proof !== "object" ||
+      !("userId" in payload.proof) || typeof payload.proof.userId !== "string" ||
+      !("issuedAt" in payload.proof) || !Number.isInteger(payload.proof.issuedAt) ||
+      !("nonce" in payload.proof) || typeof payload.proof.nonce !== "string" ||
+      !("signature" in payload.proof) || typeof payload.proof.signature !== "string" ||
+      !("challenge" in payload.proof) || !payload.proof.challenge || typeof payload.proof.challenge !== "object") {
     throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
   }
-  const result = payload as DiceRollResult & { formula?: unknown };
+  const result = payload as DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } };
   const parsed = parseDiceFormula(formula)!;
   let offset = 0;
   let diceMatch = result.dice.length === parsed.totalDice &&
@@ -101,7 +133,8 @@ export async function rollDiceAtServer(
     }
     offset += term.count;
   }
-  if (result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
+  if (JSON.stringify(result.proof.challenge) !== JSON.stringify(challenge) ||
+      result.formula !== formula || !diceMatch || result.modifier !== parsed.modifier ||
       result.total !== result.dice.reduce((sum, die) => sum + (die.kept ? die.value : 0), 0) + result.modifier) {
     throw new GameMasterError("Результат броска не соответствует исходной формуле. Ход не продолжен.", "DICE_RESULT_MISMATCH");
   }
@@ -118,14 +151,32 @@ const turnSchema = {
     consequenceText: { type: "string" },
     newLocationId: { type: ["string", "null"] },
     rolls: { type: "array", items: { type: "object", additionalProperties: false, properties: {
-      roller: { type: "string", enum: ["PLAYER", "GM"] }, label: { type: "string" }, formula: { type: "string" }, result: { type: "string" },
-    }, required: ["roller", "label", "formula", "result"] } },
+      roller: { type: "string", enum: ["PLAYER", "GM"] }, label: { type: "string" }, formula: { type: "string" },
+      dc: { type: ["integer", "null"] }, targetType: { type: "string", enum: ["DC", "AC", "NONE"] }, result: { type: "string" },
+    }, required: ["roller", "label", "formula", "dc", "targetType", "result"] } },
     npcChanges: { type: "array", items: { type: "object", additionalProperties: false, properties: {
       action: { type: "string", enum: ["CREATE", "UPDATE"] }, name: { type: "string" },
       role: { type: "string" }, goals: { type: "string" }, resources: { type: "string" }, attitudeToPlayer: { type: "string" },
       playerVisible: { type: "boolean" },
       locationName: { type: ["string", "null"] }, factionName: { type: ["string", "null"] },
       certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] }, reason: { type: "string" },
+      gmProfile: { type: "object", additionalProperties: false, properties: {
+        biography: { type: "string" }, appearance: { type: "string" }, personality: { type: "string" },
+        motivation: { type: "string" }, longTermGoal: { type: "string" }, secrets: { type: "string" },
+        relationships: { type: "string" }, skillsAndAbilities: { type: "string" },
+        combatProfile: { type: "object", additionalProperties: false, properties: {
+          status: { type: "string", enum: ["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"] },
+          source: { type: "string" }, armorClass: { type: ["integer", "null"] },
+          hitPointsCurrent: { type: ["integer", "null"] }, hitPointsMax: { type: ["integer", "null"] }, speed: { type: "string" },
+          attacks: { type: "array", items: { type: "object", additionalProperties: false, properties: {
+            name: { type: "string" }, attackBonus: { type: ["integer", "null"] },
+            damage: { type: "string" }, damageType: { type: "string" },
+          }, required: ["name", "attackBonus", "damage", "damageType"] } },
+          resistances: { type: "array", items: { type: "string" } },
+          vulnerabilities: { type: "array", items: { type: "string" } },
+          immunities: { type: "array", items: { type: "string" } },
+        }, required: ["status", "source", "armorClass", "hitPointsCurrent", "hitPointsMax", "speed", "attacks", "resistances", "vulnerabilities", "immunities"] },
+      }, required: ["biography", "appearance", "personality", "motivation", "longTermGoal", "secrets", "relationships", "skillsAndAbilities", "combatProfile"] },
       knowledgeAdditions: { type: "array", items: { type: "object", additionalProperties: false, properties: {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
@@ -134,7 +185,7 @@ const turnSchema = {
         factSummary: { type: "string" }, acquisitionPath: { type: "string" },
         certainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       }, required: ["factSummary", "acquisitionPath", "certainty"] } },
-    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
+    }, required: ["action", "name", "role", "goals", "resources", "attitudeToPlayer", "playerVisible", "locationName", "factionName", "certainty", "reason", "gmProfile", "knowledgeAdditions", "playerKnowledgeAdditions"] } },
     environment: { type: "object", additionalProperties: false, properties: {
       temperatureC: { type: ["number", "null"] }, temperatureCertainty: { type: "string", enum: ["KNOWN", "APPROXIMATE", "UNKNOWN"] },
       weather: { type: "string" }, lighting: { type: "string" }, visibility: { type: "string" }, wind: { type: "string" },
@@ -452,8 +503,37 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         (npc["locationName"] !== null && typeof npc["locationName"] !== "string") ||
         (npc["factionName"] !== null && typeof npc["factionName"] !== "string") ||
         !["KNOWN", "APPROXIMATE", "UNKNOWN"].includes(String(npc["certainty"])) ||
-        typeof npc["reason"] !== "string" || !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
+        typeof npc["reason"] !== "string" || !npc["gmProfile"] || typeof npc["gmProfile"] !== "object" ||
+        !Array.isArray(npc["knowledgeAdditions"]) || !Array.isArray(npc["playerKnowledgeAdditions"])) {
       throw new GameMasterError("Некорректное изменение NPC в ответе мастера.", "INVALID_NPC_CHANGE");
+    }
+    const profile = npc["gmProfile"] as Record<string, unknown>;
+    const profileTextFields = ["biography", "appearance", "personality", "motivation", "longTermGoal", "secrets", "relationships", "skillsAndAbilities"];
+    if (profileTextFields.some((key) => typeof profile[key] !== "string") ||
+        !profile["combatProfile"] || typeof profile["combatProfile"] !== "object") {
+      throw new GameMasterError("Карточка NPC неполная: отсутствует GM-досье или описание.", "INVALID_NPC_PROFILE");
+    }
+    const combat = profile["combatProfile"] as Record<string, unknown>;
+    if (!["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(String(combat["status"])) ||
+        typeof combat["source"] !== "string" || typeof combat["speed"] !== "string" ||
+        !(combat["armorClass"] === null || (Number.isInteger(combat["armorClass"]) && Number(combat["armorClass"]) >= 1 && Number(combat["armorClass"]) <= 40)) ||
+        !(combat["hitPointsCurrent"] === null || (Number.isInteger(combat["hitPointsCurrent"]) && Number(combat["hitPointsCurrent"]) >= 0 && Number(combat["hitPointsCurrent"]) <= 5000)) ||
+        !(combat["hitPointsMax"] === null || (Number.isInteger(combat["hitPointsMax"]) && Number(combat["hitPointsMax"]) >= 1 && Number(combat["hitPointsMax"]) <= 5000)) ||
+        (combat["hitPointsCurrent"] !== null && combat["hitPointsMax"] !== null && Number(combat["hitPointsCurrent"]) > Number(combat["hitPointsMax"])) ||
+        !Array.isArray(combat["attacks"]) || !Array.isArray(combat["resistances"]) ||
+        !Array.isArray(combat["vulnerabilities"]) || !Array.isArray(combat["immunities"])) {
+      throw new GameMasterError("Некорректный боевой профиль NPC.", "INVALID_NPC_COMBAT_PROFILE");
+    }
+    if (combat["status"] === "SRD_VERIFIED" &&
+        (!String(combat["source"]).trim() || combat["armorClass"] === null || combat["hitPointsCurrent"] === null || combat["hitPointsMax"] === null)) {
+      throw new GameMasterError("Боевые характеристики NPC помечены как подтверждённые без источника, КЗ или HP.", "UNSOURCED_NPC_COMBAT_PROFILE");
+    }
+    for (const attack of combat["attacks"] as Array<Record<string, unknown>>) {
+      if (typeof attack["name"] !== "string" || !attack["name"].trim() ||
+          !(attack["attackBonus"] === null || (Number.isInteger(attack["attackBonus"]) && Number(attack["attackBonus"]) >= -10 && Number(attack["attackBonus"]) <= 30)) ||
+          typeof attack["damage"] !== "string" || typeof attack["damageType"] !== "string") {
+        throw new GameMasterError("Некорректная атака в карточке NPC.", "INVALID_NPC_ATTACK_PROFILE");
+      }
     }
     const existingNpc = knownNpcs.find((item) => item.name.toLocaleLowerCase() === (npc["name"] as string).toLocaleLowerCase());
     if (npc["action"] === "CREATE" && existingNpc) {
@@ -519,14 +599,30 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
         !roll["label"].trim() || !parseDiceFormula(roll["formula"])) {
       throw new GameMasterError("Мастер запросил неподдерживаемую формулу броска. Ход не принят; требуется корректная формула кубиков.", "INVALID_DICE_FORMULA");
     }
-    if (!["PLAYER", "GM"].includes(String(roll["roller"])) ||
-        roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
-      throw new GameMasterError("Мастер попытался подставить результат броска или не указал, кто бросает. Число должен генерировать игрок или защищённый сервер согласно владельцу броска.", "GM_INVENTED_DICE_RESULT");
+    if (!["DC", "AC", "NONE"].includes(String(roll["targetType"])) ||
+        (roll["targetType"] === "NONE" ? roll["dc"] !== null :
+          !Number.isInteger(roll["dc"]) || (roll["dc"] as number) < 1 || (roll["dc"] as number) > 40)) {
+      throw new GameMasterError("Мастер указал некорректную или незафиксированную DC/AC проверки.", "INVALID_DICE_DC");
+    }
+    if (roll["roller"] === "PLAYER" && roll["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      throw new GameMasterError("Результат броска главного героя должен поступить только через подписанное серверное задание.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (roll["roller"] === "GM" &&
+        (typeof roll["result"] !== "string" || !/=\s*-?\d+/.test(roll["result"]))) {
+      throw new GameMasterError("Результат броска NPC должен быть сформирован серверным генератором.", "GM_INVENTED_DICE_RESULT");
+    }
+    if (!["PLAYER", "GM"].includes(String(roll["roller"]))) {
+      throw new GameMasterError("Не указан владелец броска.", "GM_INVENTED_DICE_RESULT");
     }
   }
   const rolls = turn["rolls"] as Array<Record<string, unknown>>;
-  const hasPendingRoll = rolls.length > 0;
-  if (rolls.length > 1) throw new GameMasterError("Для надёжного разрешения мастер запрашивает только один бросок за раз.", "MULTIPLE_PENDING_ROLLS");
+  const pendingPlayerRolls = rolls.filter((roll) =>
+    roll["roller"] === "PLAYER" && roll["result"] === "ОЖИДАЕТСЯ БРОСОК ИГРОКА"
+  );
+  const hasPendingRoll = pendingPlayerRolls.length > 0;
+  if (rolls.length > 5 || pendingPlayerRolls.length > 1) {
+    throw new GameMasterError("В одном ходе допустимы не более пяти завершённых бросков и одного ожидающего броска игрока.", "MULTIPLE_PENDING_ROLLS");
+  }
   if (turn["needsClarification"] && !(turn["clarificationQuestion"] as string).trim()) {
     throw new GameMasterError("Мастер отметил необходимость уточнения, но не задал вопрос.", "MISSING_CLARIFICATION_QUESTION");
   }
@@ -545,6 +641,32 @@ function validateTurn(value: unknown, knownLocations: LocationRecord[], knownNpc
     hasCharacterDelta || hasWorldDelta
   )) {
     throw new GameMasterError("При ожидаемом броске или уточнении мастер не может фиксировать время, HP, предметы, ресурсы, NPC, локацию или последствия.", "INVALID_CLARIFICATION_DELTA");
+  }
+  if ("combatEvents" in turn) {
+    if (!Array.isArray(turn["combatEvents"])) {
+      throw new GameMasterError("Сервер вернул некорректный список боевых событий.", "INVALID_COMBAT_EVENTS");
+    }
+    const combatEvents = turn["combatEvents"] as Array<Record<string, unknown>>;
+    for (const event of combatEvents) {
+      if (!event || typeof event !== "object" ||
+          !["PLAYER", "NPC"].includes(String(event["targetType"])) ||
+          typeof event["targetName"] !== "string" || !event["targetName"].trim() ||
+          !Number.isInteger(event["damage"]) || (event["damage"] as number) < 0 ||
+          (event["damage"] as number) > 10000 ||
+          !(event["damageType"] === null || typeof event["damageType"] === "string") ||
+          typeof event["critical"] !== "boolean" ||
+          !["PLAYER", "NPC"].includes(String(event["source"])) ||
+          typeof event["formula"] !== "string" || !parseDiceFormula(event["formula"]) ||
+          typeof event["rollLabel"] !== "string" || !event["rollLabel"].trim()) {
+        throw new GameMasterError("Серверное боевое событие не прошло проверку структуры.", "INVALID_COMBAT_EVENT");
+      }
+    }
+    const damageToPlayer = combatEvents
+      .filter((event) => event["targetType"] === "PLAYER")
+      .reduce((sum, event) => sum + Number(event["damage"]), 0);
+    if (damageToPlayer > 0 && turn["hpDelta"] !== -damageToPlayer) {
+      throw new GameMasterError("Урон по герою не совпадает с серверным итогом броска.", "COMBAT_HP_MISMATCH");
+    }
   }
   return turn as unknown as GameMasterTurn;
 }
@@ -606,6 +728,7 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     ] : []),
     "Правила D&D 2024 / SRD 5.2.1 загружаются и извлекаются сервером из закрытого хранилища. Браузер не содержит полный текст SRD и не выбирает фрагменты правил. Не смешивай редакции 2014 и 2024. Если сервер не передал конкретное правило, верни RULE UNCERTAINTY и не выдумывай параметры.",
     "При проверке D20 учитывай модификатор характеристики, владение, преимущество/помеху, Exhaustion 2024 и другие подтверждённые эффекты ровно один раз. DC фиксируй до броска. Не трактуй натуральные 1/20 как универсальные автоматические провал/успех.",
+    "Если completedRolls содержит завершённый бросок, используй его точные кости, модификатор, итог, исходную формулу и исходный DC/AC. Не генерируй повторный бросок, не меняй DC/AC и не пересчитывай модификатор. completedRolls — отдельный журнал результатов, а не часть свободного текста action.",
     "Проверяй Action, Bonus Action, Reaction, движение, концентрацию, состояния, сопротивления/уязвимости/иммунитеты, свойства оружия и Weapon Mastery по конкретным правилам. Не подменяй правила описанием от себя.",
     "Перед изменением HP, предметов, денег, зарядов, ячеек, классовых ресурсов, состояний и времени проверь допустимость операции и её причинное основание. Если точное правило не подтверждено, не применяй изменение. Если текущее значение ресурса персонажа UNKNOWN/null, не расходуй и не восстанавливай его по догадке: сначала задай один вопрос о фактическом остатке; ход не продвигай.",
     "Выводи только JSON по заданной схеме. Не включай markdown.",
@@ -630,6 +753,10 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
     })),
     knownLocations: context.locations,
     scheduledAndDelayedEvents: context.timelineEvents,
+    // Completed rolls are structured separately from the player's action text.
+    // They are generated by the authenticated dice endpoint and retained with
+    // their original DC/AC decision for the continuation request.
+    completedRolls: (context.completedRolls ?? []).slice(-5),
     // Compact chronicle index includes every committed game turn; recentJournal
     // separately carries full detail for recent and query-matched historical turns.
     fullCampaignChronicle: context.journal
@@ -690,6 +817,8 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
       "newInGameDate оставь текущей датой, если время не продвинулось. newLocationId меняй только если персонаж фактически прибыл в зарегистрированную локацию из knownLocations; не телепортируй и не выдумывай ID.",
       "Для Календаря Экдрасиля 2.4 используй только канонические месяцы, межгодовые дни и шестой день каждого четвёртого года. Не вычисляй новую дату самостоятельно: верни newInGameDate равной текущей дате из world.currentInGameDate. Приложение само передвинет календарь по суммарному world.elapsedMinutes от начала кампании. Для старых кампаний с Техническим календарём 1.0 сохраняй их прежний формат.",
       "npcChanges содержит только NPC, реально впервые представленных или чьё состояние/знание изменилось в этой сцене. CREATE только для нового встреченного NPC, UPDATE только для уже существующего из knownNpcs. Не создавай дубликаты. locationName и factionName — только точные имена из knownLocations/knownFactions или null. knowledgeAdditions — только сведения, которые конкретный NPC получил через описанный канал; не делай NPC всеведущими. reason объясняет источник изменения. Если изменений нет — пустой массив.",
+      "При CREATE автоматически сформируй полноценную gmProfile-карточку NPC: биография, внешность, личность, мотивация, долгосрочная цель, секреты, отношения, навыки и способности. Это скрытое досье мастера; оно не является знанием персонажа. Не подменяй playerKnowledgeAdditions содержимым gmProfile. При UPDATE сохраняй непротиворечивость уже созданного досье и меняй только сведения, для которых есть причина.",
+      "combatProfile заполняй строго: status=NOT_REQUIRED, если NPC не нуждается в боевых параметрах; status=UNKNOWN, если параметры нужны, но не подтверждены; status=SRD_VERIFIED только при точном найденном статблоке SRD 5.2.1 с указанием источника. При SRD_VERIFIED укажи только реально найденные КЗ, HP, скорость, атаки, бонусы, формулы урона и типы урона. Не выдумывай сопротивления, иммунитеты, уязвимости и числа. Если данных нет — null/пустые массивы и UNKNOWN.",
       "npcSimulationReference — GM-only протокол принятия решений и ведения NPC, а не источник фактов мира. Следуй ему для устойчивых целей, временного состояния, планов, задач, знаний и ресурсов. Не копируй шаблонные примеры как факты текущего NPC; текущие записи knownNpcs имеют приоритет как состояние.",
       "Поля goals, attitudeToPlayer, knowledge, resources и внутренние планы в knownNpcs могут содержать GM-only сведения. Используй их только для симуляции поведения NPC. Не раскрывай их персонажа, пока она не получила соответствующую информацию через установленный внутриигровой канал. Знание NPC не является знанием персонажа игрока.",
       "characterChanges отражает только реальные изменения ресурсов, предметов, состояний и денег; если изменений нет, верни пустые массивы и нулевые currencyDelta. Не выдумывай вес предметов и не выводи текущие остатки ресурсов из их максимума.",
@@ -734,6 +863,25 @@ export async function resolvePlayerAction(sessionToken: string, context: GameMas
   const record = payload as Record<string, unknown>;
   const usage = record["usage"] && typeof record["usage"] === "object" ? record["usage"] as GameMasterResult["usage"] : undefined;
   let turn = validateTurn(parsed, context.locations, context.npcs, context.factions, context.world.quests ?? [], context.world.environment);
+  const rawChallenge = record["rollChallenge"];
+  const waitingRolls = turn.rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+  if (waitingRolls.length > 0) {
+    const waitingRoll = waitingRolls[0];
+    if (waitingRolls.length !== 1 || !waitingRoll || !rawChallenge || typeof rawChallenge !== "object") {
+      throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
+    }
+    const candidate = rawChallenge as Record<string, unknown>;
+    if (typeof candidate["userId"] !== "string" || candidate["formula"] !== waitingRoll.formula ||
+        candidate["label"] !== waitingRoll.label || candidate["dc"] !== waitingRoll.dc ||
+        candidate["targetType"] !== waitingRoll.targetType || candidate["roller"] !== waitingRoll.roller ||
+        !Number.isInteger(candidate["issuedAt"]) || typeof candidate["nonce"] !== "string" ||
+        typeof candidate["signature"] !== "string") {
+      throw new GameMasterError("Сервер не выдал корректное подписанное задание для ожидающего броска. Ход не продолжен.", "DICE_CHALLENGE_INVALID");
+    }
+    waitingRoll.challenge = candidate as unknown as SignedDiceChallenge;
+  } else if (rawChallenge !== undefined && rawChallenge !== null) {
+    throw new GameMasterError("Сервер выдал задание броска без ожидающей проверки. Ход не продолжен.", "UNEXPECTED_DICE_CHALLENGE");
+  }
   const isEkdrasilCalendar = /календарь экдрасиля 2\.4/i.test(context.world.calendarSystem);
   if (context.mode !== "OPENING" && isEkdrasilCalendar) {
     const before = parseEkdrasilDateTime(context.world.currentInGameDate);

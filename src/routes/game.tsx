@@ -13,7 +13,7 @@ import {
   formatCampaignOpening,
   formatGameMasterAnswer,
 } from "@/domain/game-master-presentation";
-import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn } from "@/domain/game-master";
+import { resolvePlayerAction, rollDiceAtServer, type GameMasterTurn, type SignedDiceChallenge } from "@/domain/game-master";
 import type { GameTurnEntry, TechnicalMessageEntry } from "@/domain/types";
 import { parseDiceFormula, rollDiceFormula, type RolledDie } from "@/domain/dice";
 import { useObsidianStore } from "@/store/obsidian-store";
@@ -48,10 +48,10 @@ function GamePage() {
   const [gmError, setGmError] = useState<string | null>(null);
   const [gmTurn, setGmTurn] = useState<GameMasterTurn | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
-  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number } | null>(null);
+  const [rollDisplay, setRollDisplay] = useState<{ label: string; dice: RolledDie[]; modifier: number; total: number; dc: number | null; targetType: "DC" | "AC" | "NONE"; success: boolean | null } | null>(null);
   const [rollAnimating, setRollAnimating] = useState(false);
   const [autoGmRollKey, setAutoGmRollKey] = useState<string | null>(null);
-  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; result: string }>>([]);
+  const [completedPlayerRolls, setCompletedPlayerRolls] = useState<Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>>([]);
   const [draftReady, setDraftReady] = useState(false);
   const [turnCommitStage, setTurnCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
   const [openingCommitStage, setOpeningCommitStage] = useState<"CHECK" | "COMMIT" | null>(null);
@@ -156,7 +156,7 @@ function GamePage() {
     }
   }, [turnCommitStage, turnDraft.checkedAt, checkTurnDraft, commitTurnDraft, nextTurnNumber]);
 
-  function makeContext(action: string, mode: "ACTION" | "OPENING") {
+  function makeContext(action: string, mode: "ACTION" | "OPENING", completedRolls: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }> = []) {
     return {
       action,
       mode,
@@ -169,6 +169,7 @@ function GamePage() {
       locations,
       timelineEvents,
       journal: sessionLog.entries,
+      completedRolls,
     };
   }
 
@@ -255,7 +256,7 @@ function GamePage() {
     void handleOpenCampaign();
   }, [setupReady, sessionLog.lastTurnNumber, openingBusy, openingAttempted, openingCommitStage, session?.access_token]);
 
-  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; result: string }>, playerIntentOverride?: string) {
+  async function handleResolveAction(actionOverride?: string, preserveRolls = false, rollsOverride?: Array<{ id: string; label: string; formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM"; dice: Array<{ value: number; sides: number; kept: boolean }>; modifier: number; total: number; success: boolean | null; result: string; challenge: SignedDiceChallenge; proof: { userId: string; issuedAt: number; nonce: string; signature: string; challenge: SignedDiceChallenge } }>, playerIntentOverride?: string) {
     const actionToResolve = actionOverride ?? playerAction;
     if (!actionToResolve.trim() || !session?.access_token || !setupReady || draftReady) return;
     setGmError(null);
@@ -268,7 +269,11 @@ function GamePage() {
     setPendingAction(actionToResolve);
     setGmBusy(true);
     try {
-      const result = await resolvePlayerAction(session.access_token, makeContext(actionToResolve, "ACTION"), { model: gmModel });
+      const result = await resolvePlayerAction(
+        session.access_token,
+        makeContext(actionToResolve, "ACTION", preserveRolls ? (rollsOverride ?? completedPlayerRolls) : []),
+        { model: gmModel },
+      );
       setGmTurn(result.turn);
       const waitingForRoll = result.turn.rolls.some((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
       if (!result.turn.needsClarification && !waitingForRoll) {
@@ -293,6 +298,9 @@ function GamePage() {
               id: `chat-roll-${Date.now().toString(36)}-${index}`,
               label: roll.label,
               formula: roll.formula,
+              dc: roll.dc,
+              targetType: roll.targetType,
+              roller: roll.roller,
               result: roll.result,
             })),
           ],
@@ -313,15 +321,12 @@ function GamePage() {
     if (!pending) return;
     setRollAnimating(true);
     await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
-    let rolled: ReturnType<typeof rollDiceFormula>;
+    let rolled: Awaited<ReturnType<typeof rollDiceAtServer>>;
     try {
-      if (pending.roller === "GM") {
-        const serverRoll = await rollDiceAtServer(session?.access_token ?? "", pending.formula);
-        rolled = serverRoll;
-      } else {
-        // Only the player rolls for the player character, using the visible dice control.
-        rolled = rollDiceFormula(pending.formula);
-      }
+      // All dice are generated by the authenticated server, including player
+      // checks. The browser only displays the returned result.
+      if (!pending.challenge) throw new Error("У ожидающего броска нет подписанного задания сервера. Запроси новый ход.");
+      rolled = await rollDiceAtServer(session?.access_token ?? "", pending.formula, pending.challenge);
     } catch (error) {
       setRollAnimating(false);
       setGmError(error instanceof Error ? error.message : "Не удалось выполнить бросок. Ход не продолжен.");
@@ -330,11 +335,21 @@ function GamePage() {
     setRollAnimating(false);
 
     const formula = pending.formula;
-    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total });
+    const success = pending.targetType === "NONE" || pending.dc === null ? null : rolled.total >= pending.dc;
+    setRollDisplay({ label: pending.label, dice: rolled.dice, modifier: rolled.modifier, total: rolled.total, dc: pending.dc, targetType: pending.targetType, success });
     const rollRecord = {
       id: `gm-roll-${Date.now().toString(36)}`,
       label: pending.label,
       formula,
+      dc: pending.dc,
+      targetType: pending.targetType,
+      roller: pending.roller,
+      dice: rolled.dice,
+      modifier: rolled.modifier,
+      total: rolled.total,
+      success,
+      proof: rolled.proof,
+      challenge: pending.challenge,
       result: `кости=[${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор=${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог=${rolled.total}`,
     };
     const allRolls = [...completedPlayerRolls, rollRecord];
@@ -345,15 +360,23 @@ function GamePage() {
     const checkContext = {
       label: pending.label,
       formula,
+      dc: pending.dc,
+      targetType: pending.targetType,
+      success,
       mechanics: gmTurn.mechanics,
       consequences: gmTurn.consequences,
       spatialAccounting: gmTurn.spatialAccounting,
       nextAction: gmTurn.nextAction,
     };
     const continuedAction = `${pendingAction}\n\nПЕРВОНАЧАЛЬНОЕ РЕШЕНИЕ МАСТЕРА О ПРОВЕРКЕ (НЕ ПЕРЕСМАТРИВАТЬ И НЕ МЕНЯТЬ DC): ${JSON.stringify(checkContext)}\nФАКТИЧЕСКИЙ БРОСОК ${pending.roller === "GM" ? "МАСТЕРА ЗА NPC/СУЩЕСТВО" : "ИГРОКА ЗА ГЛАВНОГО ГЕРОЯ"}: ${pending.label}; формула ${formula}; результаты костей [${rolled.dice.map((die) => `d${die.sides}:${die.value}${die.kept ? "" : " (не учитывается)"}`).join(", ")}]; модификатор ${rolled.modifier >= 0 ? "+" : ""}${rolled.modifier}; итог ${rolled.total}. Это единственный результат броска. Примени именно первоначальное решение и правила D&D 2024; не меняй DC, не пересчитывай бонус, не проси повторить бросок и продолжи исходное действие.`;
-    setPendingAction(continuedAction);
+    const checkedAction = continuedAction + "\n\nЗАФИКСИРОВАННЫЙ РЕЗУЛЬТАТ ПРОВЕРКИ: DC " +
+      (pending.targetType === "AC" ? "AC " : pending.targetType === "DC" ? "DC " : "цель ") +
+      (pending.dc ?? "UNKNOWN") + "; " +
+      (success === null ? "сложность не задана" : success ? "УСПЕХ" : "ПРОВАЛ") +
+      ". Не меняй DC и не пересчитывай бонус.";
+    setPendingAction(checkedAction);
     setGmTurn(null);
-    void handleResolveAction(continuedAction, true, allRolls, originalPlayerIntent || pendingAction);
+    void handleResolveAction(checkedAction, true, allRolls, originalPlayerIntent || pendingAction);
   }
 
   function handleApplyClarification() {
@@ -408,7 +431,7 @@ function GamePage() {
         {entry.rolls.length > 0 && (
           <div className="rounded-lg border border-primary/25 bg-background/60 p-2 text-xs">
             <p className="mb-1 flex items-center gap-1 font-semibold"><Dices className="h-3.5 w-3.5" />Броски</p>
-            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula} → {roll.result}</p>)}
+            {entry.rolls.map((roll) => <p key={roll.id}>{roll.label}: {roll.formula}{roll.dc !== null && roll.dc !== undefined ? ` · ${roll.targetType ?? "DC"} ${roll.dc}` : ""} → {roll.result}</p>)}
           </div>
         )}
         <p className="text-right text-[10px] text-muted-foreground">HP: {entry.hpDelta > 0 ? "+" : ""}{entry.hpDelta}</p>
@@ -570,11 +593,12 @@ function GamePage() {
                 <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="pending-roll-title">
                   <div className="w-full max-w-sm space-y-5 rounded-2xl border border-primary/40 bg-card p-5 shadow-2xl">
                     <div className="flex items-center justify-center gap-2 text-base font-bold" id="pending-roll-title">
-                      <Dices className="h-5 w-5 text-primary" />Мастер назначил проверку
+                      <Dices className="h-5 w-5 text-primary" />Мастер назначил бросок
                     </div>
                     <div className="space-y-1 text-center">
                       <p className="text-lg font-semibold">{pending.label}</p>
-                      <p className="text-sm text-muted-foreground">Формула броска: <span className="mono-code font-semibold">{pending.formula}</span></p>
+                      <p className="text-sm text-muted-foreground">Формула: <span className="mono-code font-semibold">{pending.formula}</span></p>
+                      {pending.dc !== null && <p className="text-sm font-semibold">{pending.targetType === "AC" ? "Класс защиты цели" : "Сложность проверки"}: {pending.targetType} {pending.dc}</p>}
                       <p className="text-xs text-muted-foreground">Исход действия будет определён после твоего броска.</p>
                     </div>
                     <button
@@ -622,7 +646,8 @@ function GamePage() {
             <p className="font-semibold">{rollDisplay.label}</p>
             <p className="text-xs text-muted-foreground">Модификатор: {rollDisplay.modifier >= 0 ? "+" : ""}{rollDisplay.modifier}</p>
             <p className="mono-code text-base font-bold">Итого: {rollDisplay.total}</p>
-            <p className="text-xs text-muted-foreground">Серверный результат передан мастеру без изменений.</p>
+            {rollDisplay.dc !== null && rollDisplay.targetType !== "NONE" && <p className="text-xs font-semibold">{rollDisplay.targetType} {rollDisplay.dc} · {rollDisplay.success ? "УСПЕХ" : "ПРОВАЛ"}</p>}
+            <p className="text-xs text-muted-foreground">Результат броска передан мастеру без изменений.</p>
           </div>
         </div>
       )}

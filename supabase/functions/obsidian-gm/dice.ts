@@ -76,6 +76,26 @@ export function parseDiceFormula(formula: string): ParsedDiceFormula | null {
   return { terms, modifier, totalDice };
 }
 
+/** Resolve success using D&D 2024 d20 rules. Natural 1/20 are automatic
+ * failure/success only for attack rolls against AC, not ability checks or saves. */
+export function evaluateRollSuccess(
+  targetType: "DC" | "AC" | "NONE",
+  dc: number | null,
+  dice: RolledDie[],
+  total: number,
+): boolean | null {
+  if (targetType === "NONE") return null;
+  if (!Number.isInteger(dc) || dc === null || dc < 1 || dc > 40) {
+    throw new Error("Для сравнения броска нужна подтверждённая DC/AC.");
+  }
+  if (targetType === "AC") {
+    const keptD20 = dice.find((die) => die.sides === 20 && die.kept);
+    if (keptD20?.value === 20) return true;
+    if (keptD20?.value === 1) return false;
+  }
+  return total >= dc;
+}
+
 export function rollDiceFormula(
   formula: string,
   random: (sides: number) => number = rollDie,

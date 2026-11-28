@@ -11,6 +11,83 @@ import type {
   WorldState,
 } from "./types";
 
+export interface HitPointDeltaResult {
+  hpCurrent: number | null;
+  hpTemp: number | null;
+  error: string | null;
+}
+
+export interface NpcHitPointDamageResult {
+  hpCurrent: number | null;
+  appliedDamage: number;
+  error: string | null;
+}
+
+/** Apply D&D damage using only a verified NPC combat profile. */
+export function applyNpcHitPointDamage(
+  hpCurrent: number | null,
+  hpMax: number | null,
+  damage: number,
+  damageType: string | null,
+  resistances: string[],
+  vulnerabilities: string[],
+  immunities: string[],
+): NpcHitPointDamageResult {
+  if (!Number.isInteger(damage) || damage < 0 || damage > 10000) {
+    return { hpCurrent, appliedDamage: 0, error: "Урон NPC должен быть подтверждённым неотрицательным целым числом." };
+  }
+  if (!Number.isInteger(hpCurrent) || hpCurrent === null || hpCurrent < 0 ||
+      !Number.isInteger(hpMax) || hpMax === null || hpMax < 1 || hpCurrent > hpMax) {
+    return { hpCurrent, appliedDamage: 0, error: "Нельзя применить урон: текущие и максимальные HP NPC не подтверждены." };
+  }
+  const defenseLists = [resistances, vulnerabilities, immunities];
+  if (defenseLists.some((list) => !Array.isArray(list) || list.some((item) => typeof item !== "string"))) {
+    return { hpCurrent, appliedDamage: 0, error: "Защиты NPC имеют некорректный формат." };
+  }
+  const normalizedType = damageType?.trim().toLocaleLowerCase() ?? "";
+  const hasDefenses = defenseLists.some((list) => list.length > 0);
+  if (!normalizedType && hasDefenses) {
+    return { hpCurrent, appliedDamage: 0, error: "Тип урона неизвестен, поэтому нельзя безопасно применить сопротивления/уязвимости NPC." };
+  }
+  const matches = (list: string[]) => Boolean(normalizedType) &&
+    list.some((item) => item.trim().toLocaleLowerCase() === normalizedType);
+  let appliedDamage = damage;
+  const resistant = matches(resistances);
+  const vulnerable = matches(vulnerabilities);
+  if (matches(immunities)) appliedDamage = 0;
+  else if (resistant && !vulnerable) appliedDamage = Math.floor(damage / 2);
+  else if (vulnerable && !resistant) appliedDamage = damage * 2;
+  return { hpCurrent: Math.max(0, hpCurrent - appliedDamage), appliedDamage, error: null };
+}
+
+/**
+ * Applies signed HP changes using D&D 2024 hit-point rules:
+ * damage consumes temporary HP first; healing never restores temporary HP
+ * and cannot raise current HP above its maximum.
+ */
+export function applyHitPointDelta(
+  hpCurrent: number | null,
+  hpMax: number | null,
+  hpTemp: number | null,
+  delta: number,
+): HitPointDeltaResult {
+  if (!Number.isInteger(delta)) return { hpCurrent, hpTemp, error: "Изменение HP должно быть целым числом." };
+  if (delta === 0) return { hpCurrent, hpTemp, error: null };
+  if (hpCurrent === null) return { hpCurrent, hpTemp, error: "Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа." };
+  if (hpMax !== null && (!Number.isInteger(hpMax) || hpMax < 0)) return { hpCurrent, hpTemp, error: "Максимум HP не подтверждён." };
+  const temporary = Math.max(0, hpTemp ?? 0);
+  if (delta < 0) {
+    const damage = -delta;
+    const absorbed = Math.min(temporary, damage);
+    const remainingDamage = damage - absorbed;
+    const nextCurrent = hpCurrent - remainingDamage;
+    if (nextCurrent < 0) return { hpCurrent, hpTemp, error: "Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP)." };
+    return { hpCurrent: nextCurrent, hpTemp: hpTemp === null ? null : temporary - absorbed, error: null };
+  }
+  const healed = hpMax === null ? hpCurrent + delta : Math.min(hpMax, hpCurrent + delta);
+  return { hpCurrent: healed, hpTemp, error: null };
+}
+
 export const COLLECTION_NAMES: ReadonlyArray<CollectionName> = [
   "sources",
   "canon_facts",
@@ -125,26 +202,76 @@ export function validateTurnDraft(
   if (!Number.isFinite(draft.timeDeltaMinutes) || draft.timeDeltaMinutes < 0) {
     errors.push("Изменение игрового времени не может быть отрицательным.");
   }
-  if (draft.hpDelta !== 0 && character.hpCurrent === null) {
-    errors.push("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущие HP в листе персонажа.");
-  } else if (draft.hpDelta !== 0 && character.hpCurrent !== null && character.hpCurrent + draft.hpDelta < 0) {
-    errors.push("Итоговые HP персонажа не могут быть меньше 0 (проверьте дельту HP).");
-  } else if (draft.hpDelta > 0 && character.hpCurrent !== null && character.hpMax !== null &&
-    character.hpCurrent + draft.hpDelta > character.hpMax) {
-    errors.push("Итоговые HP не могут превышать максимум персонажа.");
-  }
+  const hpChange = applyHitPointDelta(character.hpCurrent, character.hpMax, character.hpTemp, draft.hpDelta);
+  if (hpChange.error) errors.push(hpChange.error);
   for (const change of draft.npcChanges ?? []) {
     const existing = collectionsNpcs.find((npc) => npc.name.toLocaleLowerCase() === change.name.toLocaleLowerCase());
     if (change.action === "CREATE" && existing) errors.push(`NPC «${change.name}» уже существует; нельзя создать дубликат.`);
     if (change.action === "UPDATE" && !existing) errors.push(`Нельзя обновить NPC «${change.name}»: он отсутствует в реестре.`);
     if (change.action === "UPDATE" && existing?.locked) errors.push(`NPC «${change.name}» заблокирован; сначала разблокируйте карточку вручную.`);
+    if (existing?.gmProfile?.combatProfile.status === "SRD_VERIFIED" &&
+        change.gmProfile?.combatProfile &&
+        JSON.stringify(change.gmProfile.combatProfile) !== JSON.stringify(existing.gmProfile.combatProfile)) {
+      errors.push(`Подтверждённый боевой профиль NPC «${change.name}» нельзя переписывать ответом мастера. HP и параметры боя меняются только через проверенные боевые события.`);
+    }
     if (!change.name.trim() || !change.role.trim() || !change.goals.trim() || !change.reason.trim()) errors.push("Изменение NPC требует имени, роли, целей и причины.");
+    if (change.gmProfile) {
+      const profile = change.gmProfile;
+      if ([profile.biography, profile.appearance, profile.personality, profile.motivation, profile.longTermGoal,
+        profile.secrets, profile.relationships, profile.skillsAndAbilities].some((value) => typeof value !== "string")) {
+        errors.push(`Скрытая карточка NPC «${change.name}» содержит некорректные поля.`);
+      }
+      const combat = profile.combatProfile;
+      if (!combat || !["NOT_REQUIRED", "SRD_VERIFIED", "UNKNOWN"].includes(combat.status) ||
+          (combat.armorClass !== null && (!Number.isInteger(combat.armorClass) || combat.armorClass < 1 || combat.armorClass > 40)) ||
+          (combat.hitPointsCurrent !== null && (!Number.isInteger(combat.hitPointsCurrent) || combat.hitPointsCurrent < 0 || combat.hitPointsCurrent > 5000)) ||
+          (combat.hitPointsMax !== null && (!Number.isInteger(combat.hitPointsMax) || combat.hitPointsMax < 1 || combat.hitPointsMax > 5000)) ||
+          (combat.hitPointsCurrent !== null && combat.hitPointsMax !== null && combat.hitPointsCurrent > combat.hitPointsMax) ||
+          (combat.status === "SRD_VERIFIED" && (!combat.source.trim() || combat.armorClass === null || combat.hitPointsCurrent === null || combat.hitPointsMax === null))) {
+        errors.push(`Боевой профиль NPC «${change.name}» не прошёл проверку источника и числовых значений.`);
+      }
+    }
     for (const knowledge of change.knowledgeAdditions) {
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
     for (const knowledge of change.playerKnowledgeAdditions) {
       if (!knowledge.factSummary.trim() || !knowledge.acquisitionPath.trim()) errors.push(`Знание персонажа о NPC «${change.name}» должно иметь содержание и канал получения.`);
     }
+  }
+  for (const event of draft.combatEvents ?? []) {
+    if (!["PLAYER", "NPC"].includes(event.targetType) ||
+        typeof event.targetName !== "string" || !event.targetName.trim() ||
+        !Number.isInteger(event.damage) || event.damage < 0 || event.damage > 10000 ||
+        !(event.damageType === null || typeof event.damageType === "string") ||
+        typeof event.critical !== "boolean" ||
+        !["PLAYER", "NPC"].includes(event.source) ||
+        typeof event.formula !== "string" || !event.formula.trim() ||
+        typeof event.rollLabel !== "string" || !event.rollLabel.trim()) {
+      errors.push("Подтверждённое боевое событие имеет некорректные поля.");
+      continue;
+    }
+    if (event.targetType === "NPC") {
+      const existing = collectionsNpcs.find((npc) =>
+        npc.name.normalize("NFKC").trim().toLocaleLowerCase() === event.targetName.normalize("NFKC").trim().toLocaleLowerCase()
+      );
+      const profile = existing?.gmProfile;
+      const combat = profile?.combatProfile;
+      if (!combat || combat.status !== "SRD_VERIFIED") {
+        errors.push(`Нельзя применить урон к NPC «${event.targetName}»: отсутствует подтверждённый боевой профиль SRD.`);
+        continue;
+      }
+      const applied = applyNpcHitPointDamage(
+        combat.hitPointsCurrent, combat.hitPointsMax, event.damage, event.damageType,
+        combat.resistances, combat.vulnerabilities, combat.immunities,
+      );
+      if (applied.error) errors.push(`NPC «${event.targetName}»: ${applied.error}`);
+    }
+  }
+  const playerDamage = (draft.combatEvents ?? [])
+    .filter((event) => event.targetType === "PLAYER")
+    .reduce((sum, event) => sum + event.damage, 0);
+  if (playerDamage > 0 && draft.hpDelta !== -playerDamage) {
+    errors.push("Изменение HP героя не совпадает с подтверждёнными результатами урона NPC.");
   }
   const existingQuests = worldState.quests ?? [];
   for (const change of draft.questChanges ?? []) {

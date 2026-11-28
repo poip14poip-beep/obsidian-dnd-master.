@@ -1,6 +1,5 @@
 export type GameMasterModelId =
   | "deepseek/deepseek-v4.1-flash"
-  | "anthropic/claude-sonnet-5.5"
   | "google/gemini-4-argon";
 
 export interface ModelRoutingFlags {
@@ -19,7 +18,7 @@ export interface ModelRoutingFlags {
  */
 export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMasterModelId[] {
   if (flags.isCompatibilityRequest) {
-    return ["deepseek/deepseek-v4.1-flash", "anthropic/claude-sonnet-5.5"];
+    return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
   if (flags.isStoryRequest) {
     return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
@@ -28,19 +27,17 @@ export function selectGameMasterModelOrder(flags: ModelRoutingFlags): GameMaster
     return ["deepseek/deepseek-v4.1-flash"];
   }
   if (flags.highImpactTurn) {
-    return ["anthropic/claude-sonnet-5.5", "google/gemini-4-argon"];
+    // DeepSeek handles all game turns first; Gemini is the independent fallback.
+    // Reserve Claude for non-game-turn authoring tasks where its extra cost is justified.
+    return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
   if (flags.isGameTurnRequest) {
     return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
   }
-  return [
-    "deepseek/deepseek-v4.1-flash",
-    "anthropic/claude-sonnet-5.5",
-    "google/gemini-4-argon",
-  ];
+  return ["deepseek/deepseek-v4.1-flash", "google/gemini-4-argon"];
 }
 
-export const GAME_TURN_MAX_OUTPUT_TOKENS = 8192;
+export const GAME_TURN_MAX_OUTPUT_TOKENS = 4096;
 export const DEEPSEEK_GAME_TURN_REASONING_EFFORT = "none" as const;
 
 export function gameTurnAttemptTimeoutMs(attemptIndex: number): number {
@@ -65,9 +62,15 @@ export function validateGameTurnSemantics(value: unknown): string | null {
       return "roll entry must be an object";
     }
     const item = roll as Record<string, unknown>;
-    if (typeof item["label"] !== "string" || !item["label"].trim() ||
+    if (!["PLAYER", "GM"].includes(String(item["roller"])) ||
+        typeof item["label"] !== "string" || !item["label"].trim() ||
         typeof item["formula"] !== "string" || !item["formula"].trim()) {
-      return "pending player roll requires a label and formula";
+      return "pending roll requires a valid roller, label and formula";
+    }
+    if (!["DC", "AC", "NONE"].includes(String(item["targetType"])) ||
+        (item["targetType"] === "NONE" ? item["dc"] !== null :
+          !Number.isInteger(item["dc"]) || (item["dc"] as number) < 1 || (item["dc"] as number) > 40)) {
+      return "roll target type must be DC, AC or NONE, with a fixed target number when required";
     }
     if (item["result"] !== "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
       return "model attempted to supply a dice result; only the authenticated server may roll";
@@ -88,12 +91,39 @@ export function validateGameTurnSemantics(value: unknown): string | null {
   const hasNpcChanges = Array.isArray(turn["npcChanges"]) && turn["npcChanges"].length > 0;
   const hasQuestChanges = Array.isArray(turn["questChanges"]) && turn["questChanges"].length > 0;
   const hasConsequence = typeof turn["consequenceText"] === "string" && turn["consequenceText"].trim().length > 0;
+  const hasWorldOutcome = typeof turn["worldOutcome"] === "string" && turn["worldOutcome"].trim().length > 0;
+  const hasCampaignMemory = typeof turn["campaignMemory"] === "string" && turn["campaignMemory"].trim().length > 0;
+  const hasStateNotes = Array.isArray(turn["stateNotes"]) && turn["stateNotes"].length > 0;
   if (turn["timeDeltaMinutes"] !== 0 || turn["hpDelta"] !== 0 || hasArrayChanges ||
       hasCurrencyChanges || hasNpcChanges || hasQuestChanges ||
-      turn["newLocationId"] !== null || hasConsequence) {
+      turn["newLocationId"] !== null || hasConsequence || hasWorldOutcome || hasCampaignMemory || hasStateNotes) {
     return "a pending player roll must not mutate campaign or character state";
   }
   return null;
+}
+
+/**
+ * Engine-boundary guard adapted from Open Dungeon Master: while a roll is
+ * pending, narration may frame the attempt but must not state its outcome.
+ */
+export function validatePendingRollNarration(value: unknown): string | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const turn = value as Record<string, unknown>;
+  if (!Array.isArray(turn["rolls"]) || turn["rolls"].length === 0) return null;
+  const narration = [turn["narration"], turn["worldOutcome"]]
+    .filter((part): part is string => typeof part === "string")
+    .join(" ")
+    .normalize("NFKC");
+  const prematureOutcomePatterns = [
+    /успешно\s+(?:открыва|взламыва|убежда|замеча|наход|попада|уклоня|сопротивля)/i,
+    /(?:не удалось|не смог(?:ла)?|не сумел(?:а)?|провал(?:ил|ила|илось)|промахнул(?:ся|ась)|не попал(?:а)?|не заметил(?:а)?|не нашёл|не нашла|не убедил(?:а)?)/i,
+    /(?:дверь|замок|цель|враг|противник).{0,60}(?:открыт|сломлен|повержен|ранен|убит|поражён|поражен)/i,
+    /(?:ты|вы)\s+(?:открываешь|взламываешь|убеждаешь|замечаешь|находишь|попадаешь|промахиваешься|уклоняешься)/i,
+    /\b(?:successfully|failed to|you hit|you miss|you open|you notice|you find)\b/i,
+  ];
+  return prematureOutcomePatterns.some((pattern) => pattern.test(narration))
+    ? "narration resolves an action before its pending roll has been made"
+    : null;
 }
 
 
@@ -199,6 +229,28 @@ export function selectRuleExcerpts(
     if (selected.length >= maxItems || remaining <= 0) break;
   }
   return selected;
+}
+
+
+/**
+ * Russian player actions often do not lexically match the English SRD.
+ * Keep action-specific excerpts when available; otherwise seed the DM with
+ * the core resolution rules so it can classify the action before narration.
+ */
+export const CORE_GAMEPLAY_RULE_TERMS = [
+  "d20 test", "ability check", "ability checks", "attack roll", "attack rolls",
+  "saving throw", "saving throws", "armor class", "weapon attack", "damage roll",
+];
+
+export function selectGameplayRuleExcerpts(
+  content: string,
+  actionTerms: string[],
+  maxChars: number,
+  maxItems: number,
+): RuleExcerpt[] {
+  const actionMatches = selectRuleExcerpts(content, actionTerms, maxChars, maxItems);
+  if (actionMatches.length > 0) return actionMatches;
+  return selectRuleExcerpts(content, CORE_GAMEPLAY_RULE_TERMS, maxChars, maxItems);
 }
 
 
