@@ -325,7 +325,10 @@ function TurnsPage() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="gm-action">Что делает персонаж?</Label>
-          <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => setPlayerAction(e.target.value)} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
+          <Textarea id="gm-action" rows={4} value={playerAction} onChange={(e) => {
+            setPlayerAction(e.target.value);
+            if (completedRolls.length > 0) setCompletedRolls([]);
+          }} placeholder="Опиши действие от лица персонажа. Не нужно выбирать готовый вариант — можно попытаться сделать что угодно." />
         </div>
         <Button type="button" className="touch-target w-full" disabled={gmBusy || !playerAction.trim() || !session?.access_token || !worldState.setup.confirmed} onClick={() => void handleResolveAction()}>
           {gmBusy ? "Мастер обрабатывает действие…" : "Отправить действие мастеру"}
