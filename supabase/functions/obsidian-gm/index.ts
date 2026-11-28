@@ -1456,18 +1456,49 @@ Deno.serve(async (req: Request) => {
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       let rollChallenge: SignedDiceChallenge | null = null;
-      if (isGameTurnRequest && modelCall.preparedRoll?.roller === "PLAYER") {
-        const prepared = modelCall.preparedRoll;
-        const pendingRolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
-        if (pendingRolls.length === 1 && pendingRolls[0].result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+      let pendingTurnId: string | null = null;
+      if (isGameTurnRequest) {
+        let parsedRequest: unknown = null;
+        try { parsedRequest = JSON.parse(inputText); } catch { parsedRequest = null; }
+        const action = isRecord(parsedRequest) && typeof parsedRequest.action === "string"
+          ? parsedRequest.action.trim()
+          : "";
+        const previousPending = await getPendingGmTurn(authData.user.id);
+        if (modelCall.preparedRoll?.roller === "PLAYER") {
+          const prepared = modelCall.preparedRoll;
+          const rolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+          const pendingPlayerRolls = rolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+          if (pendingPlayerRolls.length !== 1 || pendingPlayerRolls[0]?.roller !== "PLAYER") {
+            failures.push(`${attempt.id}: player roll challenge could not be bound to the final turn`);
+            continue;
+          }
           rollChallenge = await issueDiceChallenge(authData.user.id, prepared);
+          pendingTurnId = previousPending?.pending_id ?? crypto.randomUUID();
+          const completed = isRecord(parsedRequest) && Array.isArray(parsedRequest.completedRolls)
+            ? parsedRequest.completedRolls.filter(isRecord)
+            : [];
+          const saved = await savePendingGmTurn({
+            userId: authData.user.id,
+            pendingId: pendingTurnId,
+            action,
+            turn: parsed,
+            preparedRoll: prepared as unknown as JsonRecord,
+            challenge: rollChallenge,
+            completedRolls: completed,
+          });
+          if (!saved) {
+            console.error("[obsidian-gm] pending player turn was not durably saved");
+            return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось сохранить ожидающий бросок. Ничего не зафиксировано; повтори действие." } }, 503, cors);
+          }
+        } else {
+          if (previousPending) await clearPendingGmTurn(authData.user.id, previousPending.pending_id);
         }
       }
       return json({
         output_text: content,
         model: attempt.id,
         usage: tokens(root.usage),
-        ...(rollChallenge ? { rollChallenge } : {}),
+        ...(rollChallenge ? { rollChallenge, pendingTurnId } : {}),
       }, 200, cors);
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
