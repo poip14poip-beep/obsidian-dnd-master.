@@ -296,7 +296,17 @@ describe("game master resolver", () => {
       total: 17,
       success: true,
       result: "кости=[d20:13]; модификатор=+4; итог=17",
-      proof: { userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==" },
+      challenge: {
+        userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC", roller: "PLAYER",
+        label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
+      },
+      proof: {
+        userId: "test-user", issuedAt: 1_798_000_000_000, nonce: "nonce-test", signature: "dGVzdA==",
+        challenge: {
+          userId: "test-user", formula: "1d20+4", dc: 15, targetType: "DC", roller: "PLAYER",
+          label: "Проверка Восприятия", issuedAt: 1_798_000_000_000, nonce: "challenge-test", signature: "Y2hhbGxlbmdl",
+        },
+      },
     };
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ output_text: JSON.stringify(validTurn) }), { status: 200 }));
     await resolvePlayerAction("test-user-jwt", {
