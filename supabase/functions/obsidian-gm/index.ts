@@ -309,15 +309,20 @@ function applySocialCheckOutcomes(parsed: JsonRecord, inputText: string): boolea
     const currentAttitude = normalizeSocialAttitude(npc?.attitudeToPlayer);
     if (!npc || !currentAttitude) continue;
     const outcome = resolveSocialCheckOutcome(currentAttitude, roll.total as number, roll.dc as number);
-    if (!outcome.shifted) continue;
     const existing = npcChanges.find((change) =>
       typeof change.name === "string" &&
       change.name.normalize("NFKC").trim().toLocaleLowerCase() === key,
     );
     if (existing) {
-      existing.attitudeToPlayer = outcome.attitude;
-      existing.reason = "Отношение синхронизировано сервером после социальной проверки.";
-    } else {
+      if (existing.attitudeToPlayer !== outcome.attitude) {
+        existing.attitudeToPlayer = outcome.attitude;
+        existing.reason = "Отношение синхронизировано сервером после социальной проверки.";
+        changed = true;
+      }
+      continue;
+    }
+    if (!outcome.shifted) continue;
+    {
       const profile = isRecord(npc.gmProfile) ? npc.gmProfile : {};
       npcChanges.push({
         action: "UPDATE",
