@@ -408,7 +408,13 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       targetType: "AC", dc: 15, total: 20, success: true,
       dice: [{ sides: 20, value: 16, kept: true }],
     }];
-    const first = {
+    const search = {
+      choices: [{ message: { role: "assistant", tool_calls: [{
+        id: "search-1", type: "function",
+        function: { name: "search_dnd_rules", arguments: JSON.stringify({ query: "Goblin Bite" }) },
+      }] } }],
+    };
+    const damage = {
       choices: [{ message: { role: "assistant", tool_calls: [{
         id: "damage-1", type: "function",
         function: { name: "prepare_npc_damage", arguments: JSON.stringify({
@@ -416,11 +422,12 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
         }) },
       }] } }],
     };
-    const second = { choices: [{ message: { role: "assistant", content: "Урон подготовлен." } }] };
+    const third = { choices: [{ message: { role: "assistant", content: "Урон подготовлен." } }] };
     const final = { choices: [{ message: { role: "assistant", content: JSON.stringify({ ok: true }) } }] };
     const fetcher = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify(first), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify(second), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(search), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(damage), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(third), { status: 200 }))
       .mockResolvedValueOnce(new Response(JSON.stringify(final), { status: 200 }));
     const result = await callWithEkdrasilReadTools({
       fetcher: fetcher as unknown as typeof fetch,
@@ -430,7 +437,7 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
       enabled: true,
       rules: {
         ...rules,
-        content: "# Goblin\\n\\nGoblin\\nBite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.\\n",
+        content: "Goblin Bite. Melee Attack Roll: +4, reach 5 ft. Hit: 5 (1d6 + 2) Piercing damage.",
       },
       canon,
       completedRolls,
@@ -438,13 +445,12 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(result.preparedRoll).toMatchObject({
       roller: "GM", label: "Урон Goblin (Bite)", formula: "1d6+2", kind: "NPC_DAMAGE",
     });
-    const toolRequest = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body ?? "{}"));
-    const toolMessage = toolRequest.messages.find((message: { role: string; content?: string }) => message.role === "tool");
+    const toolRequest = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body ?? "{}"));
+    const toolMessage = toolRequest.messages.find((message: { role: string; tool_call_id?: string }) => message.role === "tool" && message.tool_call_id === "damage-1");
     expect(JSON.parse(toolMessage.content)).toMatchObject({
       ok: true,
       attackResolution: { hit: true, outcome: "HIT" },
     });
   });
-
 
 });
