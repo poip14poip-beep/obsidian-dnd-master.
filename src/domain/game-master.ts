@@ -16,6 +16,7 @@ export interface CompletedGameRoll {
   total: number;
   success: boolean | null;
   result: string;
+  proof: { userId: string; issuedAt: number; nonce: string; signature: string };
 }
 export interface GameMasterContext {
   action: string; mode?: "ACTION" | "OPENING"; sources: SourceDocument[]; world: WorldState; character: PlayerCharacterState;
@@ -55,7 +56,7 @@ export async function rollDiceAtServer(
   sessionToken: string,
   formula: string,
   options: ServerDiceRollOptions = {},
-): Promise<DiceRollResult> {
+): Promise<DiceRollResult & { formula: string; proof: { userId: string; issuedAt: number; nonce: string; signature: string } }> {
   const env = readSupabaseEnv();
   const supabaseUrl = options.supabaseUrl ?? (env.ok ? env.config.url : "");
   const publishableKey = options.publishableKey ?? (env.ok ? env.config.publishableKey : "");
@@ -91,10 +92,15 @@ export async function rollDiceAtServer(
   if (!payload || typeof payload !== "object" || !("dice" in payload) ||
       !Array.isArray((payload as { dice: unknown }).dice) ||
       !("modifier" in payload) || !Number.isInteger((payload as { modifier: unknown }).modifier) ||
-      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total)) {
+      !("total" in payload) || !Number.isInteger((payload as { total: unknown }).total) ||
+      !("proof" in payload) || !payload.proof || typeof payload.proof !== "object" ||
+      !("userId" in payload.proof) || typeof payload.proof.userId !== "string" ||
+      !("issuedAt" in payload.proof) || !Number.isInteger(payload.proof.issuedAt) ||
+      !("nonce" in payload.proof) || typeof payload.proof.nonce !== "string" ||
+      !("signature" in payload.proof) || typeof payload.proof.signature !== "string") {
     throw new GameMasterError("Сервер вернул некорректный результат броска. Ход не продолжен.", "INVALID_DICE_RESPONSE");
   }
-  const result = payload as DiceRollResult & { formula?: unknown };
+  const result = payload as DiceRollResult & { formula?: unknown; proof: { userId: string; issuedAt: number; nonce: string; signature: string } };
   const parsed = parseDiceFormula(formula)!;
   let offset = 0;
   let diceMatch = result.dice.length === parsed.totalDice &&
