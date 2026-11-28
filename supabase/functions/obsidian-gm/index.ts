@@ -266,8 +266,11 @@ function npcProfilesFromInput(inputText: string): JsonRecord[] {
   try {
     const parsed: unknown = JSON.parse(inputText);
     if (!isRecord(parsed) || !Array.isArray(parsed.knownNpcs)) return [];
+    // Social adjudication needs the tracked attitude even when an NPC has
+    // no combat dossier. Combat tools still require a verified gmProfile/SRD
+    // statblock before they can prepare an attack.
     return parsed.knownNpcs.filter((entry): entry is JsonRecord =>
-      isRecord(entry) && typeof entry.name === "string" && isRecord(entry.gmProfile),
+      isRecord(entry) && typeof entry.name === "string",
     ).slice(0, 40);
   } catch {
     return [];
