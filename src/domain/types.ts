@@ -257,6 +257,12 @@ export interface WorldState {
   updatedAt: string;
 }
 
+export interface HitDicePool {
+  die: string;
+  current: number;
+  maximum: number;
+}
+
 export interface CharacterResource {
   id: string;
   name: string;
@@ -336,6 +342,8 @@ export interface PlayerCharacterState {
   size?: "TINY" | "SMALL" | "MEDIUM" | "LARGE" | "HUGE" | "GARGANTUAN" | "UNKNOWN";
   speedFeet?: number | null;
   hitDice?: string;
+  /** Confirmed hit-dice pool, tracked independently from the displayed die size. */
+  hitDicePool?: HitDicePool[];
   savingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   baseSavingThrowBonuses?: { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number };
   skillBonuses?: Array<{ name: string; bonus: number; basis: string }>;
@@ -525,6 +533,7 @@ export interface AuditEntry {
     | "OPENING_SCENE_SAVED"
     | "SETUP_CONFIRMED"
     | "PLAYER_CHARACTER_UPDATED"
+    | "REST_TAKEN"
     | "TURN_COMMITTED"
     | "TURN_COMMIT_FAILED"
     | "TECHNICAL_NOTE_ADDED"
