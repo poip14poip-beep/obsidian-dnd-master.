@@ -318,6 +318,46 @@ function modifierForScore(score: number): number {
   return Math.floor((score - 10) / 2);
 }
 
+function conditionKeys(playerCharacter: JsonRecord | null): Set<string> {
+  const values = Array.isArray(playerCharacter?.conditions) ? playerCharacter.conditions.map(String) : [];
+  const aliases: Record<string, string> = {
+    "ослеплен": "blinded", "слепота": "blinded", "blinded": "blinded",
+    "очарован": "charmed", "charmed": "charmed",
+    "оглох": "deafened", "глухота": "deafened", "deafened": "deafened",
+    "испуган": "frightened", "испуг": "frightened", "frightened": "frightened",
+    "схвачен": "grappled", "захвачен": "grappled", "grappled": "grappled",
+    "недееспособен": "incapacitated", "incapacitated": "incapacitated",
+    "невидим": "invisible", "невидимость": "invisible", "invisible": "invisible",
+    "парализован": "paralyzed", "паралич": "paralyzed", "paralyzed": "paralyzed",
+    "окаменел": "petrified", "окаменение": "petrified", "petrified": "petrified",
+    "отравлен": "poisoned", "отравление": "poisoned", "poisoned": "poisoned",
+    "сбит с ног": "prone", "лежит ничком": "prone", "prone": "prone",
+    "опутан": "restrained", "скован": "restrained", "restrained": "restrained",
+    "ошеломлен": "stunned", "оглушен": "stunned", "stunned": "stunned",
+    "без сознания": "unconscious", "бессознательный": "unconscious", "unconscious": "unconscious",
+  };
+  const result = new Set<string>();
+  for (const raw of values) {
+    const normalized = raw.normalize("NFKC").trim().toLocaleLowerCase("ru-RU").replace(/[ё]/g, "е").replace(/\s+/g, " ");
+    const exhaustion = /^(?:exhaustion|истощение)(?:\s+(?:level\s*)?)?\s*([1-6])?$/.exec(normalized);
+    if (exhaustion) result.add("exhaustion");
+    else result.add(aliases[normalized] ?? normalized);
+  }
+  return result;
+}
+
+function combineRollAdvantage(requested: unknown, grantsAdvantage: boolean, grantsDisadvantage: boolean): "NONE" | "ADVANTAGE" | "DISADVANTAGE" {
+  const hasAdvantage = requested === "ADVANTAGE" || grantsAdvantage;
+  const hasDisadvantage = requested === "DISADVANTAGE" || grantsDisadvantage;
+  if (hasAdvantage === hasDisadvantage) return "NONE";
+  return hasAdvantage ? "ADVANTAGE" : "DISADVANTAGE";
+}
+
+function rollFormula(modifier: number, advantage: "NONE" | "ADVANTAGE" | "DISADVANTAGE"): string {
+  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
+  return modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
+}
+
 function preparePlayerCheck(
   args: JsonRecord,
   playerCharacter: JsonRecord | null,
@@ -353,9 +393,19 @@ function preparePlayerCheck(
     return { ok: false, error: "В листе отсутствует подтверждённая характеристика " + ability + "." };
   }
   let modifier = modifierForScore(score as number);
+  const conditions = conditionKeys(playerCharacter);
   const exhaustion = Array.isArray(playerCharacter.conditions) ? playerCharacter.conditions.map(String).join(" ") : "";
   const exhaustionMatch = /(?:exhaustion(?:\s+level)?|истощение(?:\s+уровень)?)\s*[:(]?\s*([1-6])/i.exec(exhaustion);
   if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
+
+  if (kind === "SAVING_THROW" && ["strength", "dexterity"].includes(ability) &&
+      ["paralyzed", "petrified", "stunned", "unconscious"].some((condition) => conditions.has(condition))) {
+    return { ok: false, error: "Это состояние автоматически проваливает спасброски Силы и Ловкости; бросок не требуется." };
+  }
+  const conditionDisadvantage =
+    (kind !== "SAVING_THROW" && conditions.has("poisoned")) ||
+    (kind === "SAVING_THROW" && ability === "dexterity" && conditions.has("restrained"));
+  const effectiveAdvantage = combineRollAdvantage(advantage, false, conditionDisadvantage);
 
   if (kind === "SAVING_THROW") {
     const saves = playerCharacter.savingThrowBonuses;
@@ -397,8 +447,7 @@ function preparePlayerCheck(
     if (exhaustionMatch) modifier -= 2 * Number(exhaustionMatch[1]);
   }
 
-  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
-  const formula = modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
+  const formula = rollFormula(modifier, effectiveAdvantage);
   const abilityRu: Record<string, string> = {
     strength: "Сила", dexterity: "Ловкость", constitution: "Телосложение",
     intelligence: "Интеллект", wisdom: "Мудрость", charisma: "Харизма",
@@ -712,9 +761,15 @@ function preparePlayerAttack(
   if (!sourceExcerpt) {
     return { ok: false, error: "AC цели не подтверждён выдержкой SRD 5.2.1 в этом ходе. Найди статблок через search_dnd_rules; если его нет в SRD, не разрешай атаку без проверенного статблока." };
   }
+  const conditions = conditionKeys(playerCharacter);
+  if (["incapacitated", "paralyzed", "petrified", "stunned", "unconscious"].some((condition) => conditions.has(condition))) {
+    return { ok: false, error: "Персонаж недееспособен из-за активного состояния и не может совершить атаку." };
+  }
   const modifier = Number(weaponEntry.attackBonus);
-  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
-  const formula = modifier === 0 ? dice : dice + (modifier > 0 ? "+" : "") + String(modifier);
+  const effectiveAdvantage = combineRollAdvantage(
+    advantage, false, ["blinded", "poisoned", "prone", "restrained"].some((condition) => conditions.has(condition)),
+  );
+  const formula = rollFormula(modifier, effectiveAdvantage);
   return {
     ok: true,
     preparedRoll: {
@@ -783,8 +838,13 @@ function prepareNpcAttack(
       Number.isInteger(profileAttack.attackBonus) && profileAttack.attackBonus !== attackBonus) {
     return { ok: false, error: "Карточка NPC расходится с подтверждённым статблоком SRD 5.2.1. Атака остановлена до исправления досье." };
   }
-  const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
-  const formula = attackBonus === 0 ? dice : dice + (attackBonus > 0 ? "+" : "") + String(attackBonus);
+  const targetConditions = conditionKeys(playerCharacter);
+  const effectiveAdvantage = combineRollAdvantage(
+    advantage,
+    ["blinded", "paralyzed", "petrified", "restrained", "stunned", "unconscious"].some((condition) => targetConditions.has(condition)),
+    targetConditions.has("invisible"),
+  );
+  const formula = rollFormula(attackBonus, effectiveAdvantage);
   return {
     ok: true,
     preparedRoll: {
