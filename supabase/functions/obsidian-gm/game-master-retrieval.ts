@@ -698,8 +698,14 @@ export function executePreparedServerRoll(
 ): ServerCompletedRoll {
   if (prepared.roller !== "GM") throw new Error("Игроком управляемый бросок нельзя выполнять на сервере.");
   const rolled = rollDiceFormula(prepared.formula, random);
+  if (rolled.modifier !== prepared.modifier) {
+    throw new Error("Модификатор формулы не совпадает с подтверждённым бонусом существа.");
+  }
   const keptD20 = rolled.dice.filter((die) => die.sides === 20 && die.kept);
   const naturalD20 = keptD20.length === 1 ? keptD20[0]!.value : null;
+  if (prepared.kind === "NPC_ATTACK" && naturalD20 === null) {
+    throw new Error("Атака NPC должна содержать ровно один учитываемый результат d20.");
+  }
   let success: boolean | null = null;
   if (prepared.targetType !== "NONE") {
     if (prepared.dc === null || !Number.isInteger(prepared.dc)) {
@@ -858,9 +864,17 @@ export async function callWithEkdrasilReadTools(options: {
         if (rawPrepared && typeof rawPrepared === "object") {
           const prepared = rawPrepared as PreparedRoll;
           if (prepared.roller === "PLAYER") {
-            preparedRoll = prepared;
+            if (serverRolls.length >= 4) {
+              toolResult = { ok: false, error: "Достигнут предел серверных бросков для одного действия.", preparedRoll: null };
+            } else {
+              preparedRoll = prepared;
+            }
           } else if (prepared.roller === "GM") {
             try {
+              const serverRollLimit = preparedRoll ? 3 : 4;
+              if (serverRolls.length >= serverRollLimit) {
+                throw new Error("Достигнут предел серверных бросков для одного действия.");
+              }
               const completed = executePreparedServerRoll(prepared, options.rollRandom);
               serverRolls.push(completed);
               completedRolls.push(completed);
