@@ -131,7 +131,7 @@ describe("D&D 2024 hit point resolution", () => {
 
   it("rejects HP changes when current HP is unknown", () => {
     expect(applyHitPointDelta(null, 20, 5, -2).error)
-      .toBe("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущее значение HP в листе персонажа.");
+      .toBe("Нельзя изменить HP: текущее значение UNKNOWN. Уточните текущее HP в листе персонажа.");
   });
 
   it("turn validation accounts for temporary HP when checking incoming damage", () => {
