@@ -950,6 +950,7 @@ export async function callWithEkdrasilReadTools(options: {
               toolResult = { ok: false, error: "Достигнут предел серверных бросков для одного действия.", preparedRoll: null };
             } else {
               preparedRoll = prepared;
+              requireToolCall = false;
             }
           } else if (prepared.roller === "GM") {
             try {
