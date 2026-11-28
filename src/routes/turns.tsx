@@ -145,6 +145,7 @@ function TurnsPage() {
           consequenceText: completedTurn.consequenceText,
           characterChanges: completedTurn.characterChanges,
           npcChanges: completedTurn.npcChanges,
+          combatEvents: completedTurn.combatEvents ?? [],
           rolls: completedTurn.rolls.map((roll, index) => ({
             id: `gm-roll-${Date.now().toString(36)}-${index}`,
             label: roll.label, formula: roll.formula, result: roll.result,
