@@ -409,6 +409,25 @@ function doubleDamageDice(formula: string): string {
   );
 }
 
+function findCompletedDamageRoll(
+  completedRolls: JsonRecord[],
+  roller: "PLAYER" | "GM",
+  label: string,
+  formula: string,
+): JsonRecord | null {
+  const roll = [...completedRolls].reverse().find((item) =>
+    item.roller === roller && item.targetType === "NONE" && item.label === label &&
+    item.formula === formula && Number.isInteger(item.total) && Number.isInteger(item.modifier) &&
+    Array.isArray(item.dice),
+  );
+  if (!roll) return null;
+  const dice = roll.dice as unknown[];
+  if (!dice.length || dice.some((die) => !die || typeof die !== "object" ||
+      !Number.isInteger((die as JsonRecord).value) || !Number.isInteger((die as JsonRecord).sides) ||
+      typeof (die as JsonRecord).kept !== "boolean")) return null;
+  return roll;
+}
+
 function preparePlayerDamage(
   args: JsonRecord,
   playerCharacter: JsonRecord | null,
@@ -443,6 +462,17 @@ function preparePlayerDamage(
   const formula = resolution.critical ? doubleDamageDice(entry.damage) : entry.damage.replace(/\s+/g, "");
   const parsed = parseDiceFormula(formula);
   if (!parsed) return { ok: false, error: "Формула урона не поддерживается серверным генератором." };
+  const damageLabel = "Урон " + weapon + " по " + targetName;
+  const completedDamage = findCompletedDamageRoll(completedRolls, "PLAYER", damageLabel, formula);
+  if (completedDamage) {
+    return {
+      ok: true, hit: true, target: targetName,
+      attackResolution: { ...resolution, outcome: resolution.critical ? "CRITICAL_HIT" : "HIT" },
+      damageResolution: { total: completedDamage.total, formula, modifier: completedDamage.modifier, dice: completedDamage.dice },
+      preparedRoll: null,
+      note: "Урон уже брошен и подтверждён сервером; повторный бросок запрещён.",
+    };
+  }
   return {
     ok: true,
     hit: true,
@@ -501,6 +531,19 @@ function prepareNpcDamage(
   if (critical) formula = doubleDamageDice(formula);
   const verified = parseDiceFormula(formula);
   if (!verified) return { ok: false, error: "Формула критического урона некорректна." };
+  const damageLabel = "Урон " + creatureName + " (" + attackName + ")";
+  const completedDamage = findCompletedDamageRoll(completedRolls, "GM", damageLabel, formula);
+  if (completedDamage) {
+    return {
+      ok: true, hit: true, target: creatureName,
+      attackResolution: { ...attackResolution, outcome: critical ? "CRITICAL_HIT" : "HIT" },
+      damageResolution: { total: completedDamage.total, formula, modifier: completedDamage.modifier, dice: completedDamage.dice },
+      preparedRoll: null,
+      damageSource: { sourceId: rules.sourceId, sha256: rules.sha256, lines: sourceExcerpt.lines },
+      critical,
+      note: "Урон уже брошен и подтверждён сервером; повторный бросок запрещён.",
+    };
+  }
   return {
     ok: true,
     hit: true,
