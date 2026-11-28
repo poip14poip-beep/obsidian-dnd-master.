@@ -30,8 +30,8 @@ export function createInitialHitDicePool(hitDice: string | null | undefined, cla
 
 function resourceRecovers(resourceRecovery: string, kind: RestKind): boolean {
   const value = normalize(resourceRecovery);
-  const shortRest = /short(?:\\s*\\/\\s*long)?\\s*rest|коротк.{0,8}(?:\\/|или)?\\s*(?:продолжительн.{0,8})?отдых/.test(value);
-  const longRest = /long\\s*rest|продолжительн.{0,8}отдых|длительн.{0,8}отдых/.test(value);
+  const shortRest = (value.includes("short rest") || value.includes("short/long rest") || value.includes("коротк")) && (value.includes("rest") || value.includes("отдых"));
+  const longRest = value.includes("long rest") || value.includes("продолжительн") || value.includes("длительн");
   return kind === "SHORT" ? shortRest : longRest || shortRest;
 }
 
