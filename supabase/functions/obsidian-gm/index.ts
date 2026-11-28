@@ -262,6 +262,20 @@ function playerCharacterFromInput(inputText: string): JsonRecord | null {
  * Combat resolution still requires a matching source excerpt from SRD 5.2.1;
  * these records can only cross-check, never invent, an attack or damage value.
  */
+function travelWeatherFromInput(inputText: string): { weather?: string; precipitation?: string } | null {
+  try {
+    const parsed: unknown = JSON.parse(inputText);
+    if (!isRecord(parsed) || !isRecord(parsed.world) || !isRecord(parsed.world.environment)) return null;
+    const environment = parsed.world.environment;
+    return {
+      ...(typeof environment.weather === "string" ? { weather: environment.weather } : {}),
+      ...(typeof environment.precipitation === "string" ? { precipitation: environment.precipitation } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
 function npcProfilesFromInput(inputText: string): JsonRecord[] {
   try {
     const parsed: unknown = JSON.parse(inputText);
@@ -1304,6 +1318,7 @@ Deno.serve(async (req: Request) => {
         canon: { content: canonDoc, sourceId: "EKDRASIL_WORLD_BIBLE", sha256: EKDRASIL_CANON_SHA256 },
         playerCharacter: playerCharacterFromInput(inputText),
         npcProfiles: npcProfilesFromInput(inputText),
+        travelWeather: travelWeatherFromInput(inputText),
         completedRolls: (() => {
           try {
             const parsed = JSON.parse(inputText);
