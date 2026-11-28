@@ -67,71 +67,81 @@ function base64ToBytes(value: string): Uint8Array | null {
     return Uint8Array.from(binary, (character) => character.charCodeAt(0));
   } catch { return null; }
 }
+type SignedDiceChallenge = {
+  userId: string; formula: string; dc: number | null;
+  targetType: "DC" | "AC" | "NONE"; roller: "PLAYER" | "GM";
+  label: string; issuedAt: number; nonce: string; signature: string;
+};
+function diceChallengePayload(value: Omit<SignedDiceChallenge, "signature">): JsonRecord {
+  return {
+    userId: value.userId, formula: value.formula, dc: value.dc,
+    targetType: value.targetType, roller: value.roller, label: value.label,
+    issuedAt: value.issuedAt, nonce: value.nonce,
+  };
+}
 function diceProofPayload(value: {
   userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
-  issuedAt: number; nonce: string;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge;
 }): JsonRecord {
   return {
     userId: value.userId, formula: value.formula, dice: value.dice,
-    modifier: value.modifier, total: value.total, issuedAt: value.issuedAt, nonce: value.nonce,
+    modifier: value.modifier, total: value.total, issuedAt: value.issuedAt,
+    nonce: value.nonce, challenge: value.challenge,
   };
 }
-async function signDiceProof(value: {
-  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
-  issuedAt: number; nonce: string;
-}): Promise<string> {
+async function signPayload(payload: JsonRecord): Promise<string> {
   if (!SUPABASE_SERVICE_ROLE_KEY) throw new Error("Server signing key is not configured.");
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
     { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
   );
   const signature = await crypto.subtle.sign(
-    "HMAC", key, new TextEncoder().encode(stableSerialize(diceProofPayload(value))),
+    "HMAC", key, new TextEncoder().encode(stableSerialize(payload)),
   );
   return bytesToBase64(new Uint8Array(signature));
 }
-async function verifyDiceProof(value: {
-  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
-  issuedAt: number; nonce: string; signature: string;
-}): Promise<boolean> {
-  if (!SUPABASE_SERVICE_ROLE_KEY || !Number.isInteger(value.issuedAt) ||
-      Date.now() - value.issuedAt > 120_000 || value.issuedAt - Date.now() > 15_000 ||
-      !value.nonce || value.nonce.length > 80) return false;
-  const signature = base64ToBytes(value.signature);
+async function verifyPayload(payload: JsonRecord, encodedSignature: string): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY) return false;
+  const signature = base64ToBytes(encodedSignature);
   if (!signature) return false;
   const key = await crypto.subtle.importKey(
     "raw", new TextEncoder().encode(SUPABASE_SERVICE_ROLE_KEY),
     { name: "HMAC", hash: "SHA-256" }, false, ["verify"],
   );
   return crypto.subtle.verify(
-    "HMAC", key, signature,
-    new TextEncoder().encode(stableSerialize(diceProofPayload(value))),
+    "HMAC", key, signature, new TextEncoder().encode(stableSerialize(payload)),
   );
 }
-
-async function consumeDiceNonces(userId: string, proofs: Array<{ nonce: string; issuedAt: number }>): Promise<boolean> {
-  if (proofs.length === 0) return true;
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return false;
-  try {
-    const response = await fetch(`${SUPABASE_URL.replace(/\/+$/, "")}/rest/v1/rpc/obsidian_consume_gm_dice_nonces`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_SERVICE_ROLE_KEY,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      },
-      body: JSON.stringify({
-        p_user_id: userId,
-        p_nonces: proofs.map((proof) => proof.nonce),
-        p_expires_at: proofs.map((proof) => new Date(proof.issuedAt + 120_000).toISOString()),
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) return false;
-    return await response.json().catch(() => false) === true;
-  } catch {
+async function issueDiceChallenge(userId: string, prepared: {
+  formula: string; dc: number | null; targetType: "DC" | "AC" | "NONE";
+  roller: "PLAYER" | "GM"; label: string;
+}): Promise<SignedDiceChallenge> {
+  const unsigned = {
+    userId, formula: prepared.formula, dc: prepared.dc,
+    targetType: prepared.targetType, roller: prepared.roller,
+    label: prepared.label, issuedAt: Date.now(), nonce: crypto.randomUUID(),
+  };
+  return { ...unsigned, signature: await signPayload(diceChallengePayload(unsigned)) };
+}
+async function verifyDiceChallenge(value: SignedDiceChallenge): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80 ||
+      !value.formula || !value.label || value.label.length > 180 ||
+      !["DC", "AC", "NONE"].includes(value.targetType) ||
+      !["PLAYER", "GM"].includes(value.roller) ||
+      (value.targetType === "NONE" ? value.dc !== null : !Number.isInteger(value.dc) || value.dc === null || value.dc < 1 || value.dc > 40)) {
     return false;
   }
+  return verifyPayload(diceChallengePayload(value), value.signature);
+}
+async function verifyDiceProof(value: {
+  userId: string; formula: string; dice: unknown[]; modifier: number; total: number;
+  issuedAt: number; nonce: string; challenge: SignedDiceChallenge; signature: string;
+}): Promise<boolean> {
+  if (!Number.isInteger(value.issuedAt) || Date.now() - value.issuedAt > 120_000 ||
+      value.issuedAt - Date.now() > 15_000 || !value.nonce || value.nonce.length > 80) return false;
+  const { signature, ...payload } = value;
+  return verifyPayload(diceProofPayload(payload), signature);
 }
 
 function playerCharacterFromInput(inputText: string): JsonRecord | null {
@@ -444,20 +454,31 @@ Deno.serve(async (req: Request) => {
     if (typeof body.formula !== "string" || !parseDiceFormula(body.formula)) {
       return json({ error: { code: "INVALID_DICE_FORMULA", message: "Формула броска не поддерживается." } }, 400, cors);
     }
+    if (!isRecord(body.challenge)) {
+      return json({ error: { code: "DICE_CHALLENGE_REQUIRED", message: "Для броска требуется подписанное сервером задание мастера." } }, 400, cors);
+    }
+    const rawChallenge = body.challenge;
+    const challenge = rawChallenge as unknown as SignedDiceChallenge;
+    if (challenge.userId !== authData.user.id || challenge.formula !== body.formula ||
+        typeof challenge.signature !== "string" || !await verifyDiceChallenge(challenge)) {
+      return json({ error: { code: "INVALID_DICE_CHALLENGE", message: "Задание броска недействительно или устарело. Запроси новое у мастера." } }, 401, cors);
+    }
     try {
-      if (!SUPABASE_SERVICE_ROLE_KEY) {
-        return json({ error: { code: "DICE_SIGNING_NOT_CONFIGURED", message: "Серверная подпись результатов бросков не настроена." } }, 503, cors);
-      }
       const rolled = rollDiceFormula(body.formula);
+      const challengeConsumed = await consumeDiceNonces(authData.user.id, [{ nonce: challenge.nonce, issuedAt: challenge.issuedAt }]);
+      if (!challengeConsumed) {
+        return json({ error: { code: "DICE_CHALLENGE_REPLAY_OR_STORAGE_FAILURE", message: "Это задание уже использовано или хранилище одноразовых заданий недоступно. Запроси новый бросок." } }, 409, cors);
+      }
       const proof = {
         userId: authData.user.id,
         issuedAt: Date.now(),
         nonce: crypto.randomUUID(),
+        challenge,
       };
-      const signature = await signDiceProof({
+      const signature = await signPayload(diceProofPayload({
         ...proof, formula: body.formula, dice: rolled.dice,
         modifier: rolled.modifier, total: rolled.total,
-      });
+      }));
       return json({ formula: body.formula, ...rolled, proof: { ...proof, signature } }, 200, cors);
     } catch {
       return json({ error: { code: "DICE_ROLL_FAILED", message: "Сервер не смог выполнить бросок. Результат не подменён." } }, 500, cors);
@@ -590,12 +611,21 @@ Deno.serve(async (req: Request) => {
       const arithmeticValid = diceValid && parsedFormula !== null &&
         item.modifier === parsedFormula.modifier &&
         item.total === dice.reduce((sum, die) => sum + (isRecord(die) && die.kept ? die.value as number : 0), 0) + (item.modifier as number);
+      const challenge = isRecord(item.challenge) ? item.challenge as unknown as SignedDiceChallenge : null;
+      const challengeMatchesRoll = challenge !== null &&
+        challenge.userId === authData.user.id && challenge.formula === formula &&
+        challenge.dc === item.dc && challenge.targetType === item.targetType &&
+        challenge.roller === item.roller && challenge.label === item.label &&
+        (challenge.targetType === "NONE" ? item.success === null :
+          item.success === (item.total as number >= (challenge.dc as number)));
       const proofValid = typeof proof.userId === "string" && proof.userId === authData.user.id &&
         typeof proof.issuedAt === "number" && typeof proof.nonce === "string" &&
-        typeof proof.signature === "string" && await verifyDiceProof({
+        typeof proof.signature === "string" && challengeMatchesRoll &&
+        await verifyDiceChallenge(challenge!) &&
+        await verifyDiceProof({
           userId: proof.userId, issuedAt: proof.issuedAt, nonce: proof.nonce,
           signature: proof.signature, formula, dice, modifier: item.modifier as number,
-          total: item.total as number,
+          total: item.total as number, challenge: challenge!,
         });
       if (!arithmeticValid || !proofValid) {
         return json({ error: { code: "INVALID_DICE_PROOF", message: "Результат броска не подтверждён сервером или срок его действия истёк. Выполни бросок заново." } }, 401, cors);
@@ -1154,10 +1184,19 @@ Deno.serve(async (req: Request) => {
         }
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
+      let rollChallenge: SignedDiceChallenge | null = null;
+      if (isGameTurnRequest && modelCall.preparedRoll) {
+        const prepared = modelCall.preparedRoll;
+        const pendingRolls = isRecord(parsed) && Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        if (pendingRolls.length === 1 && pendingRolls[0].result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА") {
+          rollChallenge = await issueDiceChallenge(authData.user.id, prepared);
+        }
+      }
       return json({
         output_text: content,
         model: attempt.id,
         usage: tokens(root.usage),
+        ...(rollChallenge ? { rollChallenge } : {}),
       }, 200, cors);
     } catch (error) {
       const timedOut = error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
