@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { callWithEkdrasilReadTools, executeEkdrasilReadTool } from "./game-master-retrieval";
+import { callWithEkdrasilReadTools, executeEkdrasilReadTool, executePreparedServerRoll } from "./game-master-retrieval";
 
 const rules = {
   sourceId: "SRD_5_2_1",
@@ -99,6 +99,63 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     });
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Подтверждённый бонус навыка");
+  });
+
+  it("rolls a new NPC's first reaction on the server and derives attitude", () => {
+    const prepared = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
+      name: "Странник", reason: "Герой впервые встречает незнакомца на дороге",
+    }), rules, canon);
+    expect(prepared).toMatchObject({
+      ok: true,
+      npcContext: { name: "Странник", rolled: undefined },
+      preparedRoll: {
+        roller: "GM", label: "Первая реакция NPC — Странник",
+        formula: "2d6", dc: null, targetType: "NONE", modifier: 0, kind: "NPC_REACTION",
+      },
+    });
+    const hostile = executePreparedServerRoll(prepared.preparedRoll as never, (() => {
+      const values = [2, 3];
+      return (_sides: number) => values.shift() ?? 1;
+    })());
+    expect(hostile).toMatchObject({ total: 5, npcAttitude: "hostile", success: null });
+
+    const friendlyPrepared = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
+      name: "Путница", modifier: 1, reason: "Незнакомая путница встречает героя в безопасном трактире",
+    }), rules, canon);
+    expect(friendlyPrepared).toMatchObject({ ok: true, preparedRoll: { formula: "2d6+1", modifier: 1 } });
+    const friendly = executePreparedServerRoll(friendlyPrepared.preparedRoll as never, (() => {
+      const values = [4, 4];
+      return (_sides: number) => values.shift() ?? 1;
+    })());
+    expect(friendly).toMatchObject({ total: 9, npcAttitude: "friendly" });
+  });
+
+  it("does not reroll a tracked NPC or repeat a reaction already completed this turn", () => {
+    const existing = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
+      name: "Марта", reason: "Уточнить первое впечатление",
+    }), rules, canon, null, false, [], [], [{ name: "Марта", attitudeToPlayer: "дружелюбная" }]);
+    expect(existing).toMatchObject({
+      ok: true, npcContext: { name: "Марта", attitude: "friendly", rolled: false },
+    });
+    expect(existing.preparedRoll).toBeUndefined();
+
+    const completed = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
+      name: "Странник", reason: "Повторный запрос в том же ходе",
+    }), rules, canon, null, false, [], [{
+      kind: "NPC_REACTION", label: "Первая реакция NPC — Странник", npcAttitude: "indifferent",
+    }], []);
+    expect(completed).toMatchObject({
+      ok: true, npcContext: { name: "Странник", attitude: "indifferent", rolled: true },
+    });
+    expect(completed.preparedRoll).toBeUndefined();
+  });
+
+  it("refuses to guess the attitude of a tracked NPC", () => {
+    const result = executeEkdrasilReadTool("npc_reaction", JSON.stringify({
+      name: "Смотритель", reason: "Первая встреча",
+    }), rules, canon, null, false, [], [], [{ name: "Смотритель", attitudeToPlayer: "неизвестно" }]);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("не подтверждено");
   });
 
   it("prepares social checks from a tracked NPC attitude, not a model-invented DC", () => {
