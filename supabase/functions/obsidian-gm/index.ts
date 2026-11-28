@@ -1093,20 +1093,6 @@ Deno.serve(async (req: Request) => {
           });
           continue;
         }
-        // Completed NPC/GM rolls are server-generated and appended only after
-        // the model's strict schema has passed. The model cannot invent their totals.
-        if (modelCall.serverRolls.length > 0) {
-          const serverRollEntries = modelCall.serverRolls.map((roll) => ({
-            roller: "GM",
-            label: roll.label,
-            formula: roll.formula,
-            dc: roll.dc,
-            targetType: roll.targetType,
-            result: roll.result,
-          }));
-          parsed.rolls = [...rolls, ...serverRollEntries];
-          content = JSON.stringify(parsed);
-        }
       }
       if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) &&
           parsed.rolls.some((roll) => isRecord(roll) && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА")) {
@@ -1224,6 +1210,22 @@ Deno.serve(async (req: Request) => {
             continue;
           }
         }
+      }
+      if (isGameTurnRequest && isRecord(parsed) && modelCall.serverRolls.length > 0) {
+        // Append server-generated GM results after all model/schema/semantic checks.
+        // The model never gets to choose the total or forge a completed NPC roll.
+        const modelRolls = Array.isArray(parsed.rolls) ? parsed.rolls.filter(isRecord) : [];
+        const pendingPlayerRolls = modelRolls.filter((roll) => roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА");
+        const serverRollEntries = modelCall.serverRolls.map((roll) => ({
+          roller: "GM",
+          label: roll.label,
+          formula: roll.formula,
+          dc: roll.dc,
+          targetType: roll.targetType,
+          result: roll.result,
+        }));
+        parsed.rolls = [...pendingPlayerRolls, ...serverRollEntries];
+        content = JSON.stringify(parsed);
       }
       console.log("[obsidian-gm] structured response validated", { model: attempt.id, operation: isCompatibilityRequest ? "VALIDATE_CHARACTER_COMPATIBILITY" : "OTHER" });
       let rollChallenge: SignedDiceChallenge | null = null;
