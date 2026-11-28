@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2.119.2";
 import { DEEPSEEK_GAME_TURN_REASONING_EFFORT, GAME_TURN_MAX_OUTPUT_TOKENS, gameTurnAttemptTimeoutMs, measureGameTurnInput, selectCanonExcerpts, selectGameMasterModelOrder, selectRuleExcerpts, validateGameTurnSemantics, type GameMasterModelId } from "./model-routing.ts";
 import { parseDiceFormula, rollDiceFormula } from "./dice.ts";
 import { formatSpecialistAgentContext, runGameTurnAgents } from "./agent-orchestration.ts";
+import { prepareGmRoll, preparePlayerRoll } from "./dnd-engine.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -707,10 +708,79 @@ Deno.serve(async (req: Request) => {
       rulesContext,
     });
     const agentContext = formatSpecialistAgentContext(specialistResults);
+    const rulesAgent = specialistResults.find((result) => result.role === "DND_RULES_AND_CHARACTER");
+    let authoritativeRolls: JsonRecord[] = [];
+    let actionResolutionNote = "";
+    const actualPlayerRollAlreadyProvided = /ФАКТИЧЕСКИЙ РЕЗУЛЬТАТ БРОСКА ИГРОКА:/i.test(actionText);
+    if (actualPlayerRollAlreadyProvided) {
+      actionResolutionNote = "ПРОВЕРКА УЖЕ БЫЛА БРОШЕНА ИГРОКОМ: используй фактический результат из сообщения. Не запрашивай повторный бросок.";
+    } else {
+      if (!rulesAgent || rulesAgent.status !== "COMPLETED" || !rulesAgent.actionResolution) {
+        console.error("[obsidian-gm] D&D adjudication agent unavailable; refusing to let narrator invent mechanics");
+        return json({
+          error: {
+            code: "DND_ADJUDICATION_UNAVAILABLE",
+            message: "Механический модуль D&D временно не смог проверить действие. Ничего не сохранено; повтори действие позже.",
+          },
+        }, 503, cors);
+      }
+      const resolution = rulesAgent.actionResolution;
+      if (!resolution.requiresRoll) {
+        if (resolution.roller !== "NONE" || resolution.kind !== "none") {
+          return json({ error: { code: "INVALID_ACTION_ADJUDICATION", message: "Механический модуль вернул противоречивое решение. Ход не сохранён." } }, 422, cors);
+        }
+        actionResolutionNote = "МЕХАНИЧЕСКИЙ РЕЗУЛЬТАТ: бросок не требуется. Разреши действие без проверки и не добавляй броски.";
+      } else if (resolution.roller === "PLAYER") {
+        let playerCharacter: unknown = null;
+        try {
+          const parsedInput = JSON.parse(inputText);
+          playerCharacter = isRecord(parsedInput) ? parsedInput.playerCharacterState : null;
+        } catch { /* a malformed state cannot be used to derive a character bonus */ }
+        const prepared = preparePlayerRoll({
+          requiresRoll: true,
+          roller: resolution.roller,
+          kind: resolution.kind,
+          skill: resolution.skill ?? undefined,
+          ability: resolution.ability ?? undefined,
+          difficulty: resolution.difficulty ?? undefined,
+          dc: resolution.dc ?? undefined,
+          advantage: resolution.advantage,
+          reason: resolution.reason,
+        }, playerCharacter);
+        if ("error" in prepared) {
+          return json({ error: { code: "PLAYER_ROLL_PREPARATION_FAILED", message: prepared.error } }, 422, cors);
+        }
+        if ("noRoll" in prepared) {
+          return json({ error: { code: "INVALID_ACTION_ADJUDICATION", message: "Механический модуль не подготовил обязательный бросок." } }, 422, cors);
+        }
+        authoritativeRolls = [prepared as unknown as JsonRecord];
+        actionResolutionNote = "МЕХАНИЧЕСКИЙ РЕЗУЛЬТАТ: требуется бросок игрока. Покажи ровно этот бросок; не описывай успех/провал и не меняй состояние до результата. " +
+          JSON.stringify(prepared);
+      } else if (resolution.roller === "GM") {
+        const prepared = prepareGmRoll({
+          requiresRoll: true,
+          roller: "GM",
+          kind: resolution.kind,
+          expression: resolution.expression,
+          reason: resolution.reason,
+        });
+        if ("error" in prepared) {
+          return json({ error: { code: "GM_ROLL_PREPARATION_FAILED", message: prepared.error } }, 422, cors);
+        }
+        const rolled = rollDiceFormula(prepared.formula);
+        const breakdown = rolled.dice.map((die) => die.kept ? String(die.value) : `(${die.value})`).join(" + ");
+        const resultText = `СЕРВЕРНЫЙ БРОСОК: ${rolled.total} (${breakdown}${rolled.modifier ? ` ${rolled.modifier > 0 ? "+" : "-"} ${Math.abs(rolled.modifier)}` : ""})`;
+        authoritativeRolls = [{ roller: "GM", label: prepared.label, formula: prepared.formula, result: resultText }];
+        actionResolutionNote = "МЕХАНИЧЕСКИЙ РЕЗУЛЬТАТ: сервер уже выполнил бросок NPC/существа. Используй только этот результат: " + resultText;
+      } else {
+        return json({ error: { code: "INVALID_ACTION_ADJUDICATION", message: "Не указан владелец броска. Ход не сохранён." } }, 422, cors);
+      }
+    }
     messages.splice(1, 0, {
       role: "system",
       content: agentContext + String.fromCharCode(10) + String.fromCharCode(10) +
-        "ПРОТОКОЛ КООРДИНАТОРА: используй отчёты как независимые предварительные проверки. Самостоятельно сверяй их с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, не имитируй его анализ; действуй консервативно по доступным первичным источникам.",
+        actionResolutionNote + String.fromCharCode(10) + String.fromCharCode(10) +
+        "ПРОТОКОЛ КООРДИНАТОРА: отчёт DND_RULES_AND_CHARACTER содержит обязательное механическое решение. Оно уже принято до повествования и имеет приоритет над твоей догадкой. Не добавляй, не удаляй и не меняй бросок. Самостоятельно сверяй повествование с первичными фрагментами канона, SRD, листом персонажа и текущим состоянием. Не переноси неподтверждённые выводы в состояние кампании. Если агент недоступен, запрос уже остановлен; не имитируй его анализ.",
     });
     console.log("[obsidian-gm] specialist agents completed", {
       elapsedMs: Date.now() - agentStartedAt,
@@ -820,7 +890,15 @@ Deno.serve(async (req: Request) => {
         failures.push(`${attempt.id}: output does not match the required turn schema`);
         continue;
       }
-      if (isGameTurnRequest && isRecord(parsed) && Array.isArray(parsed.rolls) && parsed.rolls.length > 0) {
+      if (isGameTurnRequest && isRecord(parsed)) {
+        // The D&D adjudicator, not the narrator's free-form JSON, owns roll
+        // decisions. Overwrite the model field with the server-prepared result.
+        parsed.rolls = authoritativeRolls;
+      }
+      const hasPendingPlayerRoll = authoritativeRolls.some((roll) =>
+        roll.roller === "PLAYER" && roll.result === "ОЖИДАЕТСЯ БРОСОК ИГРОКА"
+      );
+      if (isGameTurnRequest && isRecord(parsed) && hasPendingPlayerRoll) {
         // A pending roll is a pause in the action pipeline, not a commit.
         // Safely discard premature model mutations; they are recalculated after the actual roll.
         let currentEnvironment: JsonRecord = {
