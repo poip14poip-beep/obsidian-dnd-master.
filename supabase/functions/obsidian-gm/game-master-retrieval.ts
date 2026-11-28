@@ -323,6 +323,7 @@ function prepareNpcAttack(
   playerCharacter: JsonRecord | null,
   retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
   alreadyPrepared: boolean,
+  npcProfiles: JsonRecord[] = [],
 ): { ok: true; preparedRoll: PreparedRoll; targetACSource: { sourceId: string; sha256: string; lines: string } } | { ok: false; error: string } {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
   const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
@@ -341,6 +342,16 @@ function prepareNpcAttack(
   }
   const creatureNeedle = creatureName.normalize("NFKC").toLocaleLowerCase();
   const attackNeedle = attackName.normalize("NFKC").toLocaleLowerCase();
+  const npc = npcProfiles.find((entry) => typeof entry.name === "string" &&
+    entry.name.normalize("NFKC").trim().toLocaleLowerCase() === creatureNeedle);
+  const gmProfile = npc && npc.gmProfile && typeof npc.gmProfile === "object" ? npc.gmProfile as JsonRecord : null;
+  const combatProfile = gmProfile && gmProfile.combatProfile && typeof gmProfile.combatProfile === "object"
+    ? gmProfile.combatProfile as JsonRecord : null;
+  const profileAttack = combatProfile && Array.isArray(combatProfile.attacks)
+    ? (combatProfile.attacks as unknown[]).find((entry) => entry && typeof entry === "object" &&
+      typeof (entry as JsonRecord).name === "string" &&
+      ((entry as JsonRecord).name as string).normalize("NFKC").trim().toLocaleLowerCase() === attackNeedle) as JsonRecord | undefined
+    : undefined;
   const sourceExcerpt = retrievedRuleExcerpts.find((excerpt) => {
     const text = excerpt.text.normalize("NFKC").toLocaleLowerCase();
     return text.includes(creatureNeedle) && text.includes(attackNeedle) &&
@@ -353,6 +364,10 @@ function prepareNpcAttack(
   const attackBonus = bonusMatch ? Number(bonusMatch[1] ?? bonusMatch[2]) : NaN;
   if (!Number.isInteger(attackBonus) || attackBonus < -10 || attackBonus > 30) {
     return { ok: false, error: "В выдержке SRD не найден однозначный бонус этой атаки." };
+  }
+  if (combatProfile?.status === "SRD_VERIFIED" && profileAttack &&
+      Number.isInteger(profileAttack.attackBonus) && profileAttack.attackBonus !== attackBonus) {
+    return { ok: false, error: "Карточка NPC расходится с подтверждённым статблоком SRD 5.2.1. Атака остановлена до исправления досье." };
   }
   const dice = advantage === "ADVANTAGE" ? "2d20kh1" : advantage === "DISADVANTAGE" ? "2d20kl1" : "1d20";
   const formula = attackBonus === 0 ? dice : dice + (attackBonus > 0 ? "+" : "") + String(attackBonus);
@@ -497,6 +512,7 @@ function prepareNpcDamage(
   completedRolls: JsonRecord[],
   retrievedRuleExcerpts: Array<{ text: string; lines: string }>,
   alreadyPrepared: boolean,
+  npcProfiles: JsonRecord[] = [],
 ): JsonRecord {
   if (alreadyPrepared) return { ok: false, error: "В одном ходе разрешён только один ожидающий бросок." };
   const creatureName = typeof args.creatureName === "string" ? args.creatureName.trim() : "";
@@ -525,6 +541,21 @@ function prepareNpcDamage(
   const damageMatch = /hit\s*:\s*\d+\s*\(([^)]+)\)/i.exec(sourceExcerpt.text);
   if (!damageMatch) return { ok: false, error: "Не удалось однозначно извлечь формулу урона из строки Hit." };
   let formula = damageMatch[1]!.replace(/\s+/g, "");
+  const npc = npcProfiles.find((entry) => typeof entry.name === "string" &&
+    entry.name.normalize("NFKC").trim().toLocaleLowerCase() === creatureNeedle);
+  const gmProfile = npc && npc.gmProfile && typeof npc.gmProfile === "object" ? npc.gmProfile as JsonRecord : null;
+  const combatProfile = gmProfile && gmProfile.combatProfile && typeof gmProfile.combatProfile === "object"
+    ? gmProfile.combatProfile as JsonRecord : null;
+  const profileAttack = combatProfile && Array.isArray(combatProfile.attacks)
+    ? (combatProfile.attacks as unknown[]).find((entry) => entry && typeof entry === "object" &&
+      typeof (entry as JsonRecord).name === "string" &&
+      ((entry as JsonRecord).name as string).normalize("NFKC").trim().toLocaleLowerCase() === attackNeedle) as JsonRecord | undefined
+    : undefined;
+  if (combatProfile?.status === "SRD_VERIFIED" && profileAttack &&
+      typeof profileAttack.damage === "string" &&
+      profileAttack.damage.replace(/\s+/g, "").toLocaleLowerCase() !== formula.toLocaleLowerCase()) {
+    return { ok: false, error: "Формула урона в карточке NPC расходится с подтверждённой строкой Hit SRD 5.2.1. Урон не подготовлен." };
+  }
   const parsed = parseDiceFormula(formula);
   if (!parsed) return { ok: false, error: "Формула урона из статблока не поддерживается серверным генератором." };
   const critical = attackResolution.critical;
@@ -573,6 +604,7 @@ export function executeEkdrasilReadTool(
   alreadyPrepared = false,
   retrievedRuleExcerpts: Array<{ text: string; lines: string }> = [],
   completedRolls: JsonRecord[] = [],
+  npcProfiles: JsonRecord[] = [],
 ): JsonRecord {
   let args: unknown;
   try { args = JSON.parse(rawArguments || "{}"); }
@@ -590,10 +622,10 @@ export function executeEkdrasilReadTool(
     return preparePlayerDamage(args as JsonRecord, playerCharacter, completedRolls, alreadyPrepared);
   }
   if (name === "prepare_npc_attack") {
-    return prepareNpcAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared);
+    return prepareNpcAttack(args as JsonRecord, rules, playerCharacter, retrievedRuleExcerpts, alreadyPrepared, npcProfiles);
   }
   if (name === "prepare_npc_damage") {
-    return prepareNpcDamage(args as JsonRecord, rules, completedRolls, retrievedRuleExcerpts, alreadyPrepared);
+    return prepareNpcDamage(args as JsonRecord, rules, completedRolls, retrievedRuleExcerpts, alreadyPrepared, npcProfiles);
   }
 
   const query = (args as JsonRecord).query;
@@ -665,6 +697,7 @@ export async function callWithEkdrasilReadTools(options: {
   canon: RetrievalSource;
   playerCharacter?: JsonRecord | null;
   completedRolls?: JsonRecord[];
+  npcProfiles?: JsonRecord[];
   maxToolRounds?: number;
   maxToolCalls?: number;
   timeoutMs?: number;
@@ -745,7 +778,7 @@ export async function callWithEkdrasilReadTools(options: {
       const name = typeof fn.name === "string" ? fn.name : "";
       const rawArgs = typeof fn.arguments === "string" ? fn.arguments : "{}";
       const toolResult = id
-        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, options.completedRolls ?? [])
+        ? executeEkdrasilReadTool(name, rawArgs, options.rules, options.canon, options.playerCharacter ?? null, preparedRoll !== null, retrievedRuleExcerpts, options.completedRolls ?? [], options.npcProfiles ?? [])
         : { ok: false, error: "У вызова инструмента отсутствует идентификатор." };
       if (name === "search_dnd_rules" && toolResult && typeof toolResult === "object" &&
           (toolResult as JsonRecord).ok === true && Array.isArray((toolResult as JsonRecord).excerpts)) {
