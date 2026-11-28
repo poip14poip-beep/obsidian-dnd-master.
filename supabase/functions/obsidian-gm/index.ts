@@ -833,6 +833,39 @@ Deno.serve(async (req: Request) => {
     if (pendingTurn && storedRolls.length > 0 && completedRolls.length === 0) {
       return json({ error: { code: "STORED_ROLLS_MUST_RESUME", message: "В ожидающем ходе уже сохранён результат броска. Восстанови его и продолжи то же действие." } }, 409, cors);
     }
+    // A retry of the same action before the player has rolled must return the
+    // already-saved turn/challenge, not re-run the model or repeat server NPC rolls.
+    if (pendingTurn && storedRolls.length === 0 && completedRolls.length === 0) {
+      let challenge = isRecord(pendingTurn.challenge)
+        ? pendingTurn.challenge as unknown as SignedDiceChallenge
+        : null;
+      if (!challenge || !await verifyDiceChallenge(challenge)) {
+        const prepared = pendingTurn.prepared_roll;
+        challenge = await issueDiceChallenge(authData.user.id, {
+          formula: String(prepared.formula ?? ""),
+          dc: typeof prepared.dc === "number" ? prepared.dc : null,
+          targetType: prepared.targetType as "DC" | "AC" | "NONE",
+          roller: "PLAYER",
+          label: String(prepared.label ?? ""),
+        });
+        const saved = await savePendingGmTurn({
+          userId: authData.user.id,
+          pendingId: pendingTurn.pending_id,
+          action: pendingTurn.player_action,
+          turn: pendingTurn.turn_payload,
+          preparedRoll: pendingTurn.prepared_roll,
+          challenge,
+          completedRolls: [],
+        });
+        if (!saved) return json({ error: { code: "PENDING_TURN_SAVE_FAILED", message: "Не удалось обновить задание ожидающего броска." } }, 503, cors);
+      }
+      return json({
+        output_text: JSON.stringify(pendingTurn.turn_payload),
+        model: "pending-turn-resume",
+        pendingTurnId: pendingTurn.pending_id,
+        rollChallenge: challenge,
+      }, 200, cors);
+    }
     if (completedRolls.length > 0 && !pendingTurn) {
       return json({ error: { code: "PENDING_TURN_NOT_FOUND", message: "Сохранённый ожидающий ход не найден. Восстанови ход и повтори действие." } }, 409, cors);
     }
