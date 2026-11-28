@@ -483,6 +483,32 @@ describe("Open Dungeon Master retrieval adapted to Ekdrasil", () => {
     expect(mismatch.error).toContain("расходится");
   });
 
+  it("automatically fails sight- and hearing-dependent checks under blinded and deafened", () => {
+    const character = {
+      statsCertainty: "KNOWN",
+      abilityScores: { strength: 12, dexterity: 14, constitution: 13, intelligence: 10, wisdom: 16, charisma: 8 },
+      proficiencyBonus: 2,
+      skillBonuses: [
+        { name: "Восприятие", bonus: 5, basis: "WISDOM + владение" },
+        { name: "Расследование", bonus: 3, basis: "INTELLIGENCE + владение" },
+      ],
+      conditions: ["Ослеплён"],
+    };
+    const sightCheck = executeEkdrasilReadTool("request_roll", JSON.stringify({
+      kind: "skill_check", skill: "Расследование", dc: 15, advantage: "NONE",
+      reason: "Разглядеть мелкие знаки на печати",
+    }), rules, canon, character);
+    expect(sightCheck).toMatchObject({ ok: false });
+    expect(sightCheck.error).toContain("ослеплён");
+
+    character.conditions = ["Оглох"];
+    const hearingNotice = executeEkdrasilReadTool("check_notice", JSON.stringify({
+      sense: "perception", dc: 15, advantage: "none", reason: "Услышать шаги за дверью",
+    }), rules, canon, character);
+    expect(hearingNotice).toMatchObject({ ok: false });
+    expect(hearingNotice.error).toContain("оглох");
+  });
+
   it("applies poisoned disadvantage to checks and restrained disadvantage to Dexterity saves", () => {
     const character = {
       statsCertainty: "KNOWN",
